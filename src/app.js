@@ -4,8 +4,12 @@ import morgan from "morgan";
 import authRoutes from "./routes/auth.routes.js";
 import branchRoutes from "./routes/branch.routes.js";
 import menuRoutes from "./routes/menu.routes.js";
-import reservationRoutes from "./routes/reservation.routes.js";
-import paymentRoutes from "./routes/payment.routes.js";
+import bookingRoutes from "./routes/booking.routes.js";
+import hotelRoutes from "./routes/hotel.routes.js";
+import amenityRoutes from "./routes/amenity.routes.js";
+import guestRoutes from "./routes/guest.routes.js"; // Import guest routes
+import dashboardRoutes from "./routes/dashboard.routes.js";
+import accountSettingsRoutes from "./routes/accountsettings.routes.js";
 
 const app = express();
 
@@ -16,12 +20,27 @@ app.use(morgan("dev"));
 app.use("/api/auth", authRoutes);
 app.use("/api/branches", branchRoutes);
 app.use("/api/menus", menuRoutes);
-app.use("/api/reservations", reservationRoutes);
-app.use("/api/payments", paymentRoutes);
+app.use("/api/bookings", bookingRoutes);
+
+app.use("/api/hotels", hotelRoutes);
+app.use("/api/amenities", amenityRoutes);
+app.use("/api/guests", guestRoutes); // Use guest routes
+app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/account-settings", accountSettingsRoutes);
 
 // 404 Error Handler
 app.use((req, res, next) => {
   res.status(404).json({ message: "Not Found" });
+  const error = new Error(`Not Found - ${req.originalUrl}`);
+  error.status = 404;
+  next(error);
+});
+
+// Global Error Handler
+app.use((err, req, res, next) => {
+  res.status(err.status || 500).json({
+    message: err.message || "An internal server error occurred.",
+  });
 });
 
 export default app;

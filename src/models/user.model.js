@@ -15,12 +15,28 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  role: {
+    type: String,
+    enum: ["admin", "manager", "staff", "guest"],
+    default: "guest",
+  },
+  isVerified: { // New field for OTP verification
+    type: Boolean,
+    default: false,
+  },
+  vendorType: { // New field for vendor type (Hotel, Restaurant, Club)
+    type: String,
+    enum: ["Hotel", "Restaurant", "Club", null], // Allow null initially
+    default: null,
+  },
   resetPasswordToken: {
     type: String,
   },
   resetPasswordExpires: {
     type: Date,
   },
+  branch: { type: mongoose.Schema.Types.ObjectId, ref: "Branch" }, // Associate user with a branch for branch-specific access
+  permissions: [{ type: String }], // Custom permissions array, e.g., ["create_booking", "view_reports"]
 });
 
 userSchema.pre("save", async function (next) {
