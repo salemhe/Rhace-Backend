@@ -1,10 +1,30 @@
 import express from "express";
-import { createStaff, getStaff } from "../controllers/staff.controller.js";
+import {
+  createStaff,
+  getStaff,
+  exportStaffCSV,
+  getStaffById,
+  updateStaff,
+  modifyStaffRoles,
+  toggleStaffStatus,
+  deleteStaff,
+} from "../controllers/staff.controller.js";
 import { protect } from "../middlewares/auth.middleware.js";
+import { authorize } from "../middlewares/permission.middleware.js";
+import { uploadStaffAvatar } from "../middlewares/staffImage.middleware.js"; // New import
 
 const router = express.Router();
 
-router.post("/", protect, createStaff);
-router.get("/", protect, getStaff);
+router.post("/", protect, authorize(["admin", "manager"]), uploadStaffAvatar, createStaff);
+router.get("/", protect, authorize(["admin", "manager", "staff"]), getStaff);
+router.get("/export-csv", protect, authorize(["admin", "manager"]), exportStaffCSV);
+
+router.route("/:id")
+  .get(protect, authorize(["admin", "manager", "staff"]), getStaffById)
+  .put(protect, authorize(["admin", "manager"]), uploadStaffAvatar, updateStaff)
+  .delete(protect, authorize(["admin"]), deleteStaff);
+
+router.patch("/:id/roles", protect, authorize(["admin", "manager"]), modifyStaffRoles);
+router.patch("/:id/status", protect, authorize(["admin", "manager"]), toggleStaffStatus);
 
 export default router;
