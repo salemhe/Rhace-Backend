@@ -141,8 +141,6 @@ export const register = async (req, res) => {
       email,
       password,
       phone,
-      otp,
-      otpExpires,
       isVerified: false,
     });
 
