@@ -10,6 +10,8 @@ import amenityRoutes from "./routes/amenity.routes.js";
 import guestRoutes from "./routes/guest.routes.js"; // Import guest routes
 import dashboardRoutes from "./routes/dashboard.routes.js";
 import accountSettingsRoutes from "./routes/accountsettings.routes.js";
+import userRoutes from "./routes/user.routes.js"
+import vendorRoutes from "./routes/vendor.routes.js"
 
 const app = express();
 
@@ -21,6 +23,13 @@ app.use("/api/auth", authRoutes);
 app.use("/api/branches", branchRoutes);
 app.use("/api/menus", menuRoutes);
 app.use("/api/bookings", bookingRoutes);
+
+// Wisdom's Update
+
+app.use("/api/users", userRoutes);
+app.use("/api/vendors", vendorRoutes);
+
+//  End of Wisdom's Update
 
 app.use("/api/hotels", hotelRoutes);
 app.use("/api/amenities", amenityRoutes);

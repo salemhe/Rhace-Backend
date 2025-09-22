@@ -18,7 +18,7 @@ export const verifyOTP = async (email, otp) => {
         return false; // OTP not found or expired
     }
     // OTP found and not expired (due to 'expires' property in schema)
-    await OTP.deleteOne({ email, otp }); // Delete OTP after successful verification
+    await OTP.deleteOne({ email }); // Delete OTP after successful verification
     return true;
 };
 

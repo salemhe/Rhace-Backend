@@ -1,10 +1,132 @@
 import User from "../models/user.model.js";
 import { generateToken } from "../utils/jwt.js";
 import crypto from "crypto";
+import bcrypt from "bcrypt";
 import * as otpService from "../services/otp.service.js"; // New import
+import { sendPasswordResetEmail } from "../services/mail.service.js";
+import { Vendor } from "../models/vendor.model.js";
+
+export const loginVendor = async (req, res) => {
+  const { email, password } = req.body;
+  const vendor = await Vendor.findOne({ email });
+
+  try {
+    if (!vendor) return res.status(404).json({ message: "Vendor not found" });
+
+    const isMatch = await bcrypt.compare(password, vendor.password);
+    if (!isMatch) {
+      return res.status(400).json({ message: "Invalid email or password." });
+    }
+
+    if (!vendor.isVerified) {
+      return res.status(401).json({
+        message: "Please verify your email with the OTP sent to your inbox.",
+      });
+    }
+
+    const token = generateToken(
+      vendor._id,
+      vendor.role,
+      vendor.isOnboarded,
+      vendor.vendorType
+    );
+
+    return res
+      .status(200)
+      .json({ message: "Login successful.", vendor, token });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({
+      message: "Error adding vendor.",
+      error: err.message,
+    });
+  }
+};
+
+export const registerVendor = async (req, res) => {
+  try {
+    const { businessName, vendorType, email, phone, address, password } =
+      req.body;
+
+    if (
+      !businessName ||
+      !vendorType ||
+      !email ||
+      !phone ||
+      !address ||
+      !password
+    ) {
+      return res.status(400).json({ message: "All fields are required." });
+    }
+
+    const existingVendor = await Vendor.findOne({ email });
+    if (existingVendor) {
+      return res
+        .status(409)
+        .json({ message: "Vendor with this email already exists." });
+    }
+
+    if (password.length < 8) {
+      return res
+        .status(400)
+        .json({ message: "Password must be at least 8 characters long." });
+    }
+
+    const data = {
+      businessName,
+      email,
+      phone,
+      address,
+      password,
+      otp,
+      otpExpires,
+    };
+
+    let newVendor;
+
+    switch (vendorType) {
+      case "hotel":
+        newVendor = await HotelVendor.create(data);
+        break;
+      case "restaurant":
+        newVendor = await RestaurantVendor.create(data);
+        break;
+      case "club":
+        newVendor = await ClubVendor.create(data);
+        break;
+      default:
+        return res.status(400).json({ message: "Invalid vendor type" });
+    }
+
+    await otpService.sendAndSaveOTP(newVendor.email); // Send OTP
+
+    const token = generateToken(
+      newVendor._id,
+      newVendor.role,
+      newVendor.isOnboarded,
+      newVendor.vendorType
+    );
+
+    return res.status(201).json({
+      message:
+        "Vendor created successfully. Please verify your email with the OTP sent to your inbox",
+      vendor: newVendor,
+      token,
+    });
+  } catch (error) {
+    console.error(error);
+    if (error.code === 11000) {
+      return res.status(409).json({ message: "Duplicate email error." });
+    }
+    return res.status(500).json({
+      message: "Error adding vendor.",
+      error: error.message,
+    });
+  }
+};
 
 export const register = async (req, res) => {
-  const { name, email, password, vendorType } = req.body; // Added vendorType
+  const { firstName, lastName, email, password, phone } = req.body; // Added vendorType
 
   try {
     const userExists = await User.findOne({ email });
@@ -14,25 +136,29 @@ export const register = async (req, res) => {
     }
 
     const user = await User.create({
-      name,
+      firstName,
+      lastName,
       email,
       password,
-      vendorType, // Save vendorType
-      isVerified: false, // User is not verified initially
+      phone,
+      otp,
+      otpExpires,
+      isVerified: false,
     });
 
     if (user) {
       await otpService.sendAndSaveOTP(user.email); // Send OTP
-      res.status(201).json({
-        message: "User registered. Please verify your email with the OTP sent to your inbox.",
+      return res.status(201).json({
+        message:
+          "User registered. Please verify your email with the OTP sent to your inbox.",
         userId: user._id,
         email: user.email,
       });
     } else {
-      res.status(400).json({ message: "Invalid user data" });
+      return res.status(400).json({ message: "Invalid user data" });
     }
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -51,18 +177,20 @@ export const login = async (req, res) => {
     }
 
     if (!user.isVerified) {
-      return res.status(401).json({ message: "Please verify your email with the OTP sent to your inbox." });
+      return res.status(401).json({
+        message: "Please verify your email with the OTP sent to your inbox.",
+      });
     }
 
-    res.json({
+    return res.json({
       _id: user._id,
-      name: user.name,
+      firstName: user.firstName,
+      lastName: user.lastName,
       email: user.email,
-      vendorType: user.vendorType, // Include vendorType in login response
-      token: generateToken(user._id),
+      token: generateToken(user._id, "user"),
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -76,7 +204,10 @@ export const verifyOTP = async (req, res) => {
       return res.status(400).json({ message: "Invalid or expired OTP." });
     }
 
-    const user = await User.findOne({ email });
+    const guest = await User.findOne({ email });
+    const vendor = await Vendor.findOne({ email });
+
+    const user = guest ? guest : vendor;
 
     if (!user) {
       return res.status(404).json({ message: "User not found." });
@@ -85,16 +216,20 @@ export const verifyOTP = async (req, res) => {
     user.isVerified = true;
     await user.save();
 
-    res.status(200).json({
+    return res.status(200).json({
       message: "Email verified successfully.",
       _id: user._id,
-      name: user.name,
       email: user.email,
       vendorType: user.vendorType,
-      token: generateToken(user._id),
+      token: generateToken(
+        user._id,
+        user.role,
+        user.isOnboarded,
+        user.vendorType
+      ),
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -102,7 +237,10 @@ export const resendOTP = async (req, res) => {
   const { email } = req.body;
 
   try {
-    const user = await User.findOne({ email });
+    const guest = await User.findOne({ email });
+    const vendor = await Vendor.findOne({ email });
+
+    const user = guest ? guest : vendor;
 
     if (!user) {
       return res.status(404).json({ message: "User not found." });
@@ -113,19 +251,20 @@ export const resendOTP = async (req, res) => {
     }
 
     await otpService.sendAndSaveOTP(email);
-    res.status(200).json({ message: "OTP resent successfully." });
+    return res.status(200).json({ message: "OTP resent successfully." });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
-
-import { sendPasswordResetEmail } from "../services/mail.service.js";
 
 export const forgotPassword = async (req, res) => {
   const { email } = req.body;
 
   try {
-    const user = await User.findOne({ email });
+    const guest = await User.findOne({ email });
+    const vendor = await Vendor.findOne({ email });
+
+    const user = guest ? guest : vendor;
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
@@ -143,9 +282,9 @@ export const forgotPassword = async (req, res) => {
 
     await sendPasswordResetEmail(user.email, resetToken);
 
-    res.json({ message: "Password reset email sent" });
+    return res.json({ message: "Password reset email sent" });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -158,10 +297,17 @@ export const resetPassword = async (req, res) => {
       .update(token)
       .digest("hex");
 
-    const user = await User.findOne({
+    const guest = await User.findOne({
       resetPasswordToken,
       resetPasswordExpires: { $gt: Date.now() },
     });
+
+    const vendor = await Vendor.findOne({
+      resetPasswordToken,
+      resetPasswordExpires: { $gt: Date.now() },
+    });
+
+    const user = guest ? guest : vendor;
 
     if (!user) {
       return res.status(400).json({ message: "Invalid or expired token" });
@@ -172,8 +318,8 @@ export const resetPassword = async (req, res) => {
     user.resetPasswordExpires = undefined;
     await user.save();
 
-    res.json({ message: "Password reset successful" });
+    return res.json({ message: "Password reset successful" });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };

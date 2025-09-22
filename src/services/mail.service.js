@@ -20,7 +20,7 @@ export const sendEmail = async (to, subject, htmlContent) => {
 };
 
 export const sendPasswordResetEmail = async (to, token) => {
-  const resetUrl = `http://localhost:3000/reset-password?token=${token}`;
+  const resetUrl = `http://localhost:3000/auth/reset-password?token=${token}`;
 
   const htmlContent = `
     <p>You are receiving this email because you (or someone else) have requested the reset of the password for your account.</p>
