@@ -1,7 +1,9 @@
 import nodemailer from "nodemailer";
 
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  host: "smtp.gmail.com",
+  port: 587,
+  secure: false, // STARTTLS
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
@@ -32,15 +34,27 @@ export const sendPasswordResetEmail = async (to, token) => {
 };
 
 export const sendBookingConfirmationEmail = async (to, bookingDetails) => {
-  const { bookingCode, hotelName, roomType, checkInDate, checkOutDate, totalAmount, currency } = bookingDetails;
+  const {
+    bookingCode,
+    hotelName,
+    roomType,
+    checkInDate,
+    checkOutDate,
+    totalAmount,
+    currency,
+  } = bookingDetails;
   const htmlContent = `
     <p>Dear ${to},</p>
     <p>Your booking has been confirmed!</p>
     <p><strong>Booking Code:</strong> ${bookingCode}</p>
     <p><strong>Hotel:</strong> ${hotelName}</p>
     <p><strong>Room Type:</strong> ${roomType}</p>
-    <p><strong>Check-in Date:</strong> ${new Date(checkInDate).toDateString()}</p>
-    <p><strong>Check-out Date:</strong> ${new Date(checkOutDate).toDateString()}</p>
+    <p><strong>Check-in Date:</strong> ${new Date(
+      checkInDate
+    ).toDateString()}</p>
+    <p><strong>Check-out Date:</strong> ${new Date(
+      checkOutDate
+    ).toDateString()}</p>
     <p><strong>Total Amount:</strong> ${totalAmount} ${currency}</p>
     <p>Thank you for your booking!</p>
   `;
@@ -54,8 +68,12 @@ export const sendBookingCancellationEmail = async (to, bookingDetails) => {
     <p>Your booking has been cancelled.</p>
     <p><strong>Booking Code:</strong> ${bookingCode}</p>
     <p><strong>Hotel:</strong> ${hotelName}</p>
-    <p><strong>Check-in Date:</strong> ${new Date(checkInDate).toDateString()}</p>
-    <p><strong>Check-out Date:</strong> ${new Date(checkOutDate).toDateString()}</p>
+    <p><strong>Check-in Date:</strong> ${new Date(
+      checkInDate
+    ).toDateString()}</p>
+    <p><strong>Check-out Date:</strong> ${new Date(
+      checkOutDate
+    ).toDateString()}</p>
     <p>If you have any questions, please contact us.</p>
   `;
   await sendEmail(to, "Booking Cancellation", htmlContent);

@@ -251,6 +251,7 @@ export const resendOTP = async (req, res) => {
     await otpService.sendAndSaveOTP(email);
     return res.status(200).json({ message: "OTP resent successfully." });
   } catch (error) {
+    console.error(error)
     return res.status(500).json({ message: error.message });
   }
 };

@@ -12,6 +12,9 @@ import dashboardRoutes from "./routes/dashboard.routes.js";
 import accountSettingsRoutes from "./routes/accountsettings.routes.js";
 import userRoutes from "./routes/user.routes.js"
 import vendorRoutes from "./routes/vendor.routes.js"
+import dotenv from "dotenv"
+
+dotenv.config();
 
 const app = express();
 
