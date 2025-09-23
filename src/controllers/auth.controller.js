@@ -328,6 +328,8 @@ export const forgotPassword = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
+    const role = vendor ? "vendor" : "user"
+
     const resetToken = crypto.randomBytes(20).toString("hex");
 
     user.resetPasswordToken = crypto
@@ -338,7 +340,7 @@ export const forgotPassword = async (req, res) => {
 
     await user.save();
 
-    await sendPasswordResetEmail(user.email, resetToken);
+    await sendPasswordResetEmail(user.email, resetToken, role);
 
     return res.json({ message: "Password reset email sent" });
   } catch (error) {
