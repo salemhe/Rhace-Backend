@@ -1,6 +1,5 @@
-import { Schema } from "mongoose";
+import mongoose, { Schema } from "mongoose";
 import bcrypt from "bcrypt";
-import mongoose from "mongoose";
 
 const options = {
   discriminatorKey: "vendorType",
@@ -49,6 +48,7 @@ const VendorBaseSchema = new Schema(
     priceRange: { type: Number, default: 0 },
     vendorTypeCategory: { type: String },
     branch: { type: String },
+    isVisible: { type: Boolean, default: false}
   },
   options
 );

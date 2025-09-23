@@ -4,7 +4,12 @@ import crypto from "crypto";
 import bcrypt from "bcrypt";
 import * as otpService from "../services/otp.service.js"; // New import
 import { sendPasswordResetEmail } from "../services/mail.service.js";
-import { Vendor } from "../models/vendor.model.js";
+import {
+  Vendor,
+  HotelVendor,
+  RestaurantVendor,
+  ClubVendor,
+} from "../models/vendor.model.js";
 
 export const loginVendor = async (req, res) => {
   const { email, password } = req.body;
@@ -45,17 +50,9 @@ export const loginVendor = async (req, res) => {
 
 export const registerVendor = async (req, res) => {
   try {
-    const { businessName, vendorType, email, phone, address, password } =
-      req.body;
+    const { businessName, email, password } = req.body;
 
-    if (
-      !businessName ||
-      !vendorType ||
-      !email ||
-      !phone ||
-      !address ||
-      !password
-    ) {
+    if (!businessName || !email || !password) {
       return res.status(400).json({ message: "All fields are required." });
     }
 
@@ -72,46 +69,18 @@ export const registerVendor = async (req, res) => {
         .json({ message: "Password must be at least 8 characters long." });
     }
 
-    const data = {
+    const newVendor = await Vendor.create({
       businessName,
       email,
-      phone,
-      address,
       password,
-      otp,
-      otpExpires,
-    };
-
-    let newVendor;
-
-    switch (vendorType) {
-      case "hotel":
-        newVendor = await HotelVendor.create(data);
-        break;
-      case "restaurant":
-        newVendor = await RestaurantVendor.create(data);
-        break;
-      case "club":
-        newVendor = await ClubVendor.create(data);
-        break;
-      default:
-        return res.status(400).json({ message: "Invalid vendor type" });
-    }
+    });
 
     await otpService.sendAndSaveOTP(newVendor.email); // Send OTP
-
-    const token = generateToken(
-      newVendor._id,
-      newVendor.role,
-      newVendor.isOnboarded,
-      newVendor.vendorType
-    );
 
     return res.status(201).json({
       message:
         "Vendor created successfully. Please verify your email with the OTP sent to your inbox",
       vendor: newVendor,
-      token,
     });
   } catch (error) {
     console.error(error);
@@ -122,6 +91,98 @@ export const registerVendor = async (req, res) => {
       message: "Error adding vendor.",
       error: error.message,
     });
+  }
+};
+
+export const onboardVendor = async (req, res) => {
+  try {
+    const { vendorId } = req.params; // vendor to onboard
+    const id = req.vendor._id;
+
+    if (String(id) !== vendorId) {
+      return res.status(401).json({ message: "Unauthorized vendor" });
+    }
+
+    const {
+      vendorType,
+      profileImages, // array of Cloudinary URLs
+      address,
+      phone,
+      website,
+      priceRange,
+      vendorTypeCategory,
+      branch,
+      // extra fields depending on vendorType
+      openingTime,
+      closingTime,
+      cuisines,
+      availableSlots,
+      categories,
+      slots,
+      dressCode,
+      ageLimit,
+      offer,
+    } = req.body;
+
+    // Find vendor
+    let vendor = await Vendor.findById(vendorId);
+    if (!vendor) {
+      return res.status(404).json({ message: "Vendor not found." });
+    }
+
+    // Basic updates
+    vendor.profileImages = profileImages || vendor.profileImages;
+    vendor.address = address || vendor.address;
+    vendor.phone = phone || vendor.phone;
+    vendor.website = website || vendor.website;
+    vendor.priceRange = priceRange || vendor.priceRange;
+    vendor.vendorTypeCategory = vendorTypeCategory || vendor.vendorTypeCategory;
+    vendor.branch = branch || vendor.branch;
+    vendor.isOnboarded = true;
+
+    // 🔑 Handle vendorType-specific onboarding
+    switch (vendorType) {
+      case "hotel":
+        await HotelVendor.findByIdAndUpdate(vendor._id, {
+          offer,
+        });
+        break;
+
+      case "restaurant":
+        await RestaurantVendor.findByIdAndUpdate(vendor._id, {
+          openingTime,
+          closingTime,
+          cuisines,
+          availableSlots,
+        });
+        break;
+
+      case "club":
+        await ClubVendor.findByIdAndUpdate(vendor._id, {
+          openingTime,
+          closingTime,
+          slots,
+          categories,
+          offer,
+          dressCode,
+          ageLimit,
+        });
+        break;
+
+      default:
+        return res.status(400).json({ message: "Invalid vendor type." });
+    }
+
+    await vendor.save();
+    return res.status(200).json({
+      message: "Onboarding completed successfully.",
+      vendor,
+    });
+  } catch (error) {
+    console.error(error);
+    return res
+      .status(500)
+      .json({ message: "Onboarding failed.", error: error.message });
   }
 };
 
@@ -181,10 +242,8 @@ export const login = async (req, res) => {
     }
 
     return res.json({
-      _id: user._id,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      email: user.email,
+      message: "Login Succesfully!",
+      user,
       token: generateToken(user._id, "user"),
     });
   } catch (error) {
@@ -251,7 +310,7 @@ export const resendOTP = async (req, res) => {
     await otpService.sendAndSaveOTP(email);
     return res.status(200).json({ message: "OTP resent successfully." });
   } catch (error) {
-    console.error(error)
+    console.error(error);
     return res.status(500).json({ message: error.message });
   }
 };
