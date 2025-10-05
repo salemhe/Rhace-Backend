@@ -12,6 +12,7 @@ import dashboardRoutes from "./routes/dashboard.routes.js";
 import accountSettingsRoutes from "./routes/accountsettings.routes.js";
 import userRoutes from "./routes/user.routes.js"
 import vendorRoutes from "./routes/vendor.routes.js"
+import paymentRoutes from "./routes/payment.routes.js"
 import dotenv from "dotenv"
 
 dotenv.config();
@@ -31,6 +32,7 @@ app.use("/api/bookings", bookingRoutes);
 
 app.use("/api/users", userRoutes);
 app.use("/api/vendors", vendorRoutes);
+app.use("/api/payments", paymentRoutes)
 
 //  End of Wisdom's Update
 

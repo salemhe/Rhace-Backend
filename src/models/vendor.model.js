@@ -35,6 +35,7 @@ const VendorBaseSchema = new Schema(
       accountNumber: { type: String },
       subaccountCode: { type: String },
       bankName: { type: String },
+      accountName: {type: String },
     },
     percentageCharge: { type: Number, default: 0 },
     balance: { type: Number, default: 0 },
