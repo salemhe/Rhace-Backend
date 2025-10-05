@@ -21,10 +21,16 @@ export const createPaymentTransaction = async (req, res) => {
     await paymentTransaction.save();
     recordAuditLog(req.user._id, "CREATE_PAYMENT_TRANSACTION", "PaymentTransaction", paymentTransaction._id, paymentTransaction.toObject());
 
-    // Update booking payment status (e.g., if it's a partial payment)
-    // This logic can be more complex depending on payment rules
+    // Update booking payment status
     if (paymentTransaction.status === "succeeded") {
-      booking.paymentStatus = "fully-paid"; // Simplified for now
+      const allTransactions = await PaymentTransaction.find({ booking: bookingId, status: "succeeded" });
+      const totalPaid = allTransactions.reduce((acc, trans) => acc + trans.amount, 0);
+
+      if (totalPaid >= booking.totalAmount) {
+        booking.paymentStatus = "fully-paid";
+      } else {
+        booking.paymentStatus = "partly-paid";
+      }
       await booking.save();
     }
 
