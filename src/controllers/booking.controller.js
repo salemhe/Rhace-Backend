@@ -8,16 +8,7 @@ import pkg from "json-2-csv";
 const { AsyncParser } = pkg;
 import * as XLSX from "xlsx";
 import { recordAuditLog } from "../utils/auditLogger.js";
-import { sendEmail } from "../services/mail.service.js";
-import { generateBookingReceiptPDF } from "../utils/pdfGenerator.js";
-
-const nanoid = customAlphabet("1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ", 10);
-
-// Helper to parse time strings (HH:MM) into minutes from midnight
-const timeToMinutes = (timeString) => {
-  const [hours, minutes] = timeString.split(":").map(Number);
-  return hours * 60 + minutes;
-};
+import { sendBookingConfirmationEmail } from "../services/mail.service.js";
 
 // @desc    Create a new booking
 // @route   POST /api/bookings
@@ -140,6 +131,19 @@ export const createBooking = async (req, res) => {
     });
 
     const createdBooking = await booking.save();
+    
+    // Send confirmation email
+    const populatedBooking = await Booking.findById(createdBooking._id).populate("guest").populate("hotel").populate("roomType");
+    await sendBookingConfirmationEmail(populatedBooking.guest.email, {
+      bookingCode: populatedBooking.bookingCode,
+      hotelName: populatedBooking.hotel.name,
+      roomType: populatedBooking.roomType.name,
+      checkInDate: populatedBooking.checkInDate,
+      checkOutDate: populatedBooking.checkOutDate,
+      totalAmount: populatedBooking.totalAmount,
+      currency: populatedBooking.currency,
+    });
+
     res.status(201).json(createdBooking);
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -578,12 +582,19 @@ export const generateBookingReceipt = async (req, res) => {
 
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename=receipt-${booking.bookingCode}.pdf`);
-
-    pdfStream.pipe(res);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
+export const getMyBookings = async (req, res) => {
+  try {
+    const bookings = await Booking.find({ guest: req.user._id })
+      .populate("hotel", "name")
+      .populate("roomType", "name");
 
-
+    res.status(200).json(bookings);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};

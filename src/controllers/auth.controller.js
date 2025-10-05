@@ -51,7 +51,7 @@ export const loginVendor = async (req, res) => {
 export const registerVendor = async (req, res) => {
   try {
     const { businessName, email, password } = req.body;
-
+    console.log(req.body);
     if (!businessName || !email || !password) {
       return res.status(400).json({ message: "All fields are required." });
     }
@@ -110,8 +110,11 @@ export const onboardVendor = async (req, res) => {
       phone,
       website,
       priceRange,
-      vendorTypeCategory,
-      branch,
+      businessDescription,
+      accountName,
+      accountNumber,
+      bankName,
+      bankCode,
       // extra fields depending on vendorType
       openingTime,
       closingTime,
@@ -130,15 +133,55 @@ export const onboardVendor = async (req, res) => {
       return res.status(404).json({ message: "Vendor not found." });
     }
 
+    const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
+    if (!PAYSTACK_SECRET_KEY) {
+      return res.status(500).json({ message: "Paystack key not configured." });
+    }
+
+    const recipientPayload = {
+      type: "nuban",
+      business_name: vendor.businessName,
+      account_number: accountNumber,
+      settlement_bank: bankCode,
+      currency: "NGN",
+      percentage_charge: 8,
+    };
+
+    const recipientResponse = await fetch(
+      "https://api.paystack.co/subaccount",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(recipientPayload),
+      }
+    );
+
+    const recipientData = await recipientResponse.json();
+    if (!recipientResponse.ok || !recipientData.status) {
+      return res
+        .status(500)
+        .json({ message: "Paystack error", error: recipientData.message });
+    }
+
     // Basic updates
     vendor.profileImages = profileImages || vendor.profileImages;
     vendor.address = address || vendor.address;
+    vendor.businessDescription = businessDescription || vendor.businessDescription;
     vendor.phone = phone || vendor.phone;
     vendor.website = website || vendor.website;
     vendor.priceRange = priceRange || vendor.priceRange;
-    vendor.vendorTypeCategory = vendorTypeCategory || vendor.vendorTypeCategory;
     vendor.branch = branch || vendor.branch;
     vendor.isOnboarded = true;
+    vendor.paymentDetails = {
+      bankCode,
+      accountNumber,
+      subaccountCode: recipientData.data.subaccount_code,
+      bankName,
+      accountName,
+    } || vendor.paymentDetails;
 
     // 🔑 Handle vendorType-specific onboarding
     switch (vendorType) {
@@ -261,10 +304,7 @@ export const verifyOTP = async (req, res) => {
       return res.status(400).json({ message: "Invalid or expired OTP." });
     }
 
-    const guest = await User.findOne({ email });
-    const vendor = await Vendor.findOne({ email });
-
-    const user = guest ? guest : vendor;
+    const user = await User.findOne({ email });
 
     if (!user) {
       return res.status(404).json({ message: "User not found." });
@@ -294,10 +334,7 @@ export const resendOTP = async (req, res) => {
   const { email } = req.body;
 
   try {
-    const guest = await User.findOne({ email });
-    const vendor = await Vendor.findOne({ email });
-
-    const user = guest ? guest : vendor;
+    const user = await User.findOne({ email });
 
     if (!user) {
       return res.status(404).json({ message: "User not found." });
@@ -319,16 +356,102 @@ export const forgotPassword = async (req, res) => {
   const { email } = req.body;
 
   try {
-    const guest = await User.findOne({ email });
-    const vendor = await Vendor.findOne({ email });
-
-    const user = guest ? guest : vendor;
+    const user = await User.findOne({ email });
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    const role = vendor ? "vendor" : "user"
+    const role = vendor ? "vendor" : "user";
+
+    const resetToken = crypto.randomBytes(20).toString("hex");
+
+    user.resetPasswordToken = crypto
+      .createHash("sha256")
+      .update(resetToken)
+      .digest("hex");
+    user.resetPasswordExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+    await user.save();
+
+    await sendPasswordResetEmail(user.email, resetToken, role);
+
+    return res.json({ message: "Password reset email sent" });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+export const verifyVendorOTP = async (req, res) => {
+  const { email, otp } = req.body;
+
+  try {
+    const isOTPValid = await otpService.verifyOTP(email, otp);
+
+    if (!isOTPValid) {
+      return res.status(400).json({ message: "Invalid or expired OTP." });
+    }
+
+    const user = await Vendor.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    user.isVerified = true;
+    await user.save();
+
+    return res.status(200).json({
+      message: "Email verified successfully.",
+      _id: user._id,
+      email: user.email,
+      vendorType: user.vendorType,
+      token: generateToken(
+        user._id,
+        user.role,
+        user.isOnboarded,
+        user.vendorType
+      ),
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+export const resendVendorOTP = async (req, res) => {
+  const { email } = req.body;
+
+  try {
+    const user = await Vendor.findOne({ email });
+    console.log(user);
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    if (user.isVerified) {
+      return res.status(400).json({ message: "User already verified." });
+    }
+
+    await otpService.sendAndSaveOTP(email);
+    return res.status(200).json({ message: "OTP resent successfully." });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+export const forgotVendorPassword = async (req, res) => {
+  const { email } = req.body;
+
+  try {
+    const user = await Vendor.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const role = vendor ? "vendor" : "user";
 
     const resetToken = crypto.randomBytes(20).toString("hex");
 

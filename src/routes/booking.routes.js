@@ -10,14 +10,17 @@ import {
   refundBooking,
   exportBookings,
   bulkUpdateBookings,
-  addBookingNote, 
+  addBookingNote,
   generateBookingReceipt,
+  getMyBookings,
 } from "../controllers/booking.controller.js";
-import { protect } from "../middlewares/auth.middleware.js";
 import { authorize } from "../middlewares/permission.middleware.js";
 import paymentTransactionRouter from "./paymenttransaction.routes.js";
 
+
 const router = express.Router();
+
+router.route("/my-bookings").get(getMyBookings);import { protect } from "../middlewares/auth.middleware.js";
 
 router.use(protect);
 
