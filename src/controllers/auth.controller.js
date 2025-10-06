@@ -96,12 +96,7 @@ export const registerVendor = async (req, res) => {
 
 export const onboardVendor = async (req, res) => {
   try {
-    const { vendorId } = req.params; // vendor to onboard
-    const id = req.vendor._id;
-
-    if (String(id) !== vendorId) {
-      return res.status(401).json({ message: "Unauthorized vendor" });
-    }
+    const id = req.user._id;
 
     const {
       vendorType,
@@ -128,7 +123,7 @@ export const onboardVendor = async (req, res) => {
     } = req.body;
 
     // Find vendor
-    let vendor = await Vendor.findById(vendorId);
+    let vendor = await Vendor.findById(id);
     if (!vendor) {
       return res.status(404).json({ message: "Vendor not found." });
     }
@@ -173,7 +168,6 @@ export const onboardVendor = async (req, res) => {
     vendor.phone = phone || vendor.phone;
     vendor.website = website || vendor.website;
     vendor.priceRange = priceRange || vendor.priceRange;
-    vendor.branch = branch || vendor.branch;
     vendor.isOnboarded = true;
     vendor.paymentDetails = {
       bankCode,
@@ -182,6 +176,7 @@ export const onboardVendor = async (req, res) => {
       bankName,
       accountName,
     } || vendor.paymentDetails;
+    vendor.vendorType = vendorType || vendor.vendorType
 
     // 🔑 Handle vendorType-specific onboarding
     switch (vendorType) {

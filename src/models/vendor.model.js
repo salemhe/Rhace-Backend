@@ -49,7 +49,8 @@ const VendorBaseSchema = new Schema(
     priceRange: { type: Number, default: 0 },
     vendorTypeCategory: { type: String },
     branch: { type: String },
-    isVisible: { type: Boolean, default: false}
+    isVisible: { type: Boolean, default: false},
+    vendorType: { type: String }
   },
   options
 );
