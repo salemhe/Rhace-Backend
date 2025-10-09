@@ -14,6 +14,9 @@ import bottleSetRoutes from "./routes/bottleSet.routes.js";
 import clubRoutes from "./routes/club.routes.js";
 import reviewRoutes from "./routes/review.routes.js";
 import accountSettingsRoutes from "./routes/accountsettings.routes.js";
+import userRoutes from "./routes/user.routes.js";
+import vendorRoutes from "./routes/vendor.routes.js";
+import paymentRoutes from "./routes/payment.routes.js";
 
 const app = express();
 

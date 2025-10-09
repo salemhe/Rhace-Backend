@@ -1,4 +1,4 @@
-import Payment from "../models/Payment.model.js";
+import Payment from "../models/payment.model.js";
 import moment from "moment";
 import { Vendor } from "../models/vendor.model.js";
 

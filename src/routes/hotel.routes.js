@@ -23,26 +23,26 @@ const router = express.Router();
 router.use(protect); // All hotel routes require authentication
 
 router.route("/")
-  .post(authorize(["admin", "manager"]), uploadHotelImages, createHotel)
-  .get(authorize(["admin", "manager", "staff"]), getHotels);
+  .post(authorize(["admin", "vendor"]), uploadHotelImages, createHotel)
+  .get(authorize(["admin", "vendor", "staff"]), getHotels);
 
 router.route("/:id")
-  .get(authorize(["admin", "manager", "staff"]), getHotelById)
-  .put(authorize(["admin", "manager"]), updateHotel)
+  .get(authorize(["admin", "vendor", "staff"]), getHotelById)
+  .put(authorize(["admin", "vendor"]), updateHotel)
   .delete(authorize(["admin"]), deleteHotel);
 
-router.patch("/:id/publish", authorize(["admin", "manager"]), publishHotel);
+router.patch("/:id/publish", authorize(["admin", "vendor"]), publishHotel);
 
 // New route for uploading hotel images
 router.patch(
   "/:id/upload-images",
-  authorize(["admin", "manager"]),
+  authorize(["admin", "vendor"]),
   uploadHotelImages,
   uploadHotelImagesController
 );
 
 // New route for getting hotel review details
-router.get("/:id/review", authorize(["admin", "manager", "staff"]), getHotelReviewDetails);
+router.get("/:id/review", authorize(["admin", "vendor", "staff"]), getHotelReviewDetails);
 
 // Nested routes for specific hotel ID
 router.use("/:hotelId/roomtypes", roomtypeRoutes);
