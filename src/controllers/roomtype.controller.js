@@ -1,5 +1,6 @@
 import RoomType from "../models/roomtype.model.js";
-import Hotel from "../models/hotel.model.js";
+import { HotelVendor } from "../models/vendor.model.js";
+// import Hotel from "../models/hotel.model.js";
 import { recordAuditLog } from "../utils/auditLogger.js";
 import fs from "fs";
 import path from "path";
@@ -13,7 +14,7 @@ export const createRoomType = async (req, res) => {
     const { name, description, pricePerNight, adultsCapacity, childrenCapacity, totalUnits, amenities } = req.body;
     let images = req.body.images; // Default from body, can be overridden by file upload
 
-    const hotel = await Hotel.findById(hotelId);
+    const hotel = await HotelVendor.findById(hotelId);
     if (!hotel) {
       return res.status(404).json({ message: "Hotel not found" });
     }
@@ -51,7 +52,7 @@ export const getRoomTypes = async (req, res) => {
   try {
     const { hotelId } = req.params;
 
-    const hotel = await Hotel.findById(hotelId);
+    const hotel = await HotelVendor.findById(hotelId);
     if (!hotel) {
       return res.status(404).json({ message: "Hotel not found" });
     }
