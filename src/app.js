@@ -18,6 +18,8 @@ import userRoutes from "./routes/user.routes.js";
 import vendorRoutes from "./routes/vendor.routes.js";
 import paymentRoutes from "./routes/payment.routes.js";
 
+dotenv.config();
+
 const app = express();
 
 app.use(express.json());
