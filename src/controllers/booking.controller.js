@@ -582,10 +582,11 @@ export const generateBookingReceipt = async (req, res) => {
 
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename=receipt-${booking.bookingCode}.pdf`);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
 
-    // @desc    Get all bookings for the logged in user
-// @route   GET /api/bookings/my-bookings
-// @access  Private
 export const getMyBookings = async (req, res) => {
   try {
     const bookings = await Booking.find({ guest: req.user._id })
@@ -597,6 +598,3 @@ export const getMyBookings = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
-
-
-

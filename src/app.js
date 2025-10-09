@@ -14,13 +14,6 @@ import bottleSetRoutes from "./routes/bottleSet.routes.js";
 import clubRoutes from "./routes/club.routes.js";
 import reviewRoutes from "./routes/review.routes.js";
 import accountSettingsRoutes from "./routes/accountsettings.routes.js";
-import userRoutes from "./routes/user.routes.js"
-import vendorRoutes from "./routes/vendor.routes.js"
-import paymentRoutes from "./routes/payment.routes.js"
-import dotenv from "dotenv";
-
-dotenv.config();
-
 
 const app = express();
 
@@ -32,6 +25,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/branches", branchRoutes);
 app.use("/api/menus", menuRoutes);
 app.use("/api/bookings", bookingRoutes);
+
 app.use("/api/hotels", hotelRoutes);
 app.use("/api/amenities", amenityRoutes);
 app.use("/api/guests", guestRoutes);

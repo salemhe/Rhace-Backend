@@ -1,15 +1,17 @@
 import nodemailer from "nodemailer";
 
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
 
 // Generic email sending function
 export const sendEmail = async (to, subject, htmlContent) => {
+  const transporter = nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 587,
+    secure: false, // STARTTLS
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
   const mailOptions = {
     from: process.env.SMTP_USER,
     to,
@@ -19,8 +21,8 @@ export const sendEmail = async (to, subject, htmlContent) => {
   await transporter.sendMail(mailOptions);
 };
 
-export const sendPasswordResetEmail = async (to, token) => {
-  const resetUrl = `http://localhost:3000/reset-password?token=${token}`;
+export const sendPasswordResetEmail = async (to, token, role) => {
+  const resetUrl = `http://localhost:3000/auth/${role}/reset-password?token=${token}`;
 
   const htmlContent = `
     <p>You are receiving this email because you (or someone else) have requested the reset of the password for your account.</p>
@@ -32,15 +34,27 @@ export const sendPasswordResetEmail = async (to, token) => {
 };
 
 export const sendBookingConfirmationEmail = async (to, bookingDetails) => {
-  const { bookingCode, hotelName, roomType, checkInDate, checkOutDate, totalAmount, currency } = bookingDetails;
+  const {
+    bookingCode,
+    hotelName,
+    roomType,
+    checkInDate,
+    checkOutDate,
+    totalAmount,
+    currency,
+  } = bookingDetails;
   const htmlContent = `
     <p>Dear ${to},</p>
     <p>Your booking has been confirmed!</p>
     <p><strong>Booking Code:</strong> ${bookingCode}</p>
     <p><strong>Hotel:</strong> ${hotelName}</p>
     <p><strong>Room Type:</strong> ${roomType}</p>
-    <p><strong>Check-in Date:</strong> ${new Date(checkInDate).toDateString()}</p>
-    <p><strong>Check-out Date:</strong> ${new Date(checkOutDate).toDateString()}</p>
+    <p><strong>Check-in Date:</strong> ${new Date(
+      checkInDate
+    ).toDateString()}</p>
+    <p><strong>Check-out Date:</strong> ${new Date(
+      checkOutDate
+    ).toDateString()}</p>
     <p><strong>Total Amount:</strong> ${totalAmount} ${currency}</p>
     <p>Thank you for your booking!</p>
   `;
@@ -54,8 +68,12 @@ export const sendBookingCancellationEmail = async (to, bookingDetails) => {
     <p>Your booking has been cancelled.</p>
     <p><strong>Booking Code:</strong> ${bookingCode}</p>
     <p><strong>Hotel:</strong> ${hotelName}</p>
-    <p><strong>Check-in Date:</strong> ${new Date(checkInDate).toDateString()}</p>
-    <p><strong>Check-out Date:</strong> ${new Date(checkOutDate).toDateString()}</p>
+    <p><strong>Check-in Date:</strong> ${new Date(
+      checkInDate
+    ).toDateString()}</p>
+    <p><strong>Check-out Date:</strong> ${new Date(
+      checkOutDate
+    ).toDateString()}</p>
     <p>If you have any questions, please contact us.</p>
   `;
   await sendEmail(to, "Booking Cancellation", htmlContent);

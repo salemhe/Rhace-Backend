@@ -1,5 +1,6 @@
 import { verifyToken } from "../utils/jwt.js";
 import User from "../models/user.model.js";
+import { Vendor } from "../models/vendor.model.js";
 
 export const protect = async (req, res, next) => {
   let token;
@@ -15,17 +16,21 @@ export const protect = async (req, res, next) => {
       // Verify token
       const decoded = verifyToken(token);
 
+      req.user =
+        decoded.role === "vendor"
+          ? await Vendor.findById(decoded.id).select("_id role vendorType")
+          : await User.findById(decoded.id).select("_id");
+
       // Get user from the token
-      req.user = await User.findById(decoded.id).select("-password");
 
       next();
     } catch (error) {
       console.error(error);
-      res.status(401).json({ message: "Not authorized, token failed" });
+      return res.status(401).json({ message: "Not authorized, token failed" });
     }
   }
 
   if (!token) {
-    res.status(401).json({ message: "Not authorized, no token" });
+    return res.status(401).json({ message: "Not authorized, no token" });
   }
 };
