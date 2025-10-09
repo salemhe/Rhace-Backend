@@ -14,6 +14,12 @@ import bottleSetRoutes from "./routes/bottleSet.routes.js";
 import clubRoutes from "./routes/club.routes.js";
 import reviewRoutes from "./routes/review.routes.js";
 import accountSettingsRoutes from "./routes/accountsettings.routes.js";
+import userRoutes from "./routes/user.routes.js"
+import vendorRoutes from "./routes/vendor.routes.js"
+import paymentRoutes from "./routes/payment.routes.js"
+import dotenv from "dotenv";
+
+dotenv.config();
 
 
 const app = express();
@@ -36,6 +42,10 @@ app.use("/api/reviews", reviewRoutes);
 app.use("/api/drinks", drinkRoutes);
 app.use("/api/addons", addOnRouter);
 app.use("/api/bottle-sets", bottleSetRoutes);
+
+app.use("/api/users", userRoutes);
+app.use("/api/vendors", vendorRoutes);
+app.use("/api/payments", paymentRoutes)
 
 // 404 Error Handler
 app.use((req, res, next) => {
