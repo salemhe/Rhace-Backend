@@ -1,24 +1,31 @@
 import nodemailer from "nodemailer";
 
+import sgMail from "@sendgrid/mail";
 
 // Generic email sending function
 export const sendEmail = async (to, subject, htmlContent) => {
-  const transporter = nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 587,
-    secure: false, // STARTTLS
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-  });
-  const mailOptions = {
-    from: process.env.SMTP_USER,
-    to,
-    subject,
-    html: htmlContent,
-  };
-  await transporter.sendMail(mailOptions);
+  try {
+    console.log(
+      "SendGrid API Key:",
+      process.env.SENDGRID_API_KEY ? "FOUND" : "NOT FOUND"
+    );
+    console.log("SMTP_USER:", process.env.SMTP_USER);
+
+    sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+    const msg = {
+      to,
+      from: process.env.SMTP_USER,
+      subject,
+      html: htmlContent,
+    };
+    await sgMail.send(msg);
+  } catch (error) {
+    console.error(error);
+
+    if (error.response) {
+      console.error(error.response.body);
+    }
+  }
 };
 
 export const sendPasswordResetEmail = async (to, token, role) => {
