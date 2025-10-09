@@ -1,5 +1,6 @@
 import RoomType from "../models/roomtype.model.js";
 import Hotel from "../models/hotel.model.js";
+import Amenity from "../models/amenity.model.js";
 import { recordAuditLog } from "../utils/auditLogger.js";
 import fs from "fs";
 import path from "path";
@@ -23,6 +24,30 @@ export const createRoomType = async (req, res) => {
       images = req.files.map(file => file.location); // Assuming multer-s3 provides 'location'
     }
 
+    // Process amenities: if string, parse; then convert names to ObjectIds
+    let amenityNames = amenities;
+    if (typeof amenities === 'string') {
+      try {
+        amenityNames = JSON.parse(amenities);
+      } catch (e) {
+        return res.status(400).json({ message: "Invalid amenities format" });
+      }
+    }
+    if (!Array.isArray(amenityNames)) {
+      return res.status(400).json({ message: "Amenities must be an array" });
+    }
+
+    const amenityIds = [];
+    for (const name of amenityNames) {
+      if (typeof name !== 'string') continue;
+      let amenity = await Amenity.findOne({ name: name.trim() });
+      if (!amenity) {
+        amenity = new Amenity({ name: name.trim(), scope: 'global' });
+        await amenity.save();
+      }
+      amenityIds.push(amenity._id);
+    }
+
     const roomType = new RoomType({
       hotelId,
       name,
@@ -31,7 +56,7 @@ export const createRoomType = async (req, res) => {
       adultsCapacity,
       childrenCapacity,
       totalUnits,
-      amenities,
+      amenities: amenityIds,
       images,
     });
 
@@ -96,13 +121,40 @@ export const updateRoomType = async (req, res) => {
       return res.status(404).json({ message: "Room type not found for this hotel" });
     }
 
+    // Process amenities if provided
+    let amenityIds = roomType.amenities;
+    if (amenities !== undefined) {
+      let amenityNames = amenities;
+      if (typeof amenities === 'string') {
+        try {
+          amenityNames = JSON.parse(amenities);
+        } catch (e) {
+          return res.status(400).json({ message: "Invalid amenities format" });
+        }
+      }
+      if (!Array.isArray(amenityNames)) {
+        return res.status(400).json({ message: "Amenities must be an array" });
+      }
+
+      amenityIds = [];
+      for (const name of amenityNames) {
+        if (typeof name !== 'string') continue;
+        let amenity = await Amenity.findOne({ name: name.trim() });
+        if (!amenity) {
+          amenity = new Amenity({ name: name.trim(), scope: 'global' });
+          await amenity.save();
+        }
+        amenityIds.push(amenity._id);
+      }
+    }
+
     roomType.name = name || roomType.name;
     roomType.description = description || roomType.description;
     roomType.pricePerNight = pricePerNight || roomType.pricePerNight;
     roomType.adultsCapacity = adultsCapacity || roomType.adultsCapacity;
     roomType.childrenCapacity = childrenCapacity || roomType.childrenCapacity;
     roomType.totalUnits = totalUnits || roomType.totalUnits;
-    roomType.amenities = amenities || roomType.amenities;
+    roomType.amenities = amenityIds;
     roomType.images = images || roomType.images;
 
     const updatedRoomType = await roomType.save();
