@@ -1,4 +1,6 @@
 import Booking from "../models/booking.model.js";
+import Refund from "../models/refund.model.js";
+import Payment from "../models/payment.model.js";
 import { recordAuditLog } from "./auditLogger.js";
 
 export const updateBookingStatuses = async () => {
@@ -73,16 +75,62 @@ export const notifyUpcomingBookings = async () => {
   }
 };
 
+// Process pending refunds in the background
+export const processRefunds = async () => {
+  try {
+    const pendingRefunds = await Refund.find({ status: "pending" }).populate("paymentId");
+
+    if (pendingRefunds.length === 0) {
+      return;
+    }
+
+    console.log(`Processing ${pendingRefunds.length} pending refunds.`);
+
+    for (const refund of pendingRefunds) {
+      try {
+        // Simulate payment gateway refund processing
+        // In a real implementation, integrate with Stripe, PayPal, etc.
+        const success = Math.random() > 0.1; // 90% success rate for simulation
+
+        if (success) {
+          refund.status = "completed";
+          // Update payment status if needed
+          if (refund.paymentId) {
+            refund.paymentId.status = "refunded";
+            await refund.paymentId.save();
+          }
+          recordAuditLog(null, "REFUND_COMPLETED", "Refund", refund._id, { amount: refund.amount });
+        } else {
+          refund.status = "failed";
+          recordAuditLog(null, "REFUND_FAILED", "Refund", refund._id, { amount: refund.amount });
+        }
+
+        await refund.save();
+      } catch (error) {
+        console.error(`Error processing refund ${refund._id}:`, error);
+        refund.status = "failed";
+        await refund.save();
+      }
+    }
+
+    console.log("Refund processing completed.");
+  } catch (error) {
+    console.error("Error in refund processing:", error);
+  }
+};
+
 // Function to start the scheduler
 export const startBookingScheduler = (intervalMinutes = 60) => {
   // Run immediately on startup
   updateBookingStatuses();
-  notifyUpcomingBookings(); // Also notify upcoming bookings on startup
+  notifyUpcomingBookings();
+  processRefunds(); // Process refunds on startup
 
   // Then run at specified intervals
   setInterval(() => {
     updateBookingStatuses();
     notifyUpcomingBookings();
+    processRefunds();
   }, intervalMinutes * 60 * 1000);
-  console.log(`Booking status and notification scheduler started, running every ${intervalMinutes} minutes.`);
+  console.log(`Booking status, notification, and refund scheduler started, running every ${intervalMinutes} minutes.`);
 };
