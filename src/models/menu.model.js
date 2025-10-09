@@ -26,18 +26,21 @@ const menuItemSchema = new mongoose.Schema({
     price: { type: Number, required: true },
     category: { type: String },
     tags: [{ type: String }],
-    images: [{ type: String }],
+    images: { type: String },
     availability: { type: Boolean, default: true },
     tags: [{ type: String }],
     status: { type: String, enum: ["active", "inactive"], default: "active" },
-    addOns: [{
-        name: { type: String },
-        price: { type: Number },
-    }],
-    variants: [{
-        name: { type: String },
-        price: { type: Number },
-    }],
+    mealTime: [{ type: String }],
+    discount: { type: Boolean , default: false },
+    discountPrice: { type: Number },
+    addOns: { type: Boolean , default: false },
+    assignedMenu: { type: String },
+    // variants: [{
+    //     name: { type: String },
+    //     price: { type: Number },
+    // }],
+}, {
+    timestamps: true,
 });
 
 const MenuItem = mongoose.model("MenuItem", menuItemSchema);
