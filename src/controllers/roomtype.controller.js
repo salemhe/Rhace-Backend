@@ -14,6 +14,14 @@ export const createRoomType = async (req, res) => {
     const { name, description, pricePerNight, adultsCapacity, childrenCapacity, totalUnits, amenities } = req.body;
     let images = req.body.images; // Default from body, can be overridden by file upload
 
+    if (totalUnits === undefined || totalUnits === null || (typeof totalUnits === 'string' && totalUnits.trim() === '')) {
+      return res.status(400).json({ message: "totalUnits is required" });
+    }
+    const numTotal = Number(totalUnits);
+    if (isNaN(numTotal) || numTotal < 0) {
+      return res.status(400).json({ message: "totalUnits must be a non-negative number" });
+    }
+
     const hotel = await Hotel.findById(hotelId);
     if (!hotel) {
       return res.status(404).json({ message: "Hotel not found" });
@@ -25,16 +33,34 @@ export const createRoomType = async (req, res) => {
     }
 
     // Process amenities: if string, parse; then convert names to ObjectIds
-    let amenityNames = amenities;
-    if (typeof amenities === 'string') {
-      try {
-        amenityNames = JSON.parse(amenities);
-      } catch (e) {
-        return res.status(400).json({ message: "Invalid amenities format" });
+    let amenityNames = [];
+    if (amenities) {
+      if (typeof amenities === 'string') {
+        let str = amenities.trim();
+        if (str.startsWith('[') && str.endsWith(']')) {
+          // Extract quoted strings using regex
+          const regex = /['"]([^'"]+)['"]/g;
+          let matches = [];
+          let match;
+          while ((match = regex.exec(str)) !== null) {
+            matches.push(match[1]);
+          }
+          amenityNames = matches;
+        } else {
+          // Fallback to JSON or comma-separated
+          try {
+            amenityNames = JSON.parse(str);
+          } catch {
+            amenityNames = str.split(',').map(s => s.trim().replace(/['"]/g, ''));
+          }
+        }
+      } else if (Array.isArray(amenities)) {
+        amenityNames = amenities;
       }
     }
+
     if (!Array.isArray(amenityNames)) {
-      return res.status(400).json({ message: "Amenities must be an array" });
+      return res.status(400).json({ message: "Amenities must be an array or a valid string format" });
     }
 
     const amenityIds = [];
@@ -55,7 +81,7 @@ export const createRoomType = async (req, res) => {
       pricePerNight,
       adultsCapacity,
       childrenCapacity,
-      totalUnits,
+      totalUnits: numTotal,
       amenities: amenityIds,
       images,
     });
@@ -124,14 +150,30 @@ export const updateRoomType = async (req, res) => {
     // Process amenities if provided
     let amenityIds = roomType.amenities;
     if (amenities !== undefined) {
-      let amenityNames = amenities;
+      let amenityNames = [];
       if (typeof amenities === 'string') {
-        try {
-          amenityNames = JSON.parse(amenities);
-        } catch (e) {
-          return res.status(400).json({ message: "Invalid amenities format" });
+        let str = amenities.trim();
+        if (str.startsWith('[') && str.endsWith(']')) {
+          // Extract quoted strings using regex
+          const regex = /['"]([^'"]+)['"]/g;
+          let matches = [];
+          let match;
+          while ((match = regex.exec(str)) !== null) {
+            matches.push(match[1]);
+          }
+          amenityNames = matches;
+        } else {
+          // Fallback to JSON
+          try {
+            amenityNames = JSON.parse(str);
+          } catch {
+            return res.status(400).json({ message: "Invalid amenities format" });
+          }
         }
+      } else if (Array.isArray(amenities)) {
+        amenityNames = amenities;
       }
+
       if (!Array.isArray(amenityNames)) {
         return res.status(400).json({ message: "Amenities must be an array" });
       }
@@ -153,7 +195,13 @@ export const updateRoomType = async (req, res) => {
     roomType.pricePerNight = pricePerNight || roomType.pricePerNight;
     roomType.adultsCapacity = adultsCapacity || roomType.adultsCapacity;
     roomType.childrenCapacity = childrenCapacity || roomType.childrenCapacity;
-    roomType.totalUnits = totalUnits || roomType.totalUnits;
+    if (totalUnits !== undefined) {
+      const numTotal = Number(totalUnits);
+      if (isNaN(numTotal) || numTotal < 0) {
+        return res.status(400).json({ message: "totalUnits must be a non-negative number" });
+      }
+      roomType.totalUnits = numTotal;
+    }
     roomType.amenities = amenityIds;
     roomType.images = images || roomType.images;
 
