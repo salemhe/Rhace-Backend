@@ -1,11 +1,7 @@
 import RoomType from "../models/roomtype.model.js";
-<<<<<<< HEAD
 import { HotelVendor } from "../models/vendor.model.js";
 // import Hotel from "../models/hotel.model.js";
-=======
-import Hotel from "../models/hotel.model.js";
 import Amenity from "../models/amenity.model.js";
->>>>>>> 12b32069054696f0a190080f09f000ca6f19af48
 import { recordAuditLog } from "../utils/auditLogger.js";
 import fs from "fs";
 import path from "path";
@@ -19,9 +15,6 @@ export const createRoomType = async (req, res) => {
     const { name, description, pricePerNight, adultsCapacity, childrenCapacity, totalUnits, amenities } = req.body;
     let images = req.body.images; // Default from body, can be overridden by file upload
 
-<<<<<<< HEAD
-    const hotel = await HotelVendor.findById(hotelId);
-=======
     if (totalUnits === undefined || totalUnits === null || (typeof totalUnits === 'string' && totalUnits.trim() === '')) {
       return res.status(400).json({ message: "totalUnits is required" });
     }
@@ -29,9 +22,8 @@ export const createRoomType = async (req, res) => {
     if (isNaN(numTotal) || numTotal < 0) {
       return res.status(400).json({ message: "totalUnits must be a non-negative number" });
     }
-
-    const hotel = await Hotel.findById(hotelId);
->>>>>>> 12b32069054696f0a190080f09f000ca6f19af48
+    
+    const hotel = await HotelVendor.findById(hotelId);
     if (!hotel) {
       return res.status(404).json({ message: "Hotel not found" });
     }

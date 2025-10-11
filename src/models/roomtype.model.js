@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 
 const roomTypeSchema = new mongoose.Schema({
-  hotelId: { type: mongoose.Schema.Types.ObjectId, ref: "Hotel", required: true },
+  hotelId: { type: mongoose.Schema.Types.ObjectId, ref: "Vendor", required: true },
   name: { type: String, required: true, trim: true },
   description: { type: String, trim: true },
   pricePerNight: { type: Number, required: true, min: 0 },
