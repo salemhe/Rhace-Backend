@@ -12,13 +12,15 @@ import {
 } from "../models/vendor.model.js";
 
 export const getVendor = async (req, res) => {
-  const { type } = req.query;
+  const { type, id } = req.query;
 
   try {
+    const vendor = await Vendor.find({ vendorType: type, _id: id });
 
-    if (type === "restaurant") {
-      
-    }
+    return res.json({
+      message: `Fetched ${type} vendor Succesfully!`,
+      data: vendor
+    })
   } catch (err) {
     console.error(err);
     return res.status(500).json({
@@ -26,7 +28,7 @@ export const getVendor = async (req, res) => {
       error: err.message,
     });
   }
-}
+};
 
 export const loginVendor = async (req, res) => {
   const { email, password } = req.body;
@@ -181,19 +183,21 @@ export const onboardVendor = async (req, res) => {
     // Basic updates
     vendor.profileImages = profileImages || vendor.profileImages;
     vendor.address = address || vendor.address;
-    vendor.businessDescription = businessDescription || vendor.businessDescription;
+    vendor.businessDescription =
+      businessDescription || vendor.businessDescription;
     vendor.phone = phone || vendor.phone;
     vendor.website = website || vendor.website;
     vendor.priceRange = priceRange || vendor.priceRange;
     vendor.isOnboarded = true;
-    vendor.paymentDetails = {
-      bankCode,
-      accountNumber,
-      subaccountCode: recipientData.data.subaccount_code,
-      bankName,
-      accountName,
-    } || vendor.paymentDetails;
-    vendor.vendorType = vendorType || vendor.vendorType
+    vendor.paymentDetails =
+      {
+        bankCode,
+        accountNumber,
+        subaccountCode: recipientData.data.subaccount_code,
+        bankName,
+        accountName,
+      } || vendor.paymentDetails;
+    vendor.vendorType = vendorType || vendor.vendorType;
 
     // 🔑 Handle vendorType-specific onboarding
     switch (vendorType) {
@@ -463,7 +467,7 @@ export const forgotVendorPassword = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    const role = "vendor"
+    const role = "vendor";
 
     const resetToken = crypto.randomBytes(20).toString("hex");
 

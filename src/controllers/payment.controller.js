@@ -321,9 +321,9 @@ export const initializePayment = async (req, res) => {
         .json({ message: "Unauthorized: No User ID found" });
     }
 
-    const { amount, email, vendorId, bookingId } = req.body;
+    const { amount, email, vendorId, bookingId, customer_name } = req.body;
 
-    if (!amount || !email || !vendorId || !bookingId) {
+    if (!amount || !email || !vendorId) {
       return res
         .status(400)
         .json({ message: "Amount and email are required." });
@@ -353,7 +353,8 @@ export const initializePayment = async (req, res) => {
       callback_url: `https://rhace-frontend.vercel.app/confirmation`,
       metadata: {
         vendorId,
-        bookingId,
+        // bookingId,
+        customer_name,
         userId: req.user.id
       }
     }

@@ -18,7 +18,7 @@ export const createMenu = async (req, res) => {
 // Get all menus with search, filter, sort, and pagination
 export const getMenus = async (req, res) => {
     try {
-        const userId = req.user._id;
+        const userId = req.user.role ? req.user._id : req.query.userId;
         const { page = 1, limit = 10, search, menuType, id, published, sortBy = "createdAt", sortOrder = "desc" } = req.query;
 
         let query = {};
@@ -43,10 +43,10 @@ export const getMenus = async (req, res) => {
         }
 
         // If the user is a vendor, restrict to their menus
-        if (req.user.role === "vendor") {
+        if (userId) {
             query.vendor = userId;
         }
-
+        
         const totalMenus = await Menu.countDocuments(query);
         const sort = {};
         sort[sortBy] = sortOrder === "asc" ? 1 : -1;
@@ -64,6 +64,7 @@ export const getMenus = async (req, res) => {
         });
     } catch (error) {
         res.status(500).json({ message: error.message });
+        console.error(error)
     }
 };
 
@@ -144,7 +145,7 @@ export const createMenuItem = async (req, res) => {
 export const getMenuItems = async (req, res) => {
     try {
         const { page = 1, limit = 10, search, category, tags, availability, sortBy = "createdAt", sortOrder = "desc" } = req.query;
-        const userId = req.user._id;
+        const userId = req.user.role ? req.user._id : req.query.userId;
 
         let query = {};
 
@@ -168,10 +169,9 @@ export const getMenuItems = async (req, res) => {
         }
 
         // If the user is a vendor, restrict to their menu items
-        if (req.user.role === "vendor") {
+        if (req.user.role) {
             query.vendor = userId;
         }
-        console.log("Query:", query);  
 
         const totalMenuItems = await MenuItem.countDocuments(query);
         const sort = {};
@@ -181,8 +181,6 @@ export const getMenuItems = async (req, res) => {
             .sort(sort)
             .skip((page - 1) * limit)
             .limit(parseInt(limit));
-
-        console.log("Menu Items:", await MenuItem.find());
 
         res.status(200).json({
             total: totalMenuItems,
