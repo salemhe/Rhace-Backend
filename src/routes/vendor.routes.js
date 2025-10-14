@@ -1,10 +1,12 @@
 import express from "express";
 import {protect} from "../middlewares/auth.middleware.js"
-import { forgotVendorPassword, loginVendor, onboardVendor, registerVendor, resendVendorOTP, resetPassword, verifyVendorOTP } from "../controllers/auth.controller.js";
+import { getVendor, forgotVendorPassword, loginVendor, onboardVendor, registerVendor, resendVendorOTP, resetPassword, verifyVendorOTP } from "../controllers/auth.controller.js";
 
 const router = express.Router();
 
 router.post("/auth/register", registerVendor);
+
+router.get("/", getVendor)
 
 // Vendor login route
 router.post("/auth/login", loginVendor);

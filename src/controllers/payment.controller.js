@@ -1,7 +1,7 @@
 import Payment from "../models/payment.model.js";
 import moment from "moment";
 import { Vendor } from "../models/vendor.model.js";
-import { readShort } from "pdfkit/js/data";
+import Booking from "../models/booking.model.js";
 
 const percentChange = (current, previous) => {
   if (previous === 0) return current === 0 ? 0 : 100;
@@ -406,9 +406,6 @@ export const initializePayment = async (req, res) => {
   }
 };
 
-import Transaction from "../models/Transaction.js";
-import Booking from "../models/Booking.js";
-
 export const verifyPayment = async (req, res) => {
   const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
   const userId = req.user?._id;
@@ -477,20 +474,18 @@ export const verifyPayment = async (req, res) => {
         .json({ message: "vendor ID is missing from metadata." });
     }
 
-    const existingTransaction = await Transaction.findOne({ reference });
+    const existingTransaction = await Payment.findOne({ reference });
 
     if (transaction.status === "success" && !existingTransaction) {
 
-      const newTransactionRecord = new Transaction({
-        userId: transaction.metadata.userId,
-        vendorId: transaction.metadata.vendorId,
-        bookingId: transaction.metadata.bookingId,
-        type: "payment",
+      const newTransactionRecord = new Payment({
+        email: transaction.metadata.email,
+        customer_name: transaction.customer.customer_name,
+        vendor: transaction.metadata.vendorId,
+        booking: transaction.metadata.bookingId,
         amount: transaction.amount, 
-        // totalAmount: transaction.metadata.total,
-        // commision: transaction.metadata.total - transaction.metadata.amount,
         reference: reference,
-        status: "success",
+        status: "Paid",
       });
 
       await newTransactionRecord.save();
@@ -506,7 +501,6 @@ export const verifyPayment = async (req, res) => {
       amount: transaction.metadata.amount,
       currency: transaction.currency,
       paid_at: transaction.paid_at,
-      userId: transaction.metadata.userId,
       bookingId: transaction.metadata.bookingId,
       vendorId: transaction.metadata.vendorId,
       cerated_at: transaction.created_at,

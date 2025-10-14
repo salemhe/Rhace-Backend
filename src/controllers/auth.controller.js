@@ -11,6 +11,23 @@ import {
   ClubVendor,
 } from "../models/vendor.model.js";
 
+export const getVendor = async (req, res) => {
+  const { type } = req.query;
+
+  try {
+
+    if (type === "restaurant") {
+      
+    }
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({
+      message: "Error fetching vendor.",
+      error: err.message,
+    });
+  }
+}
+
 export const loginVendor = async (req, res) => {
   const { email, password } = req.body;
   const vendor = await Vendor.findOne({ email });
