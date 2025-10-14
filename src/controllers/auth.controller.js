@@ -357,7 +357,7 @@ export const forgotPassword = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    const role = vendor ? "vendor" : "user";
+    const role = "user";
 
     const resetToken = crypto.randomBytes(20).toString("hex");
 
@@ -446,7 +446,7 @@ export const forgotVendorPassword = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    const role = vendor ? "vendor" : "user";
+    const role = "vendor"
 
     const resetToken = crypto.randomBytes(20).toString("hex");
 
