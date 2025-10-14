@@ -1,6 +1,7 @@
 import Payment from "../models/payment.model.js";
 import moment from "moment";
 import { Vendor } from "../models/vendor.model.js";
+import { readShort } from "pdfkit/js/data";
 
 const percentChange = (current, previous) => {
   if (previous === 0) return current === 0 ? 0 : 100;
@@ -308,5 +309,221 @@ export const getPaymentInfo = async (req, res) => {
   } catch (error) {
     console.error("Error fetching payment info:", error);
     return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+export const initializePayment = async (req, res) => {
+  const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
+  try {
+    if (!req.user || !req.user._id) {
+      return res
+        .status(403)
+        .json({ message: "Unauthorized: No User ID found" });
+    }
+
+    const { amount, email, vendorId, bookingId } = req.body;
+
+    if (!amount || !email || !vendorId || !bookingId) {
+      return res
+        .status(400)
+        .json({ message: "Amount and email are required." });
+    }
+
+    if (!PAYSTACK_SECRET_KEY) {
+      return res
+        .status(500)
+        .json({ message: "Paystack secret key not configured." });
+    }
+
+    // const paymentData = {
+    //   amount: amount * 100, // Paystack expects the amount in kobo
+    //   email: email,
+    //   currency: "NGN",
+    // };
+    const vendor = await Vendor.findById(vendorId);
+    if (!vendor || !vendor.paymentDetails || !vendor.paymentDetails.subaccountCode) {
+      return res.status(404).json({ message: "Vendor not found." });
+    }
+
+    const paymentData = {
+      email: email,
+      amount: amount * 100,
+      currency: "NGN",
+      subaccount: vendor.paymentDetails.subaccountCode, // vendor's subaccount
+      callback_url: `https://rhace-frontend.vercel.app/confirmation`,
+      metadata: {
+        vendorId,
+        bookingId,
+        userId: req.user.id
+      }
+    }
+    
+
+    const createPaymentOnPaystack = async (data) => {
+      const response = await fetch(
+        "https://api.paystack.co/transaction/initialize",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(data),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Error: ${response.statusText}`);
+      }
+
+      const responseData = await response.json();
+      return responseData;
+    };
+
+    const paystackResponse = await createPaymentOnPaystack(paymentData);
+
+    if (paystackResponse.status === false) {
+      return res.status(500).json({ message: paystackResponse.message });
+    }
+
+    res
+      .status(200)
+      .json({
+        messaage: "success",
+        data: {
+          authorization_url: paystackResponse.data.authorization_url,
+          access_code: paystackResponse.data.access_code,
+          ref: paystackResponse.data.reference,
+        },
+      });
+  } catch (error) {
+    console.error("Error Initializing Payment:", error);
+
+    res.status(500).json({
+      message: "Error Verifying Payment",
+      error: error.message || "Unknown server error",
+    });
+  }
+};
+
+import Transaction from "../models/Transaction.js";
+import Booking from "../models/Booking.js";
+
+export const verifyPayment = async (req, res) => {
+  const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
+  const userId = req.user?._id;
+  try {
+    if (!req.user || !req.user._id) {
+      return res
+        .status(403)
+        .json({ message: "Unauthorized: No User ID found" });
+    }
+
+    const { reference } = req.body;
+
+    if (!reference) {
+      return res.status(400).json({ message: "Reference is required." });
+    }
+
+    if (!PAYSTACK_SECRET_KEY) {
+      return res
+        .status(500)
+        .json({ message: "Paystack secret key not configured." });
+    }
+
+    const verifyPaymentOnPaystack = async (reference) => {
+      const response = await fetch(
+        `https://api.paystack.co/transaction/verify/${reference}`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Error: ${response.statusText}`);
+      }
+
+      const responseData = await response.json();
+      return responseData;
+    };
+
+    const paystackResponse = await verifyPaymentOnPaystack(reference);
+
+    if (paystackResponse.status === false) {
+      return res.status(500).json({ message: paystackResponse.message });
+    }
+
+    // res.status(200).json({message: "Succesful", data: paystackResponse.data});
+
+    const transaction = paystackResponse.data;
+    if (transaction.status !== "success") {
+      return res.status(400).json({ message: "Payment not successful." });
+    }
+
+    if (userId !== transaction.metadata.userId) {
+      return res
+        .status(400)
+        .json({ message: "Unauthorized: User Id is missing from metadata" });
+    }
+
+    const vendorId = transaction.metadata?.vendorId;
+    if (!vendorId) {
+      return res
+        .status(400)
+        .json({ message: "vendor ID is missing from metadata." });
+    }
+
+    const existingTransaction = await Transaction.findOne({ reference });
+
+    if (transaction.status === "success" && !existingTransaction) {
+
+      const newTransactionRecord = new Transaction({
+        userId: transaction.metadata.userId,
+        vendorId: transaction.metadata.vendorId,
+        bookingId: transaction.metadata.bookingId,
+        type: "payment",
+        amount: transaction.amount, 
+        // totalAmount: transaction.metadata.total,
+        // commision: transaction.metadata.total - transaction.metadata.amount,
+        reference: reference,
+        status: "success",
+      });
+
+      await newTransactionRecord.save();
+    }
+
+    const booking = await Booking.findById(transaction.metadata.bookingId)
+
+    // Log or save split details if needed
+    return res.status(200).json({
+      message: "Transaction verified",
+      status: transaction.status,
+      transactionId: transaction.id,
+      amount: transaction.metadata.amount,
+      currency: transaction.currency,
+      paid_at: transaction.paid_at,
+      userId: transaction.metadata.userId,
+      bookingId: transaction.metadata.bookingId,
+      vendorId: transaction.metadata.vendorId,
+      cerated_at: transaction.created_at,
+      channel: transaction.channel,
+      customer: {
+        id: transaction.customer.id,
+        email: transaction.customer.email,
+        customer_code: transaction.customer.customer_code,
+      },
+      booking
+    });
+  } catch (error) {
+    console.error("Error Verifying Payment:", error);
+
+    res.status(500).json({
+      message: "Error Verifying Payment",
+      error: error.message || "Unknown server error",
+    });
   }
 };

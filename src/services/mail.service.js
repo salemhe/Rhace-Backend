@@ -29,7 +29,7 @@ export const sendEmail = async (to, subject, htmlContent) => {
 };
 
 export const sendPasswordResetEmail = async (to, token, role) => {
-  const resetUrl = `http://localhost:3000/auth/${role}/reset-password?token=${token}`;
+  const resetUrl = `https://rhace-frontend.vercel.app/auth/${role}/reset-password?token=${token}`;
 
   const htmlContent = `
     <p>You are receiving this email because you (or someone else) have requested the reset of the password for your account.</p>
