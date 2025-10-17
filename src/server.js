@@ -3,7 +3,7 @@ import http from "http";
 import { Server } from "socket.io";
 import app from "./app.js";
 import connectDB from "./config/db.js";
-import { startBookingScheduler } from "./utils/bookingScheduler.js";
+import { startAllSchedulers } from "./jobs/index.js";
 
 dotenv.config();
 
@@ -31,5 +31,5 @@ global.io = io;
 
 server.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
-  startBookingScheduler(); // Start the booking scheduler
+  startAllSchedulers(); // Start all scheduled jobs
 });
