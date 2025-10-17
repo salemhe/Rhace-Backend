@@ -22,15 +22,6 @@ const PaymentSchema = new mongoose.Schema({
         type: Number,
         required: true,
     },
-    reference: {
-        type: String,
-        required: true,
-    },
-    booking: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "Booking",
-        required: true,
-    },
     status: {
         type: String,
         enum: ["Pending", "Paid", "Part-paid", "Failed"],
