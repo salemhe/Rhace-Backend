@@ -14,6 +14,14 @@ import bottleSetRoutes from "./routes/bottleSet.routes.js";
 import clubRoutes from "./routes/club.routes.js";
 import reviewRoutes from "./routes/review.routes.js";
 import accountSettingsRoutes from "./routes/accountsettings.routes.js";
+import userRoutes from "./routes/user.routes.js";
+import vendorRoutes from "./routes/vendor.routes.js";
+import reservationRoutes from "./routes/reservation.routes.js";
+import paymentRoutes from "./routes/payment.routes.js";
+import settingRoutes from "./routes/setting.routes.js";
+import notificationRoutes from "./routes/notification.routes.js";
+import payoutRoutes from "./routes/payout.routes.js";
+import reportRoutes from "./routes/report.routes.js";
 
 const app = express();
 
@@ -39,7 +47,12 @@ app.use("/api/bottle-sets", bottleSetRoutes);
 
 app.use("/api/users", userRoutes);
 app.use("/api/vendors", vendorRoutes);
-app.use("/api/payments", paymentRoutes)
+app.use("/api/reservations", reservationRoutes);
+app.use("/api/payments", paymentRoutes);
+app.use("/api/settings", settingRoutes);
+app.use("/api/notifications", notificationRoutes);
+app.use("/api/payouts", payoutRoutes);
+app.use("/api/reports", reportRoutes);
 
 // 404 Error Handler
 app.use((req, res, next) => {
