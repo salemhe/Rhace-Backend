@@ -2,7 +2,7 @@ import Booking from "../models/booking.model.js";
 import PaymentTransaction from "../models/paymenttransaction.model.js";
 import Hotel from "../models/hotel.model.js";
 import RoomType from "../models/roomtype.model.js";
-import Vendor from "../models/vendor.model.js";
+import { Vendor } from "../models/vendor.model.js";
 
 // Emit real-time updates
 const emitDashboardUpdate = (userId, data) => {
