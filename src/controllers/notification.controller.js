@@ -1,6 +1,6 @@
 import Notification from "../models/notification.model.js";
 import User from "../models/user.model.js";
-import Vendor from "../models/vendor.model.js";
+import { Vendor } from "../models/vendor.model.js";
 import { sendEmail } from "../services/mail.service.js";
 import { sendSMS } from "../services/sms.service.js";
 import { sendWhatsApp } from "../services/whatsapp.service.js";

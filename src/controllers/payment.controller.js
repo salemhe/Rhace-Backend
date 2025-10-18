@@ -344,8 +344,8 @@ export const initializePayment = async (req, res) => {
       email: email,
       amount: amount * 100,
       currency: "NGN",
-      subaccount: vendor.paymentDetails.subaccountCode, // vendor's subaccount
-      callback_url: `https://rhace-frontend.vercel.app/${type}s/confirmation/${bookingId}`,
+      subaccount: vendor.paymentDetails.subaccountCode,
+      callback_url: `http://localhost:5000/${type}s/confirmation/${bookingId}`,
       metadata: {
         vendorId,
         bookingId,
