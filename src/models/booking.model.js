@@ -1,36 +1,63 @@
-import mongoose from "mongoose";
+import mongoose, { Schema } from "mongoose";
 
-const bookingSchema = new mongoose.Schema({
-  bookingCode: { type: String, required: true, unique: true },
-  hotel: { type: mongoose.Schema.Types.ObjectId, ref: "Hotel", required: true },
-  roomType: { type: mongoose.Schema.Types.ObjectId, ref: "RoomType", required: true },
-  guest: { type: mongoose.Schema.Types.ObjectId, ref: "Guest", required: true },
-  checkInDate: { type: Date, required: true },
-  checkOutDate: { type: Date, required: true },
-  guestsCount: {
-      adults: { type: Number, required: true },
-      children: { type: Number, default: 0 }
-  },
-  status: {
-    type: String,
-    enum: ["upcoming", "completed", "canceled", "no-show"],
-    default: "upcoming",
-  },
-  totalAmount: { type: Number, required: true },
-  currency: { type: String, required: true, default: "USD" },
-  paymentStatus: {
-    type: String,
-    enum: ["unpaid", "partly-paid", "fully-paid", "refunded"],
-    default: "unpaid",
-  },
-  mealSelections: [{
-    menuItem: { type: mongoose.Schema.Types.ObjectId, ref: "Menu" },
-    quantity: { type: Number, default: 1 },
-  }],
-  source: { type: String, default: "direct" }, // e.g., "direct", "website", "phone", "app"
-  notes: { type: String },
-}, { timestamps: true });
+// Discriminator options
+const options = {
+  discriminatorKey: "reservationType",
+  collection: "reservations",
+  timestamps: true,
+};
 
+// Define base schema
+const bookingSchema = new Schema(
+  {
+    customerName: { type: String },
+    customerId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    customerEmail: { type: String },
+    vendor: { type: mongoose.Schema.Types.ObjectId, ref: "Vendor" },
+    paymentStatus: { type: String },
+    reservationStatus: { type: String },  // ✅ Fixed typo here: "typr" → "type"
+    reservationType: { type: String },
+    image: { type: String },
+    location: { type: String },
+    totalAmount: { type: Number },
+  },
+  options
+);
+
+// ✅ Use model caching to prevent OverwriteModelError
 const Booking = mongoose.model("Booking", bookingSchema);
 
-export default Booking;
+// ✅ Also use caching for the discriminator
+const restaurantReservation =
+  // mongoose.models.restaurant ||
+  Booking.discriminator(
+    "restaurantReservation",
+    new mongoose.Schema({
+      date: { type: Date },
+      time: { type: String },
+      guests: { type: Number },
+      mealPreselected: { type: Boolean },
+      menus: [
+        {
+          menu: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "MenuItem",
+            required: true,
+          },
+          quantity: {
+            type: Number,
+            required: true,
+            min: 1,
+          },
+          specialRequest: {
+            type: String,
+          },
+        },
+      ],
+      specialOccasion: { type: String },
+      seatingPreference: { type: String },
+      specialRequest: { type: String },
+    })
+  );
+
+export { Booking, restaurantReservation };
