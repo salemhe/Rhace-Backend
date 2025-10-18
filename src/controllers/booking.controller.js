@@ -1,0 +1,116 @@
+import { Booking, restaurantReservation } from "../models/booking.model.js";
+
+export const createReservation = async (req, res) => {
+  try {
+    const {
+      vendor,
+      customerName,
+      customerId,
+      customerEmail,
+      reservationType,
+      location,
+      totalAmount,
+      image,
+      date,
+      time,
+      guests,
+      mealPreselected,
+      menus,
+      specialOccasion,
+      seatingPreference,
+      specialRequest,
+    } = req.body;
+
+    if (!vendor || !reservationType || !location || !totalAmount) {
+      return res.status(400).json({ message: "Fill required fields" });
+    }
+
+    const initialData = {
+      customerName,
+      customerId,
+      customerEmail,
+      vendor,
+      reservationType: reservationType + "Reservation",
+      reservationStatus: "Upcoming",
+      location,
+      totalAmount,
+      paymentStatus: "Not Paid",
+    };
+
+    let reservationData = {};
+
+    if (reservationType === "restaurant") {
+      if (!image || !date || !time || !guests || !mealPreselected || !menus) {
+        return res
+          .status(400)
+          .json({ message: "Fill restaurants required fields" });
+      }
+
+      const restaurant = await restaurantReservation.create({
+        ...initialData,
+        date,
+        time,
+        guests,
+        mealPreselected,
+        menus,
+        specialOccasion,
+        seatingPreference,
+        specialRequest,
+      });
+
+      reservationData = restaurant;
+    }
+
+    return res.status(201).json({
+      message: "Created Reservation succesfully",
+      data: reservationData,
+    });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({
+      message: error.message,
+    });
+  }
+};
+
+export const getReservations = async (req, res) => {
+  const { vendorId, userId, bookingId } = req.query;
+  try {
+    const query = {};
+    if (!vendorId && !userId && !bookingId) {
+      return res.status(401).json({
+        message: "Not Authorized",
+      });
+    }
+
+    if (bookingId) {
+      query._id = bookingId;
+    }
+
+    if (vendorId) {
+      query.vendor = vendorId;
+    }
+
+    if (userId) {
+      query.customerId = userId;
+    }
+
+    const reservations = await Booking.find(query)
+      .populate({
+        path: "menus.menu",
+      })
+      .populate({
+        path: "vendor",
+      });
+
+    return res.status(200).json({
+      message: "Fetched Reservations Succesfully",
+      data: reservations,
+    });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({
+      message: error.message,
+    });
+  }
+};

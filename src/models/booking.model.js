@@ -1,0 +1,63 @@
+import mongoose, { Schema } from "mongoose";
+
+// Discriminator options
+const options = {
+  discriminatorKey: "reservationType",
+  collection: "reservations",
+  timestamps: true,
+};
+
+// Define base schema
+const bookingSchema = new Schema(
+  {
+    customerName: { type: String },
+    customerId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    customerEmail: { type: String },
+    vendor: { type: mongoose.Schema.Types.ObjectId, ref: "Vendor" },
+    paymentStatus: { type: String },
+    reservationStatus: { type: String },  // ✅ Fixed typo here: "typr" → "type"
+    reservationType: { type: String },
+    image: { type: String },
+    location: { type: String },
+    totalAmount: { type: Number },
+  },
+  options
+);
+
+// ✅ Use model caching to prevent OverwriteModelError
+const Booking = mongoose.model("Booking", bookingSchema);
+
+// ✅ Also use caching for the discriminator
+const restaurantReservation =
+  // mongoose.models.restaurant ||
+  Booking.discriminator(
+    "restaurantReservation",
+    new mongoose.Schema({
+      date: { type: Date },
+      time: { type: String },
+      guests: { type: Number },
+      mealPreselected: { type: Boolean },
+      menus: [
+        {
+          menu: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "MenuItem",
+            required: true,
+          },
+          quantity: {
+            type: Number,
+            required: true,
+            min: 1,
+          },
+          specialRequest: {
+            type: String,
+          },
+        },
+      ],
+      specialOccasion: { type: String },
+      seatingPreference: { type: String },
+      specialRequest: { type: String },
+    })
+  );
+
+export { Booking, restaurantReservation };
