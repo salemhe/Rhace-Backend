@@ -118,19 +118,3 @@ export const processRefunds = async () => {
     console.error("Error in refund processing:", error);
   }
 };
-
-// Function to start the scheduler
-export const startBookingScheduler = (intervalMinutes = 60) => {
-  // Run immediately on startup
-  updateBookingStatuses();
-  notifyUpcomingBookings();
-  processRefunds(); // Process refunds on startup
-
-  // Then run at specified intervals
-  setInterval(() => {
-    updateBookingStatuses();
-    notifyUpcomingBookings();
-    processRefunds();
-  }, intervalMinutes * 60 * 1000);
-  console.log(`Booking status, notification, and refund scheduler started, running every ${intervalMinutes} minutes.`);
-};

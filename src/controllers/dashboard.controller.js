@@ -1,7 +1,14 @@
-import { Booking } from "../models/booking.model.js";
+import Booking from "../models/booking.model.js";
 import PaymentTransaction from "../models/paymenttransaction.model.js";
 import Hotel from "../models/hotel.model.js";
 import RoomType from "../models/roomtype.model.js";
+
+// Emit real-time updates
+const emitDashboardUpdate = (userId, data) => {
+  if (global.io) {
+    global.io.to(`dashboard_${userId}`).emit('dashboard_update', data);
+  }
+};
 
 // @desc    Get dashboard KPIs
 // @route   GET /api/dashboard/kpis
@@ -92,7 +99,7 @@ export const getKPIs = async (req, res) => {
     const bookingsDelta = totalBookingsLastWeek - totalBookingsTwoWeeksAgo;
     const revenueDelta = revenueLastWeek - revenueTwoWeeksAgo;
 
-    res.status(200).json({
+    const kpiData = {
       totalBookings,
       reservationsToday,
       confirmedBookings,
@@ -101,7 +108,12 @@ export const getKPIs = async (req, res) => {
       occupancyRate: Math.min(occupancyRate, 100), // Cap at 100%
       bookingsDelta,
       revenueDelta,
-    });
+    };
+
+    // Emit real-time update
+    emitDashboardUpdate(userId, { type: 'kpis', data: kpiData });
+
+    res.status(200).json(kpiData);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

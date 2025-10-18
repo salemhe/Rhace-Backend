@@ -1,26 +1,29 @@
-
 import express from "express";
-import {
-  createReservation,
-  getReservations,
-  getReservationById,
-  updateReservation,
-  deleteReservation,
-} from "../controllers/reservation.controller.js";
 import { protect } from "../middlewares/auth.middleware.js";
 import { authorize } from "../middlewares/permission.middleware.js";
+import {
+  getReservations,
+  getReservationById,
+  updateReservationStatus,
+  addMealSelection,
+  waiveNoShowPenalty,
+  getReservationCounters,
+  exportReservations,
+} from "../controllers/reservation.controller.js";
 
 const router = express.Router();
 
 router.use(protect);
 
-router.route("/")
-  .post(authorize(["admin", "staff"]), createReservation)
-  .get(authorize(["admin", "manager", "staff"]), getReservations);
+router.get("/", authorize(["superadmin", "finance", "ops", "support"]), getReservations);
+router.get("/counters", authorize(["superadmin", "finance", "ops", "support"]), getReservationCounters);
+router.get("/export", authorize(["superadmin", "finance", "ops", "support"]), exportReservations);
 
 router.route("/:id")
-  .get(authorize(["admin", "manager", "staff"]), getReservationById)
-  .put(authorize(["admin", "staff"]), updateReservation)
-  .delete(authorize(["admin"]), deleteReservation);
+  .get(authorize(["superadmin", "finance", "ops", "support"]), getReservationById);
+
+router.patch("/:id/status", authorize(["superadmin", "finance", "ops"]), updateReservationStatus);
+router.post("/:id/meals", authorize(["superadmin", "finance", "ops", "vendor"]), addMealSelection);
+router.patch("/:id/penalty/waive", authorize(["superadmin"]), waiveNoShowPenalty);
 
 export default router;
