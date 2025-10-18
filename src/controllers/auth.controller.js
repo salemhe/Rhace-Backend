@@ -15,7 +15,14 @@ export const getVendor = async (req, res) => {
   const { type, id } = req.query;
 
   try {
-    const vendor = await Vendor.find({ vendorType: type, _id: id });
+    const query = {};
+    if (id) {
+      query._id = id
+    }
+    if (type) {
+      query.vendorType = type
+    }
+    const vendor = await Vendor.find(query);
 
     return res.json({
       message: `Fetched ${type} vendor Succesfully!`,

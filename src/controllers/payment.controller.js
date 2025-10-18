@@ -1,14 +1,14 @@
 import Payment from "../models/payment.model.js";
 import moment from "moment";
 import { Vendor } from "../models/vendor.model.js";
-import Booking from "../models/booking.model.js";
+import { Booking } from "../models/booking.model.js";
 
 const percentChange = (current, previous) => {
   if (previous === 0) return current === 0 ? 0 : 100;
   return ((current - previous) / previous) * 100;
 };
 
-export const geBanks = async (req, res) => {
+export const getBanks = async (req, res) => {
   try {
     const response = await fetch("https://api.paystack.co/bank", {
       headers: {
@@ -321,9 +321,9 @@ export const initializePayment = async (req, res) => {
         .json({ message: "Unauthorized: No User ID found" });
     }
 
-    const { amount, email, vendorId, bookingId, customer_name } = req.body;
+    const { amount, email, vendorId, bookingId, type, customerName } = req.body;
 
-    if (!amount || !email || !vendorId) {
+    if (!amount || !email || !vendorId || !type) {
       return res
         .status(400)
         .json({ message: "Amount and email are required." });
@@ -335,11 +335,6 @@ export const initializePayment = async (req, res) => {
         .json({ message: "Paystack secret key not configured." });
     }
 
-    // const paymentData = {
-    //   amount: amount * 100, // Paystack expects the amount in kobo
-    //   email: email,
-    //   currency: "NGN",
-    // };
     const vendor = await Vendor.findById(vendorId);
     if (!vendor || !vendor.paymentDetails || !vendor.paymentDetails.subaccountCode) {
       return res.status(404).json({ message: "Vendor not found." });
@@ -350,12 +345,12 @@ export const initializePayment = async (req, res) => {
       amount: amount * 100,
       currency: "NGN",
       subaccount: vendor.paymentDetails.subaccountCode, // vendor's subaccount
-      callback_url: `https://rhace-frontend.vercel.app/confirmation`,
+      callback_url: `https://rhace-frontend.vercel.app/${type}s/confirmation/${bookingId}`,
       metadata: {
         vendorId,
-        // bookingId,
-        customer_name,
-        userId: req.user.id
+        bookingId,
+        customerName,
+        userId: req.user._id
       }
     }
     
@@ -462,7 +457,7 @@ export const verifyPayment = async (req, res) => {
       return res.status(400).json({ message: "Payment not successful." });
     }
 
-    if (userId !== transaction.metadata.userId) {
+    if (String(userId) !== transaction.metadata.userId) {
       return res
         .status(400)
         .json({ message: "Unauthorized: User Id is missing from metadata" });
@@ -481,20 +476,28 @@ export const verifyPayment = async (req, res) => {
 
       const newTransactionRecord = new Payment({
         email: transaction.metadata.email,
-        customer_name: transaction.customer.customer_name,
+        customer_name: transaction.metadata.customerName,
+        paid_at: transaction.paid_at,
         vendor: transaction.metadata.vendorId,
         booking: transaction.metadata.bookingId,
-        amount: transaction.amount, 
+        paymentMethod: transaction.channel,
+        amount: transaction.amount * 0.0092,
         reference: reference,
         status: "Paid",
       });
+
+      const updatedVendor = await Vendor.findById(transaction.metadata.vendorId)
+      updatedVendor.balance = updatedVendor.balance + (transaction.amount * 0.0092)
+      await updatedVendor.save();
+      
 
       await newTransactionRecord.save();
     }
 
     const booking = await Booking.findById(transaction.metadata.bookingId)
+    booking.paymentStatus = transaction.status;
+    await booking.save()
 
-    // Log or save split details if needed
     return res.status(200).json({
       message: "Transaction verified",
       status: transaction.status,
@@ -504,7 +507,7 @@ export const verifyPayment = async (req, res) => {
       paid_at: transaction.paid_at,
       bookingId: transaction.metadata.bookingId,
       vendorId: transaction.metadata.vendorId,
-      cerated_at: transaction.created_at,
+      created_at: transaction.created_at,
       channel: transaction.channel,
       customer: {
         id: transaction.customer.id,

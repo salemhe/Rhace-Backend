@@ -11,11 +11,13 @@ const PaymentSchema = new mongoose.Schema({
         type: String,
         required: true,
     },
+    paid_at: {
+        type: String
+    },
     email: {
         type: String,},
     paymentMethod: {
         type: String,
-        enum: ["Card", "Bank Transfer", "Mobile Money"],
         required: true,
     },
     amount: {
