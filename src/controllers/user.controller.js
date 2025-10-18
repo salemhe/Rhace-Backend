@@ -49,13 +49,14 @@ export const getUsers = async (req, res) => {
       page: parseInt(page, 10),
       limit: parseInt(limit, 10),
       sort,
-      populate: { path: "branch", select: "name" },
     };
 
     const users = await User.paginate(query, options);
 
     // Update lastActive
-    await User.findByIdAndUpdate(req.user._id, { lastActive: new Date() });
+    if (req.user && req.user._id) {
+      await User.findByIdAndUpdate(req.user._id, { lastActive: new Date() });
+    }
 
     res.status(200).json(users);
   } catch (error) {
@@ -68,7 +69,7 @@ export const getUsers = async (req, res) => {
 // @access  Private (Admin, Manager)
 export const getUserById = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).populate("branch", "name");
+    const user = await User.findById(req.params.id);
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
@@ -83,7 +84,7 @@ export const getUserById = async (req, res) => {
 // @access  Private (Admin)
 export const createUser = async (req, res) => {
   try {
-    const { firstName, lastName, email, password, phone, role, branch, isVIP } = req.body;
+    const { firstName, lastName, email, password, phone, role, isVIP } = req.body;
 
     const userExists = await User.findOne({ email });
     if (userExists) {
@@ -97,15 +98,16 @@ export const createUser = async (req, res) => {
       password,
       phone,
       role: role || "guest",
-      branch,
       isVIP: isVIP || false,
     });
 
     const createdUser = await user.save();
 
-    await recordAuditLog(req.user._id, "CREATE_USER", "User", createdUser._id, {
-      createdBy: req.user._id,
-    });
+    if (req.user && req.user._id) {
+      await recordAuditLog(req.user._id, "CREATE_USER", "User", createdUser._id, {
+        createdBy: req.user._id,
+      });
+    }
 
     res.status(201).json(createdUser);
   } catch (error) {
@@ -123,23 +125,24 @@ export const updateUser = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    const { firstName, lastName, email, phone, role, branch, isVIP, status } = req.body;
+    const { firstName, lastName, email, phone, role, isVIP, status } = req.body;
 
     user.firstName = firstName || user.firstName;
     user.lastName = lastName || user.lastName;
     user.email = email || user.email;
     user.phone = phone || user.phone;
     user.role = role || user.role;
-    user.branch = branch || user.branch;
     user.isVIP = isVIP !== undefined ? isVIP : user.isVIP;
     user.status = status || user.status;
 
     const updatedUser = await user.save();
 
-    await recordAuditLog(req.user._id, "UPDATE_USER", "User", user._id, {
-      updatedBy: req.user._id,
-      changes: req.body,
-    });
+    if (req.user && req.user._id) {
+      await recordAuditLog(req.user._id, "UPDATE_USER", "User", user._id, {
+        updatedBy: req.user._id,
+        changes: req.body,
+      });
+    }
 
     res.status(200).json(updatedUser);
   } catch (error) {
@@ -159,9 +162,11 @@ export const deleteUser = async (req, res) => {
 
     await User.findByIdAndDelete(req.params.id);
 
-    await recordAuditLog(req.user._id, "DELETE_USER", "User", req.params.id, {
-      deletedBy: req.user._id,
-    });
+    if (req.user && req.user._id) {
+      await recordAuditLog(req.user._id, "DELETE_USER", "User", req.params.id, {
+        deletedBy: req.user._id,
+      });
+    }
 
     res.status(200).json({ message: "User removed" });
   } catch (error) {
@@ -184,10 +189,12 @@ export const toggleUserStatus = async (req, res) => {
     user.status = status;
     await user.save();
 
-    await recordAuditLog(req.user._id, "CHANGE_USER_STATUS", "User", user._id, {
-      changedBy: req.user._id,
-      newStatus: status,
-    });
+    if (req.user && req.user._id) {
+      await recordAuditLog(req.user._id, "CHANGE_USER_STATUS", "User", user._id, {
+        changedBy: req.user._id,
+        newStatus: status,
+      });
+    }
 
     res.status(200).json(user);
   } catch (error) {
@@ -212,9 +219,11 @@ export const resetUserPassword = async (req, res) => {
 
     await sendPasswordResetEmail(user.email, resetToken, "user");
 
-    await recordAuditLog(req.user._id, "RESET_USER_PASSWORD", "User", user._id, {
-      resetBy: req.user._id,
-    });
+    if (req.user && req.user._id) {
+      await recordAuditLog(req.user._id, "RESET_USER_PASSWORD", "User", user._id, {
+        resetBy: req.user._id,
+      });
+    }
 
     res.status(200).json({ message: "Password reset email sent" });
   } catch (error) {
@@ -237,10 +246,12 @@ export const toggleVIPStatus = async (req, res) => {
     user.isVIP = isVIP;
     await user.save();
 
-    await recordAuditLog(req.user._id, "CHANGE_VIP_STATUS", "User", user._id, {
-      changedBy: req.user._id,
-      newVIPStatus: isVIP,
-    });
+    if (req.user && req.user._id) {
+      await recordAuditLog(req.user._id, "CHANGE_VIP_STATUS", "User", user._id, {
+        changedBy: req.user._id,
+        newVIPStatus: isVIP,
+      });
+    }
 
     res.status(200).json(user);
   } catch (error) {
@@ -253,7 +264,7 @@ export const toggleVIPStatus = async (req, res) => {
 // @access  Private (Admin, Manager)
 export const exportUsers = async (req, res) => {
   try {
-    const users = await User.find().populate("branch", "name").select("-password");
+    const users = await User.find().select("-password");
 
     const dataToExport = users.map((user) => ({
       firstName: user.firstName,
@@ -263,7 +274,6 @@ export const exportUsers = async (req, res) => {
       role: user.role,
       status: user.status,
       isVIP: user.isVIP,
-      branch: user.branch ? user.branch.name : "",
       lastActive: user.lastActive,
       createdAt: user.createdAt,
     }));

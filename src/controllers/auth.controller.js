@@ -39,36 +39,46 @@ export const getVendor = async (req, res) => {
 
 export const loginVendor = async (req, res) => {
   const { email, password } = req.body;
-  const vendor = await Vendor.findOne({ email });
 
   try {
-    if (!vendor) return res.status(404).json({ message: "Vendor not found" });
+    // First, try to find a vendor
+    let user = await Vendor.findOne({ email });
+    let isVendor = true;
 
-    const isMatch = await bcrypt.compare(password, vendor.password);
+    if (!user) {
+      // If not a vendor, check if it's an admin user
+      user = await User.findOne({ email });
+      isVendor = false;
+      if (!user || !["admin", "superadmin", "finance", "ops", "support", "manager"].includes(user.role)) {
+        return res.status(404).json({ message: "User not found" });
+      }
+    }
+
+    const isMatch = await user.comparePassword(password);
     if (!isMatch) {
       return res.status(400).json({ message: "Invalid email or password." });
     }
 
-    if (!vendor.isVerified) {
+    if (!user.isVerified) {
       return res.status(401).json({
         message: "Please verify your email with the OTP sent to your inbox.",
       });
     }
 
     const token = generateToken(
-      vendor._id,
-      vendor.role,
-      vendor.isOnboarded,
-      vendor.vendorType
+      user._id,
+      user.role,
+      user.isOnboarded,
+      isVendor ? user.vendorType : null
     );
 
     return res
       .status(200)
-      .json({ message: "Login successful.", vendor, token });
+      .json({ message: "Login successful.", [isVendor ? "vendor" : "user"]: user, token });
   } catch (err) {
     console.error(err);
     return res.status(500).json({
-      message: "Error adding vendor.",
+      message: "Error logging in.",
       error: err.message,
     });
   }
@@ -253,7 +263,7 @@ export const onboardVendor = async (req, res) => {
 };
 
 export const register = async (req, res) => {
-  const { firstName, lastName, email, password, phone } = req.body; // Added vendorType
+  const { firstName, lastName, email, password, phone, role } = req.body; // Added role
 
   try {
     const userExists = await User.findOne({ email });
@@ -262,12 +272,18 @@ export const register = async (req, res) => {
       return res.status(400).json({ message: "User already exists" });
     }
 
+    // Prevent admin signup
+    if (role && ["admin", "superadmin", "finance", "ops", "support", "manager"].includes(role)) {
+      return res.status(400).json({ message: "Admin signup not allowed" });
+    }
+
     const user = await User.create({
       firstName,
       lastName,
       email,
       password,
       phone,
+      role: role || "user",
       isVerified: false,
     });
 
