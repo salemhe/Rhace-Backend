@@ -13,8 +13,9 @@ export const protect = async (req, res, next) => {
       // Get token from header
       token = req.headers.authorization.split(" ")[1];
 
-      // Verify token
+            // Verify token
       const decoded = verifyToken(token);
+      console.log("Decoded token:", { id: decoded.id, role: decoded.role, isOnboarded: decoded.isOnboarded });
 
       if (decoded.role === "vendor") {
         req.user = await Vendor.findById(decoded.id).select("_id role vendorType isOnboarded");
@@ -29,6 +30,7 @@ export const protect = async (req, res, next) => {
 
       // Set the role from the JWT token to ensure correct authorization
       req.user.role = decoded.role;
+      console.log("User after auth middleware:", { id: req.user._id, role: req.user.role, isOnboarded: req.user.isOnboarded });
 
             // Check if vendor is onboarded
       if (decoded.role === "vendor" && !req.user.isOnboarded) {
