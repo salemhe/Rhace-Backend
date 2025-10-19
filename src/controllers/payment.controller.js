@@ -548,10 +548,6 @@ export const verifyPayment = async (req, res) => {
       return res.status(400).json({ message: "Vendor ID is missing from metadata." });
     }
 
-    const existingTransaction = await Payment.findOne({ reference });
-
-    const amountInUSD = transaction.amount * 0.0092; // Optional: Use a conversion rate constant
-
     if (!existingTransaction) {
       // Save the payment
       const newTransaction = new Payment({
@@ -566,24 +562,61 @@ export const verifyPayment = async (req, res) => {
         status: "Paid",
       });
 
-<<<<<<< HEAD
-      const updatedVendor = await Vendor.findById(transaction.metadata.vendorId)
-      updatedVendor.balance = updatedVendor.balance + (transaction.amount * 0.0092)
-      await updatedVendor.save();
+      await newTransaction.save();
 
-
-      await newTransactionRecord.save();
+      // Update vendor balance
+      const updatedVendor = await Vendor.findById(vendorId);
+      if (updatedVendor) {
+        updatedVendor.balance += amountInUSD;
+        await updatedVendor.save();
+      }
 
       // Emit real-time update for new payment
       emitPaymentUpdate({
         type: 'new_payment',
-        paymentId: newTransactionRecord._id,
-        vendorId: transaction.metadata.vendorId,
-        amount: transaction.amount * 0.0092,
+        paymentId: newTransaction._id,
+        vendorId: vendorId,
+        amount: amountInUSD,
         reference: reference,
         status: 'Paid',
-        createdAt: newTransactionRecord.createdAt,
+        createdAt: newTransaction.createdAt,
       });
+    }
+=======
+    if (!existingTransaction) {
+      // Save the payment
+      const newTransaction = new Payment({
+        email: transaction.metadata.email,
+        customer_name: transaction.metadata.customerName,
+        paid_at: transaction.paid_at,
+        vendor: vendorId,
+        booking: transaction.metadata.bookingId,
+        paymentMethod: transaction.channel,
+        amount: amountInUSD,
+        reference,
+        status: "Paid",
+      });
+
+      await newTransaction.save();
+
+      // Update vendor balance
+      const updatedVendor = await Vendor.findById(vendorId);
+      if (updatedVendor) {
+        updatedVendor.balance += amountInUSD;
+        await updatedVendor.save();
+      }
+
+      // Emit real-time update for new payment
+      emitPaymentUpdate({
+        type: 'new_payment',
+        paymentId: newTransaction._id,
+        vendorId: vendorId,
+        amount: amountInUSD,
+        reference: reference,
+        status: 'Paid',
+        createdAt: newTransaction.createdAt,
+      });
+    }
 =======
       await newTransaction.save();
 
