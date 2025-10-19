@@ -16,7 +16,7 @@ export const protect = async (req, res, next) => {
       // Verify token
       const decoded = verifyToken(token);
 
-      if (decoded.vendorType) {
+      if (decoded.role === "vendor") {
         req.user = await Vendor.findById(decoded.id).select("_id role vendorType isOnboarded");
       } else {
         req.user = await User.findById(decoded.id).select("_id role");

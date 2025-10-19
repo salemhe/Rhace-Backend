@@ -34,7 +34,7 @@ router.route("/categories/:id")
 
 // Drinks
 router.route("/")
-  .post(authorize(["admin", "vendor"]), createDrink)
+  .post(authorize(["admin", "vendor", "staff"]), createDrink)
   .get(authorize(["admin", "manager", "staff", "vendor"]), getDrinks);
 
 router.route("/:id")
