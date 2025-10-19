@@ -1,4 +1,5 @@
 import { Booking, restaurantReservation } from "../models/booking.model.js";
+import { getVendorSocket } from "../websockets/socketManager.js";
 
 export const createReservation = async (req, res) => {
   try {
@@ -59,6 +60,32 @@ export const createReservation = async (req, res) => {
       });
 
       reservationData = restaurant;
+
+      const vendorSocket = getVendorSocket(vendor);
+      if (vendorSocket && vendorSocket.readyState === 1) {
+        // 1 = OPEN
+        vendorSocket.send(
+          JSON.stringify({
+            type: "new_reservation",
+            data: {
+              _id: restaurant._id,
+              customerName,
+              customerId,
+              customerEmail,
+              vendor,
+              date,
+              time,
+              guests,
+              reservationType: reservationType + "Reservation",
+              reservationStatus: "Upcoming",
+              location,
+              totalAmount,
+              paymentStatus: "Not Paid",
+              message: "You have a new reservation",
+            },
+          })
+        );
+      }
     }
 
     return res.status(201).json({

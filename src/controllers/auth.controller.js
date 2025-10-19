@@ -241,7 +241,7 @@ export const onboardVendor = async (req, res) => {
           categories,
           offer,
           dressCode,
-          ageLimit,
+          ageLimit: Number(ageLimit.split("+")[0]),
         });
         break;
 
