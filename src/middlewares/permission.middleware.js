@@ -6,15 +6,25 @@ export const authorize = (roles = [], permissions = []) => {
     permissions = [permissions];
   }
 
-  return (req, res, next) => {
+    return (req, res, next) => {
     // Assuming req.user is populated by the authentication middleware
     if (!req.user || !req.user.role) {
+      console.log("Authorization failed: User or role not found", { user: req.user });
       return res.status(401).json({ message: "Unauthorized: User not authenticated or role not found." });
     }
 
     // Check roles
     if (roles.length && !roles.includes(req.user.role)) {
-      return res.status(403).json({ message: "Forbidden: You do not have the necessary role." });
+      console.log("Authorization failed: Role mismatch", { 
+        userRole: req.user.role, 
+        allowedRoles: roles,
+        userId: req.user._id 
+      });
+      return res.status(403).json({ 
+        message: "Forbidden: You do not have the necessary role.",
+        yourRole: req.user.role,
+        requiredRoles: roles
+      });
     }
 
     // Check permissions

@@ -21,4 +21,17 @@ router.post("/auth/reset-password", resetPassword)
 
 router.post("/auth/onboard", protect, onboardVendor)
 
+// Diagnostic endpoint to check token
+router.get("/auth/me", protect, (req, res) => {
+  res.json({
+    message: "Token is valid",
+    user: {
+      id: req.user._id,
+      role: req.user.role,
+      vendorType: req.user.vendorType,
+      isOnboarded: req.user.isOnboarded
+    }
+  });
+});
+
 export default router;
