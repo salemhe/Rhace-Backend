@@ -17,11 +17,6 @@ export const authorize = (roles = [], permissions = []) => {
       return res.status(403).json({ message: "Forbidden: You do not have the necessary role." });
     }
 
-    // For vendor role, ensure the user is onboarded
-    if (req.user.role === "vendor" && !req.user.isOnboarded) {
-      return res.status(403).json({ message: "Forbidden: Vendor must be onboarded to perform this action." });
-    }
-
     // Check permissions
     if (permissions.length) {
       const userPermissions = req.user.permissions || [];
