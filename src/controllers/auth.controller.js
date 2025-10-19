@@ -233,16 +233,22 @@ export const onboardVendor = async (req, res) => {
         });
         break;
 
-      case "club":
-        await ClubVendor.findByIdAndUpdate(vendor._id, {
-          openingTime,
-          closingTime,
-          slots,
-          categories,
-          offer,
-          dressCode,
-          ageLimit: String(ageLimit),
-        });
+                  case "club":
+        // Prepare update data for club vendor
+        const clubUpdateData = {};
+        if (openingTime) clubUpdateData.openingTime = openingTime;
+        if (closingTime) clubUpdateData.closingTime = closingTime;
+        if (slots !== undefined) clubUpdateData.slots = Number(slots);
+        if (categories) clubUpdateData.categories = categories;
+        if (offer) clubUpdateData.offer = offer;
+        if (dressCode) clubUpdateData.dressCode = dressCode;
+        if (ageLimit !== undefined) {
+          // Clean the ageLimit value - remove any non-numeric characters except the number
+          const cleanedAgeLimit = String(ageLimit).replace(/[^0-9]/g, '');
+          clubUpdateData.ageLimit = cleanedAgeLimit;
+        }
+
+        await ClubVendor.findByIdAndUpdate(vendor._id, clubUpdateData);
         break;
 
       default:

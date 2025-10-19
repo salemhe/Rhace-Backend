@@ -23,15 +23,15 @@ const router = express.Router();
 router.use(protect); // All club routes require authentication
 
 router.route("/")
-  .post(authorize(["admin"]), createClub)
+  .post(authorize(["admin", "vendor"]), createClub)
   .get(authorize(["admin", "vendor", "staff"]), getClubs);
 
 router.route("/:id")
   .get(authorize(["admin", "vendor", "staff"]), getClubById)
-  .put(authorize(["admin"]), updateClub)
-  .delete(authorize(["admin"]), deleteClub);
+  .put(authorize(["admin", "vendor"]), updateClub)
+  .delete(authorize(["admin", "vendor"]), deleteClub);
 
-router.patch("/:id/status", authorize(["admin"]), updateClubStatus);
+router.patch("/:id/status", authorize(["admin", "vendor"]), updateClubStatus);
 
 // Table Types
 router.route("/:clubId/table-types")

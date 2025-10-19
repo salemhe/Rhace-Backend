@@ -10,6 +10,11 @@ import AddOn from "../models/addOn.model.js";
 // @access  Private/Admin
 export const createDrinkCategory = async (req, res) => {
   try {
+    // For vendors, automatically set clubId to their own vendor ID
+    if (req.user.role === "vendor") {
+      req.body.clubId = req.user._id.toString();
+    }
+    
     const drinkCategory = new DrinkCategory(req.body);
     await drinkCategory.save();
     res.status(201).json(drinkCategory);
@@ -23,7 +28,13 @@ export const createDrinkCategory = async (req, res) => {
 // @access  Private/Admin
 export const getDrinkCategories = async (req, res) => {
   try {
-    const { clubId } = req.query;
+    let { clubId } = req.query;
+    
+    // For vendors, automatically use their vendor ID as clubId
+    if (req.user.role === "vendor") {
+      clubId = req.user._id.toString();
+    }
+    
     const drinkCategories = await DrinkCategory.find({ clubId });
     res.status(200).json(drinkCategories);
   } catch (error) {
@@ -70,6 +81,21 @@ export const deleteDrinkCategory = async (req, res) => {
 // @access  Private/Admin
 export const createDrink = async (req, res) => {
   try {
+    // For vendors, automatically set clubId to their own vendor ID
+    if (req.user.role === "vendor") {
+      // If clubId is provided, verify it matches the vendor's ID
+      if (req.body.clubId && req.body.clubId !== req.user._id.toString()) {
+        return res.status(403).json({ 
+          message: "Forbidden: You can only create drinks for your own club.",
+          yourVendorId: req.user._id.toString(),
+          providedClubId: req.body.clubId,
+          hint: "Make sure the clubId in your request matches your vendor ID, or omit it entirely"
+        });
+      }
+      // Automatically set clubId to vendor's ID if not provided or if it matches
+      req.body.clubId = req.user._id.toString();
+    }
+
     const drink = new Drink(req.body);
     await drink.save();
     res.status(201).json(drink);
@@ -83,7 +109,12 @@ export const createDrink = async (req, res) => {
 // @access  Private/Admin
 export const getDrinks = async (req, res) => {
   try {
-    const { clubId, category, status, search, page = 1, limit = 10, sortBy = "createdAt", sortOrder = "desc" } = req.query;
+    let { clubId, category, status, search, page = 1, limit = 10, sortBy = "createdAt", sortOrder = "desc" } = req.query;
+
+    // For vendors, automatically use their vendor ID as clubId
+    if (req.user.role === "vendor") {
+      clubId = req.user._id.toString();
+    }
 
     let query = { clubId };
 
@@ -144,11 +175,20 @@ export const getDrinkById = async (req, res) => {
 export const updateDrink = async (req, res) => {
   try {
     const { id } = req.params;
-    const drink = await Drink.findByIdAndUpdate(id, req.body, { new: true });
+    const drink = await Drink.findById(id);
     if (!drink) {
       return res.status(404).json({ message: "Drink not found" });
     }
-    res.status(200).json(drink);
+
+    // For vendors, ensure they can only update drinks for their own club
+    if (req.user.role === "vendor") {
+      if (drink.clubId.toString() !== req.user._id.toString()) {
+        return res.status(403).json({ message: "Forbidden: You can only update drinks for your own club." });
+      }
+    }
+
+    const updatedDrink = await Drink.findByIdAndUpdate(id, req.body, { new: true });
+    res.status(200).json(updatedDrink);
   } catch (error) {
     res.status(400).json({ message: error.message });
   }
@@ -160,10 +200,19 @@ export const updateDrink = async (req, res) => {
 export const deleteDrink = async (req, res) => {
   try {
     const { id } = req.params;
-    const drink = await Drink.findByIdAndDelete(id);
+    const drink = await Drink.findById(id);
     if (!drink) {
       return res.status(404).json({ message: "Drink not found" });
     }
+
+    // For vendors, ensure they can only delete drinks for their own club
+    if (req.user.role === "vendor") {
+      if (drink.clubId.toString() !== req.user._id.toString()) {
+        return res.status(403).json({ message: "Forbidden: You can only delete drinks for your own club." });
+      }
+    }
+
+    await Drink.findByIdAndDelete(id);
     res.status(200).json({ message: "Drink removed" });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -208,6 +257,11 @@ export const addAddOnToDrink = async (req, res) => {
 // @access  Private/Admin
 export const createAddOn = async (req, res) => {
   try {
+    // For vendors, automatically set clubId to their own vendor ID
+    if (req.user.role === "vendor") {
+      req.body.clubId = req.user._id.toString();
+    }
+    
     const addOn = new AddOn(req.body);
     await addOn.save();
     res.status(201).json(addOn);
@@ -221,7 +275,13 @@ export const createAddOn = async (req, res) => {
 // @access  Private/Admin
 export const getAddOns = async (req, res) => {
   try {
-    const { clubId } = req.query;
+    let { clubId } = req.query;
+    
+    // For vendors, automatically use their vendor ID as clubId
+    if (req.user.role === "vendor") {
+      clubId = req.user._id.toString();
+    }
+    
     const addOns = await AddOn.find({ clubId });
     res.status(200).json(addOns);
   } catch (error) {

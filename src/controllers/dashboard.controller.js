@@ -1,5 +1,6 @@
 import { Booking } from "../models/booking.model.js";
 import PaymentTransaction from "../models/paymenttransaction.model.js";
+import Payment from "../models/payment.model.js";
 import Hotel from "../models/hotel.model.js";
 import RoomType from "../models/roomtype.model.js";
 import { Vendor } from "../models/vendor.model.js";
@@ -407,6 +408,78 @@ export const getTopVendors = async (req, res) => {
     res.status(200).json(topVendors);
   } catch (error) {
     res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Get vendors earnings
+// @route   GET /api/dashboard/vendors-earnings
+// @access  Private (Admin only)
+export const getVendorsEarnings = async (req, res) => {
+  try {
+    if (req.user.role !== "admin") {
+      return res.status(403).json({ message: "Access denied. Admin only." });
+    }
+
+    const { page = 1, limit = 20 } = req.query;
+    const skip = (page - 1) * limit;
+
+    const earnings = await Payment.aggregate([
+      {
+        $match: { status: "Paid" }
+      },
+      {
+        $group: {
+          _id: "$vendor",
+          totalEarnings: { $sum: "$amount" },
+          totalPayments: { $sum: 1 },
+          lastPaymentDate: { $max: "$createdAt" }
+        }
+      },
+      {
+        $lookup: {
+          from: "vendors",
+          localField: "_id",
+          foreignField: "_id",
+          as: "vendor"
+        }
+      },
+      {
+        $unwind: "$vendor"
+      },
+      {
+        $project: {
+          vendorId: "$_id",
+          vendorName: "$vendor.businessName",
+          totalEarnings: 1,
+          totalPayments: 1,
+          lastPaymentDate: 1
+        }
+      },
+      {
+        $sort: { totalEarnings: -1 }
+      },
+      {
+        $skip: skip
+      },
+      {
+        $limit: parseInt(limit)
+      }
+    ]);
+
+    const totalVendors = await Payment.distinct("vendor", { status: "Paid" }).then(vendors => vendors.length);
+
+    return res.json({
+      earnings,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: totalVendors,
+        pages: Math.ceil(totalVendors / limit)
+      }
+    });
+  } catch (error) {
+    console.error("Error fetching vendors earnings:", error);
+    return res.status(500).json({ error: "Internal server error" });
   }
 };
 

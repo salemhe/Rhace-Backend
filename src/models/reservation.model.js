@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import mongoosePaginate from "mongoose-paginate-v2";
 
 const reservationSchema = new mongoose.Schema({
   vendor: { type: mongoose.Schema.Types.ObjectId, ref: "Vendor", required: true },
@@ -22,6 +23,8 @@ const reservationSchema = new mongoose.Schema({
   },
   payment: { type: mongoose.Schema.Types.ObjectId, ref: "PaymentTransaction" },
 }, { timestamps: true });
+
+reservationSchema.plugin(mongoosePaginate);
 
 const Reservation = mongoose.model("Reservation", reservationSchema);
 

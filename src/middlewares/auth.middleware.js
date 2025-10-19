@@ -13,15 +13,32 @@ export const protect = async (req, res, next) => {
       // Get token from header
       token = req.headers.authorization.split(" ")[1];
 
-      // Verify token
+            // Verify token
       const decoded = verifyToken(token);
+      console.log("Decoded token:", { id: decoded.id, role: decoded.role, isOnboarded: decoded.isOnboarded });
 
-      req.user =
-        decoded.role === "vendor"
-          ? await Vendor.findById(decoded.id).select("_id role vendorType")
-          : await User.findById(decoded.id).select("_id");
+      if (decoded.role === "vendor") {
+        req.user = await Vendor.findById(decoded.id).select("_id role vendorType isOnboarded");
+      } else {
+        req.user = await User.findById(decoded.id).select("_id role");
+      }
 
-      // Get user from the token
+      // Ensure user exists
+      if (!req.user) {
+        return res.status(401).json({ message: "Not authorized, user not found" });
+      }
+
+      // Set the role from the JWT token to ensure correct authorization
+      req.user.role = decoded.role;
+      console.log("User after auth middleware:", { id: req.user._id, role: req.user.role, isOnboarded: req.user.isOnboarded });
+
+            // Check if vendor is onboarded
+      if (decoded.role === "vendor" && !req.user.isOnboarded) {
+        return res.status(403).json({ 
+          message: "Forbidden: Please complete vendor onboarding before accessing this resource.",
+          isOnboarded: false 
+        });
+      }
 
       next();
     } catch (error) {
