@@ -24,10 +24,10 @@ router.use(protect); // All club routes require authentication
 
 router.route("/")
   .post(authorize(["admin"]), createClub)
-  .get(authorize(["admin", "manager", "staff"]), getClubs);
+  .get(authorize(["admin", "vendor", "staff"]), getClubs);
 
 router.route("/:id")
-  .get(authorize(["admin", "manager", "staff"]), getClubById)
+  .get(authorize(["admin", "vendor", "staff"]), getClubById)
   .put(authorize(["admin"]), updateClub)
   .delete(authorize(["admin"]), deleteClub);
 
@@ -36,16 +36,16 @@ router.patch("/:id/status", authorize(["admin"]), updateClubStatus);
 // Table Types
 router.route("/:clubId/table-types")
   .post(authorize(["admin"]), createTableType)
-  .get(authorize(["admin", "manager", "staff"]), getTableTypes);
+  .get(authorize(["admin", "vendor", "staff"]), getTableTypes);
 
 router.route("/:clubId/table-types/:tableTypeId")
-  .get(authorize(["admin", "manager", "staff"]), getTableTypeById)
+  .get(authorize(["admin", "vendor", "staff"]), getTableTypeById)
   .put(authorize(["admin"]), updateTableType)
   .delete(authorize(["admin"]), deleteTableType);
 
 // Booking Rules
 router.route("/:clubId/booking-rules")
-  .get(authorize(["admin", "manager", "staff"]), getBookingRules)
+  .get(authorize(["admin", "vendor", "staff"]), getBookingRules)
   .put(authorize(["admin"]), updateBookingRules);
 
 export default router;

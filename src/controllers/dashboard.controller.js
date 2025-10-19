@@ -2,6 +2,7 @@ import { Booking } from "../models/booking.model.js";
 import PaymentTransaction from "../models/paymenttransaction.model.js";
 import Hotel from "../models/hotel.model.js";
 import RoomType from "../models/roomtype.model.js";
+import { Vendor } from "../models/vendor.model.js";
 
 // Emit real-time updates
 const emitDashboardUpdate = (userId, data) => {
@@ -340,6 +341,70 @@ export const getReservationSources = async (req, res) => {
     });
 
     res.status(200).json(sources);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Get top performing vendors
+// @route   GET /api/dashboard/top-vendors
+// @access  Private
+export const getTopVendors = async (req, res) => {
+  try {
+    const currentMonth = new Date();
+    currentMonth.setDate(1);
+    currentMonth.setHours(0, 0, 0, 0);
+
+    const nextMonth = new Date(currentMonth);
+    nextMonth.setMonth(nextMonth.getMonth() + 1);
+
+    // Aggregate vendor performance metrics based on reservations
+    const topVendors = await Reservation.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: currentMonth, $lt: nextMonth },
+          status: { $in: ["confirmed", "seated"] },
+        },
+      },
+      {
+        $group: {
+          _id: "$vendor",
+          totalReservations: { $sum: 1 },
+          totalGuests: { $sum: "$partySize" },
+          totalRevenue: { $sum: "$totalAmount" },
+        },
+      },
+      {
+        $lookup: {
+          from: "vendors",
+          localField: "_id",
+          foreignField: "_id",
+          as: "vendor",
+        },
+      },
+      {
+        $unwind: "$vendor",
+      },
+      {
+        $project: {
+          vendorId: "$_id",
+          businessName: "$vendor.businessName",
+          vendorType: "$vendor.vendorType",
+          totalReservations: 1,
+          totalGuests: 1,
+          totalRevenue: 1,
+          averageRating: "$vendor.rating",
+        },
+      },
+      {
+        $sort: { totalRevenue: -1 },
+      },
+      {
+        $limit: 10,
+      },
+    ]);
+
+    res.status(200).json(topVendors);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
