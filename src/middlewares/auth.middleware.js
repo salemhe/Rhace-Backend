@@ -16,12 +16,19 @@ export const protect = async (req, res, next) => {
       // Verify token
       const decoded = verifyToken(token);
 
-      req.user =
-        decoded.role === "vendor"
-          ? await Vendor.findById(decoded.id).select("_id role vendorType")
-          : await User.findById(decoded.id).select("_id");
+      if (decoded.vendorType) {
+        req.user = await Vendor.findById(decoded.id).select("_id role vendorType isOnboarded");
+      } else {
+        req.user = await User.findById(decoded.id).select("_id role");
+      }
 
-      // Get user from the token
+      // Ensure user exists
+      if (!req.user) {
+        return res.status(401).json({ message: "Not authorized, user not found" });
+      }
+
+      // Set the role from the JWT token to ensure correct authorization
+      req.user.role = decoded.role;
 
       next();
     } catch (error) {

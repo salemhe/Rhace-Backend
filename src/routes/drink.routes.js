@@ -25,35 +25,35 @@ router.use(protect);
 
 // Drink Categories
 router.route("/categories")
-  .post(authorize(["admin"]), createDrinkCategory)
-  .get(authorize(["admin", "manager", "staff"]), getDrinkCategories);
+  .post(authorize(["admin", "vendor"]), createDrinkCategory)
+  .get(authorize(["admin", "manager", "staff", "vendor"]), getDrinkCategories);
 
 router.route("/categories/:id")
-  .put(authorize(["admin"]), updateDrinkCategory)
-  .delete(authorize(["admin"]), deleteDrinkCategory);
+  .put(authorize(["admin", "vendor"]), updateDrinkCategory)
+  .delete(authorize(["admin", "vendor"]), deleteDrinkCategory);
 
 // Drinks
 router.route("/")
   .post(authorize(["admin", "vendor"]), createDrink)
-  .get(authorize(["admin", "manager", "staff"]), getDrinks);
+  .get(authorize(["admin", "manager", "staff", "vendor"]), getDrinks);
 
 router.route("/:id")
-  .get(authorize(["admin", "manager", "staff"]), getDrinkById)
-  .put(authorize(["admin"]), updateDrink)
-  .delete(authorize(["admin"]), deleteDrink);
+  .get(authorize(["admin", "manager", "staff", "vendor"]), getDrinkById)
+  .put(authorize(["admin", "vendor"]), updateDrink)
+  .delete(authorize(["admin", "vendor"]), deleteDrink);
 
-router.route("/:id/addons").post(authorize(["admin"]), addAddOnToDrink);
+router.route("/:id/addons").post(authorize(["admin", "vendor"]), addAddOnToDrink);
 
 // Add-ons
 const addOnRouter = express.Router();
 addOnRouter.use(protect);
 
 addOnRouter.route("/")
-  .post(authorize(["admin"]), createAddOn)
-  .get(authorize(["admin", "manager", "staff"]), getAddOns);
+  .post(authorize(["admin", "vendor"]), createAddOn)
+  .get(authorize(["admin", "manager", "staff", "vendor"]), getAddOns);
 
 addOnRouter.route("/:id")
-  .put(authorize(["admin"]), updateAddOn)
-  .delete(authorize(["admin"]), deleteAddOn);
+  .put(authorize(["admin", "vendor"]), updateAddOn)
+  .delete(authorize(["admin", "vendor"]), deleteAddOn);
 
 export { router as drinkRoutes, addOnRouter };

@@ -18,15 +18,15 @@ router.use(protect);
 router.post("/", authorize(["finance"]), initiatePayout);
 
 // Route to get all payouts (e.g., for finance and admin roles)
-router.get("/", authorize(["finance", "superadmin"]), getAllPayouts);
+router.get("/", authorize(["finance", "superadmin", "admin"]), getAllPayouts);
 
 // Route to get payouts for a specific vendor
-router.get("/vendor/:vendorId", authorize(["finance", "superadmin"]), getPayoutsForVendor);
+router.get("/vendor/:vendorId", authorize(["finance", "superadmin", "admin"]), getPayoutsForVendor);
 
 // Route to get a single payout by its ID
-router.get("/:id", authorize(["finance", "superadmin"]), getPayoutById);
+router.get("/:id", authorize(["finance", "superadmin", "admin"]), getPayoutById);
 
 // Route to approve a payout (e.g., only for senior finance or admin roles)
-router.patch("/:id/approve", authorize(["finance", "superadmin"]), approvePayout);
+router.patch("/:id/approve", authorize(["finance", "superadmin", "admin"]), approvePayout);
 
 export default router;
