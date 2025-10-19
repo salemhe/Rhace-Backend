@@ -307,7 +307,7 @@ export const getPaymentInfo = async (req, res) => {
       `https://nigerianbanks.xyz/?code=${paymentDetails?.bankCode}`
     );
     if (!response.ok) {
-      console.error("Error fetching bank info:", await res.text());
+      console.error("Error fetching bank info:", await response.text());
       return res.status(500).json({ error: "Failed to fetch bank info" });
     }
 
@@ -366,7 +366,7 @@ export const initializePayment = async (req, res) => {
       email: email,
       amount: amount * 100,
       currency: "NGN",
-      subaccount: vendor.paymentDetails.subaccountCode, // vendor's subaccount
+      subaccount: vendor.paymentDetails.subaccountCode,
       callback_url: `https://rhace-frontend.vercel.app/${type.split("R")[0]}s/confirmation/${bookingId}`,
       metadata: {
         vendorId,
@@ -374,8 +374,7 @@ export const initializePayment = async (req, res) => {
         customerName,
         userId: req.user._id
       }
-    }
-    
+    };
 
     const createPaymentOnPaystack = async (data) => {
       const response = await fetch(
@@ -407,7 +406,7 @@ export const initializePayment = async (req, res) => {
     res
       .status(200)
       .json({
-        messaage: "success",
+        message: "success",
         data: {
           authorization_url: paystackResponse.data.authorization_url,
           access_code: paystackResponse.data.access_code,
@@ -548,6 +547,9 @@ export const verifyPayment = async (req, res) => {
       return res.status(400).json({ message: "Vendor ID is missing from metadata." });
     }
 
+    const existingTransaction = await Payment.findOne({ reference });
+    const amountInUSD = transaction.amount * 0.0092;
+
     if (!existingTransaction) {
       // Save the payment
       const newTransaction = new Payment({
@@ -581,52 +583,6 @@ export const verifyPayment = async (req, res) => {
         status: 'Paid',
         createdAt: newTransaction.createdAt,
       });
-    }
-=======
-    if (!existingTransaction) {
-      // Save the payment
-      const newTransaction = new Payment({
-        email: transaction.metadata.email,
-        customer_name: transaction.metadata.customerName,
-        paid_at: transaction.paid_at,
-        vendor: vendorId,
-        booking: transaction.metadata.bookingId,
-        paymentMethod: transaction.channel,
-        amount: amountInUSD,
-        reference,
-        status: "Paid",
-      });
-
-      await newTransaction.save();
-
-      // Update vendor balance
-      const updatedVendor = await Vendor.findById(vendorId);
-      if (updatedVendor) {
-        updatedVendor.balance += amountInUSD;
-        await updatedVendor.save();
-      }
-
-      // Emit real-time update for new payment
-      emitPaymentUpdate({
-        type: 'new_payment',
-        paymentId: newTransaction._id,
-        vendorId: vendorId,
-        amount: amountInUSD,
-        reference: reference,
-        status: 'Paid',
-        createdAt: newTransaction.createdAt,
-      });
-    }
-=======
-      await newTransaction.save();
-
-      // Update vendor balance
-      const updatedVendor = await Vendor.findById(vendorId);
-      if (updatedVendor) {
-        updatedVendor.balance += amountInUSD;
-        await updatedVendor.save();
-      }
->>>>>>> d21f6d88d59cef83e3691eaae1474c3141c1938f
     }
 
     // Update booking payment status
