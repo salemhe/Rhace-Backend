@@ -5,7 +5,7 @@ import PaymentTransaction from "../models/paymenttransaction.model.js";
 import { recordAuditLog } from "../utils/auditLogger.js";
 import pkg from "json-2-csv";
 import * as XLSX from "xlsx";
-import Payment from "../models/payment.model.js";
+import Payment from "../models/Payment.model.js";
 import moment from "moment";
 import { Booking } from "../models/booking.model.js";
 
