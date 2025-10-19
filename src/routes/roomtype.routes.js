@@ -19,7 +19,7 @@ router.use(protect);
 
 router.route("/")
   .post(authorize(["admin", "vendor"]), createRoomType)
-  .get(authorize(["admin", "vendor", "staff"]), getRoomTypes);
+  .get( getRoomTypes);
 
 router.route("/:id")
   .get(authorize(["admin", "vendor", "staff"]), getRoomTypeById)

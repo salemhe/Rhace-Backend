@@ -4,6 +4,7 @@ import { Server } from "socket.io";
 import app from "./app.js";
 import connectDB from "./config/db.js";
 import { startAllSchedulers } from "./jobs/index.js";
+import { setupWebSocket } from "./websockets/socketManager.js";
 
 dotenv.config();
 
@@ -16,6 +17,8 @@ const io = new Server(server, {
     origin: "*", // Adjust for production
   },
 });
+
+setupWebSocket(server);
 
 // Socket.io connection handling
 io.on("connection", (socket) => {
