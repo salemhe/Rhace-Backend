@@ -1,5 +1,5 @@
 import Payout from "../models/payout.model.js";
-import Vendor from "../models/vendor.model.js";
+import { Vendor } from "../models/vendor.model.js";
 import BankAccount from "../models/bankaccount.model.js";
 import PaymentTransaction from "../models/paymenttransaction.model.js";
 import { recordAuditLog } from "../utils/auditLogger.js";

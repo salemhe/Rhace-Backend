@@ -16,7 +16,7 @@ import {
   exportVendors,
 } from "../controllers/vendor.controller.js";
 import { forgotVendorPassword, loginVendor, onboardVendor, registerVendor, resendVendorOTP, resetPassword, verifyVendorOTP } from "../controllers/auth.controller.js";
-import { uploadKYC } from "../middlewares/upload.middleware.js"; // Assuming you have this middleware
+import upload from "../middlewares/upload.middleware.js";
 
 const router = express.Router();
 
@@ -47,7 +47,7 @@ router.patch("/:id/status", authorize(["superadmin", "finance", "ops"]), updateV
 router.patch("/:id/commission", authorize(["superadmin"]), updateVendorCommission);
 
 // KYC routes
-router.post("/:id/kyc", protect, uploadKYC, submitKYC); // Vendors can submit
+router.post("/:id/kyc", protect, upload.any(), submitKYC); // Vendors can submit
 router.patch("/:id/kyc/verify", authorize(["superadmin"]), verifyKYC); // Admins can verify
 
 // Bank account routes

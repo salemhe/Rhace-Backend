@@ -1,5 +1,5 @@
 import Payout from "../models/payout.model.js";
-import Vendor from "../models/vendor.model.js";
+import { Vendor } from "../models/vendor.model.js";
 
 // @desc   Initiate a new payout for a vendor
 // @route  POST /api/payouts
