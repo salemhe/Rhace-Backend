@@ -70,6 +70,13 @@ export const deleteDrinkCategory = async (req, res) => {
 // @access  Private/Admin
 export const createDrink = async (req, res) => {
   try {
+    // For vendors, ensure they can only create drinks for their own club
+    if (req.user.role === "vendor") {
+      if (!req.body.clubId || req.body.clubId !== req.user._id.toString()) {
+        return res.status(403).json({ message: "Forbidden: You can only create drinks for your own club." });
+      }
+    }
+
     const drink = new Drink(req.body);
     await drink.save();
     res.status(201).json(drink);
@@ -84,6 +91,13 @@ export const createDrink = async (req, res) => {
 export const getDrinks = async (req, res) => {
   try {
     const { clubId, category, status, search, page = 1, limit = 10, sortBy = "createdAt", sortOrder = "desc" } = req.query;
+
+    // For vendors, ensure they can only view drinks for their own club
+    if (req.user.role === "vendor") {
+      if (!clubId || clubId !== req.user._id.toString()) {
+        return res.status(403).json({ message: "Forbidden: You can only view drinks for your own club." });
+      }
+    }
 
     let query = { clubId };
 
@@ -144,11 +158,20 @@ export const getDrinkById = async (req, res) => {
 export const updateDrink = async (req, res) => {
   try {
     const { id } = req.params;
-    const drink = await Drink.findByIdAndUpdate(id, req.body, { new: true });
+    const drink = await Drink.findById(id);
     if (!drink) {
       return res.status(404).json({ message: "Drink not found" });
     }
-    res.status(200).json(drink);
+
+    // For vendors, ensure they can only update drinks for their own club
+    if (req.user.role === "vendor") {
+      if (drink.clubId.toString() !== req.user._id.toString()) {
+        return res.status(403).json({ message: "Forbidden: You can only update drinks for your own club." });
+      }
+    }
+
+    const updatedDrink = await Drink.findByIdAndUpdate(id, req.body, { new: true });
+    res.status(200).json(updatedDrink);
   } catch (error) {
     res.status(400).json({ message: error.message });
   }
@@ -160,10 +183,19 @@ export const updateDrink = async (req, res) => {
 export const deleteDrink = async (req, res) => {
   try {
     const { id } = req.params;
-    const drink = await Drink.findByIdAndDelete(id);
+    const drink = await Drink.findById(id);
     if (!drink) {
       return res.status(404).json({ message: "Drink not found" });
     }
+
+    // For vendors, ensure they can only delete drinks for their own club
+    if (req.user.role === "vendor") {
+      if (drink.clubId.toString() !== req.user._id.toString()) {
+        return res.status(403).json({ message: "Forbidden: You can only delete drinks for your own club." });
+      }
+    }
+
+    await Drink.findByIdAndDelete(id);
     res.status(200).json({ message: "Drink removed" });
   } catch (error) {
     res.status(500).json({ message: error.message });
