@@ -1,47 +1,33 @@
+
 import mongoose from "mongoose";
 
-const PaymentSchema = new mongoose.Schema(
-  {
+const PaymentSchema = new mongoose.Schema({
     vendor: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Vendor",
-      required: true,
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Vendor",
+        required: true,
     },
     customer_name: {
-      type: String,
-      required: true,
-    },
-    paid_at: {
-      type: String,
+        type: String,
+        required: true,
     },
     email: {
-      type: String,
-    },
+        type: String,},
     paymentMethod: {
-      type: String,
-      required: true,
+        type: String,
+        enum: ["Card", "Bank Transfer", "Mobile Money"],
+        required: true,
     },
     amount: {
-      type: Number,
-      required: true,
-    },
-    reference: {
-      type: String,
-      required: true,
-    },
-    booking: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Booking",
-      required: true,
+        type: Number,
+        required: true,
     },
     status: {
-      type: String,
-      enum: ["Pending", "Paid", "Part-paid", "Failed"],
-      default: "Pending",
+        type: String,
+        enum: ["Pending", "Paid", "Part-paid", "Failed"],
+        default: "Pending",
     },
-  },
-  { timestamps: true }
-);
+}, { timestamps: true });
 
 const Payment = mongoose.model("Payment", PaymentSchema);
 
