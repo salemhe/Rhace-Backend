@@ -99,7 +99,7 @@ const ClubVendor = Vendor.discriminator(
     categories: [{ type: String }],
     offer: { type: String },
     dressCode: [{ type: String }],
-    ageLimit: { type: Number, enum: [16, 18] },
+    ageLimit: { type: String },
   })
 );
 
