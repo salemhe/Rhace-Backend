@@ -1,5 +1,7 @@
 import RoomType from "../models/roomtype.model.js";
-import Hotel from "../models/hotel.model.js";
+import { HotelVendor } from "../models/vendor.model.js";
+// import Hotel from "../models/hotel.model.js";
+import Amenity from "../models/amenity.model.js";
 import { recordAuditLog } from "../utils/auditLogger.js";
 import fs from "fs";
 import path from "path";
@@ -13,7 +15,15 @@ export const createRoomType = async (req, res) => {
     const { name, description, pricePerNight, adultsCapacity, childrenCapacity, totalUnits, amenities } = req.body;
     let images = req.body.images; // Default from body, can be overridden by file upload
 
-    const hotel = await Hotel.findById(hotelId);
+    if (totalUnits === undefined || totalUnits === null || (typeof totalUnits === 'string' && totalUnits.trim() === '')) {
+      return res.status(400).json({ message: "totalUnits is required" });
+    }
+    const numTotal = Number(totalUnits);
+    if (isNaN(numTotal) || numTotal < 0) {
+      return res.status(400).json({ message: "totalUnits must be a non-negative number" });
+    }
+    
+    const hotel = await HotelVendor.findById(hotelId);
     if (!hotel) {
       return res.status(404).json({ message: "Hotel not found" });
     }
@@ -23,6 +33,48 @@ export const createRoomType = async (req, res) => {
       images = req.files.map(file => file.location); // Assuming multer-s3 provides 'location'
     }
 
+    // Process amenities: if string, parse; then convert names to ObjectIds
+    let amenityNames = [];
+    if (amenities) {
+      if (typeof amenities === 'string') {
+        let str = amenities.trim();
+        if (str.startsWith('[') && str.endsWith(']')) {
+          // Extract quoted strings using regex
+          const regex = /['"]([^'"]+)['"]/g;
+          let matches = [];
+          let match;
+          while ((match = regex.exec(str)) !== null) {
+            matches.push(match[1]);
+          }
+          amenityNames = matches;
+        } else {
+          // Fallback to JSON or comma-separated
+          try {
+            amenityNames = JSON.parse(str);
+          } catch {
+            amenityNames = str.split(',').map(s => s.trim().replace(/['"]/g, ''));
+          }
+        }
+      } else if (Array.isArray(amenities)) {
+        amenityNames = amenities;
+      }
+    }
+
+    if (!Array.isArray(amenityNames)) {
+      return res.status(400).json({ message: "Amenities must be an array or a valid string format" });
+    }
+
+    const amenityIds = [];
+    for (const name of amenityNames) {
+      if (typeof name !== 'string') continue;
+      let amenity = await Amenity.findOne({ name: name.trim() });
+      if (!amenity) {
+        amenity = new Amenity({ name: name.trim(), scope: 'global' });
+        await amenity.save();
+      }
+      amenityIds.push(amenity._id);
+    }
+
     const roomType = new RoomType({
       hotelId,
       name,
@@ -30,8 +82,8 @@ export const createRoomType = async (req, res) => {
       pricePerNight,
       adultsCapacity,
       childrenCapacity,
-      totalUnits,
-      amenities,
+      totalUnits: numTotal,
+      amenities: amenityIds,
       images,
     });
 
@@ -51,7 +103,7 @@ export const getRoomTypes = async (req, res) => {
   try {
     const { hotelId } = req.params;
 
-    const hotel = await Hotel.findById(hotelId);
+    const hotel = await HotelVendor.findById(hotelId);
     if (!hotel) {
       return res.status(404).json({ message: "Hotel not found" });
     }
@@ -96,13 +148,62 @@ export const updateRoomType = async (req, res) => {
       return res.status(404).json({ message: "Room type not found for this hotel" });
     }
 
+    // Process amenities if provided
+    let amenityIds = roomType.amenities;
+    if (amenities !== undefined) {
+      let amenityNames = [];
+      if (typeof amenities === 'string') {
+        let str = amenities.trim();
+        if (str.startsWith('[') && str.endsWith(']')) {
+          // Extract quoted strings using regex
+          const regex = /['"]([^'"]+)['"]/g;
+          let matches = [];
+          let match;
+          while ((match = regex.exec(str)) !== null) {
+            matches.push(match[1]);
+          }
+          amenityNames = matches;
+        } else {
+          // Fallback to JSON
+          try {
+            amenityNames = JSON.parse(str);
+          } catch {
+            return res.status(400).json({ message: "Invalid amenities format" });
+          }
+        }
+      } else if (Array.isArray(amenities)) {
+        amenityNames = amenities;
+      }
+
+      if (!Array.isArray(amenityNames)) {
+        return res.status(400).json({ message: "Amenities must be an array" });
+      }
+
+      amenityIds = [];
+      for (const name of amenityNames) {
+        if (typeof name !== 'string') continue;
+        let amenity = await Amenity.findOne({ name: name.trim() });
+        if (!amenity) {
+          amenity = new Amenity({ name: name.trim(), scope: 'global' });
+          await amenity.save();
+        }
+        amenityIds.push(amenity._id);
+      }
+    }
+
     roomType.name = name || roomType.name;
     roomType.description = description || roomType.description;
     roomType.pricePerNight = pricePerNight || roomType.pricePerNight;
     roomType.adultsCapacity = adultsCapacity || roomType.adultsCapacity;
     roomType.childrenCapacity = childrenCapacity || roomType.childrenCapacity;
-    roomType.totalUnits = totalUnits || roomType.totalUnits;
-    roomType.amenities = amenities || roomType.amenities;
+    if (totalUnits !== undefined) {
+      const numTotal = Number(totalUnits);
+      if (isNaN(numTotal) || numTotal < 0) {
+        return res.status(400).json({ message: "totalUnits must be a non-negative number" });
+      }
+      roomType.totalUnits = numTotal;
+    }
+    roomType.amenities = amenityIds;
     roomType.images = images || roomType.images;
 
     const updatedRoomType = await roomType.save();

@@ -6,7 +6,8 @@ import * as XLSX from "xlsx";
 // Create a new menu
 export const createMenu = async (req, res) => {
     try {
-        const menu = new Menu(req.body);
+        const userId = req.user._id;
+        const menu = new Menu({ ...req.body, vendor: userId });
         await menu.save();
         res.status(201).json(menu);
     } catch (error) {
@@ -17,7 +18,8 @@ export const createMenu = async (req, res) => {
 // Get all menus with search, filter, sort, and pagination
 export const getMenus = async (req, res) => {
     try {
-        const { page = 1, limit = 10, search, menuType, published, sortBy = "createdAt", sortOrder = "desc" } = req.query;
+        const userId = req.user.role ? req.user._id : req.query.userId;
+        const { page = 1, limit = 10, search, menuType, id, published, sortBy = "createdAt", sortOrder = "desc" } = req.query;
 
         let query = {};
 
@@ -32,10 +34,19 @@ export const getMenus = async (req, res) => {
             query.menuType = menuType;
         }
 
+        if (id) {
+            query.id = id;
+        }
+
         if (published !== undefined) {
             query.published = published === "true";
         }
 
+        // If the user is a vendor, restrict to their menus
+        if (userId) {
+            query.vendor = userId;
+        }
+        
         const totalMenus = await Menu.countDocuments(query);
         const sort = {};
         sort[sortBy] = sortOrder === "asc" ? 1 : -1;
@@ -53,6 +64,7 @@ export const getMenus = async (req, res) => {
         });
     } catch (error) {
         res.status(500).json({ message: error.message });
+        console.error(error)
     }
 };
 
@@ -120,7 +132,8 @@ export const exportMenusCSV = async (req, res) => {
 // Create a new menu item
 export const createMenuItem = async (req, res) => {
     try {
-        const menuItem = new MenuItem(req.body);
+        const userId = req.user._id;
+        const menuItem = new MenuItem({ ...req.body, vendor: userId });
         await menuItem.save();
         res.status(201).json(menuItem);
     } catch (error) {
@@ -132,6 +145,7 @@ export const createMenuItem = async (req, res) => {
 export const getMenuItems = async (req, res) => {
     try {
         const { page = 1, limit = 10, search, category, tags, availability, sortBy = "createdAt", sortOrder = "desc" } = req.query;
+        const userId = req.user.role ? req.user._id : req.query.userId;
 
         let query = {};
 
@@ -152,6 +166,11 @@ export const getMenuItems = async (req, res) => {
 
         if (availability !== undefined) {
             query.availability = availability === "true";
+        }
+
+        // If the user is a vendor, restrict to their menu items
+        if (req.user.role) {
+            query.vendor = userId;
         }
 
         const totalMenuItems = await MenuItem.countDocuments(query);

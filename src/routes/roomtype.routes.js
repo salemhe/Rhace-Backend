@@ -18,18 +18,18 @@ const router = express.Router({ mergeParams: true });
 router.use(protect);
 
 router.route("/")
-  .post(authorize(["admin", "manager"]), createRoomType)
-  .get(authorize(["admin", "manager", "staff"]), getRoomTypes);
+  .post(authorize(["admin", "vendor"]), createRoomType)
+  .get(authorize(["admin", "vendor", "staff"]), getRoomTypes);
 
 router.route("/:id")
-  .get(authorize(["admin", "manager", "staff"]), getRoomTypeById)
-  .put(authorize(["admin", "manager"]), updateRoomType)
-  .delete(authorize(["admin", "manager"]), deleteRoomType);
+  .get(authorize(["admin", "vendor", "staff"]), getRoomTypeById)
+  .put(authorize(["admin", "vendor"]), updateRoomType)
+  .delete(authorize(["admin", "vendor"]), deleteRoomType);
 
 // New route for uploading room type images
 router.patch(
   "/:id/upload-images",
-  authorize(["admin", "manager"]),
+  authorize(["admin", "vendor"]),
   uploadRoomTypeImages, // Multer middleware to handle file upload
   uploadRoomTypeImagesController // Controller to handle logic after upload
 );

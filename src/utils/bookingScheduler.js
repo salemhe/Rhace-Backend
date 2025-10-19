@@ -1,4 +1,4 @@
-import Booking from "../models/booking.model.js";
+import { Booking } from "../models/booking.model.js";
 import Refund from "../models/refund.model.js";
 import Payment from "../models/payment.model.js";
 import { recordAuditLog } from "./auditLogger.js";
