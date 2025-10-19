@@ -1,4 +1,4 @@
-import { Booking, restaurantReservation } from "../models/booking.model.js";
+import { Booking, hotelReservation, restaurantReservation } from "../models/booking.model.js";
 import { getVendorSocket } from "../websockets/socketManager.js";
 
 export const createReservation = async (req, res) => {
@@ -19,9 +19,13 @@ export const createReservation = async (req, res) => {
       menus,
       specialOccasion,
       seatingPreference,
+      checkInDate,
+      checkOutDate,
       specialRequest,
+      room,
     } = req.body;
 
+    console.log(req.body);
     if (!vendor || !reservationType || !location || !totalAmount) {
       return res.status(400).json({ message: "Fill required fields" });
     }
@@ -76,7 +80,48 @@ export const createReservation = async (req, res) => {
               date,
               time,
               guests,
-              reservationType: reservationType + "Reservation",
+              reservationType: reservationType,
+              reservationStatus: "Upcoming",
+              location,
+              totalAmount,
+              paymentStatus: "Not Paid",
+              message: "You have a new reservation",
+            },
+          })
+        );
+      }
+    }
+
+    if (reservationType === "hotel") {
+      if (!checkInDate || !checkOutDate || !guests || !room) {
+        return res.status(400).json({ message: "Fill hotels required fields" });
+      }
+
+      const hotel = await hotelReservation.create({
+        ...initialData,
+        checkInDate,
+        checkOutDate,
+        guests,
+        specialRequest,
+        room,
+      });
+
+      reservationData = hotel;
+
+      const vendorSocket = getVendorSocket(vendor);
+      if (vendorSocket && vendorSocket.readyState === 1) {
+        // 1 = OPEN
+        vendorSocket.send(
+          JSON.stringify({
+            type: "new_reservation",
+            data: {
+              _id: restaurant._id,
+              customerName,
+              customerId,
+              customerEmail,
+              vendor,
+              guests,
+              reservationType: reservationType,
               reservationStatus: "Upcoming",
               location,
               totalAmount,

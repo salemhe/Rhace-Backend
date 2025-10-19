@@ -15,7 +15,7 @@ const bookingSchema = new Schema(
     customerEmail: { type: String },
     vendor: { type: mongoose.Schema.Types.ObjectId, ref: "Vendor" },
     paymentStatus: { type: String },
-    reservationStatus: { type: String },  // ✅ Fixed typo here: "typr" → "type"
+    reservationStatus: { type: String }, // ✅ Fixed typo here: "typr" → "type"
     reservationType: { type: String },
     image: { type: String },
     location: { type: String },
@@ -60,4 +60,17 @@ const restaurantReservation =
     })
   );
 
-export { Booking, restaurantReservation };
+const hotelReservation =
+  // mongoose.models.restaurant ||
+  Booking.discriminator(
+    "hotelReservation",
+    new mongoose.Schema({
+      checkInDate: { type: Date },
+      checkOutDate: { type: Date },
+      guests: { type: Number },
+      room: { type: mongoose.Schema.Types.ObjectId, ref: "RoomType" },
+      specialRequest: { type: String },
+    })
+  );
+
+export { Booking, restaurantReservation, hotelReservation };
