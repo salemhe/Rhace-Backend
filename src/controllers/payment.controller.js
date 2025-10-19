@@ -9,6 +9,13 @@ import Payment from "../models/payment.model.js";
 import moment from "moment";
 import { Booking } from "../models/booking.model.js";
 
+// Emit real-time updates for payments
+const emitPaymentUpdate = (data) => {
+  if (global.io) {
+    global.io.to('admin_payments').emit('payment_update', data);
+  }
+};
+
 const percentChange = (current, previous) => {
   if (previous === 0) return current === 0 ? 0 : 100;
   return ((current - previous) / previous) * 100;
@@ -69,8 +76,11 @@ export const verifyAccount = async (req, res) => {
 
 export const getPayments = async (req, res) => {
   try {
-    const userId = req.user._id;
-    const payments = await Payment.find({ vendor: userId });
+    let query = {};
+    if (req.user.role !== "admin") {
+      query.vendor = req.user._id;
+    }
+    const payments = await Payment.find(query).sort({ createdAt: -1 });
 
     return res.json(payments);
   } catch (error) {
@@ -81,6 +91,7 @@ export const getPayments = async (req, res) => {
 
 export const getPaymentStats = async (req, res) => {
   const userId = req.user._id;
+  const isAdmin = req.user.role === "admin";
   const now = moment();
 
   // Weekly Ranges
@@ -94,11 +105,13 @@ export const getPaymentStats = async (req, res) => {
   const endOfLastYear = moment().subtract(1, "year").endOf("year");
 
   try {
+    const vendorFilter = isAdmin ? {} : { vendor: userId };
+
     // Yearly Earnings
     const thisYearEarnings = await Payment.aggregate([
       {
         $match: {
-          vendor: userId,
+          ...vendorFilter,
           createdAt: { $gte: startOfThisYear.toDate() },
           status: "Paid",
         },
@@ -109,7 +122,7 @@ export const getPaymentStats = async (req, res) => {
     const lastYearEarnings = await Payment.aggregate([
       {
         $match: {
-          vendor: userId,
+          ...vendorFilter,
           createdAt: {
             $gte: startOfLastYear.toDate(),
             $lte: endOfLastYear.toDate(),
@@ -124,7 +137,7 @@ export const getPaymentStats = async (req, res) => {
     const thisWeekEarnings = await Payment.aggregate([
       {
         $match: {
-          vendor: userId,
+          ...vendorFilter,
           createdAt: { $gte: startOfThisWeek.toDate() },
           status: "Paid",
         },
@@ -135,7 +148,7 @@ export const getPaymentStats = async (req, res) => {
     const lastWeekEarnings = await Payment.aggregate([
       {
         $match: {
-          vendor: userId,
+          ...vendorFilter,
           createdAt: {
             $gte: startOfLastWeek.toDate(),
             $lte: endOfLastWeek.toDate(),
@@ -148,13 +161,13 @@ export const getPaymentStats = async (req, res) => {
 
     // Completed Payments
     const completedThisWeek = await Payment.countDocuments({
-      vendor: userId,
+      ...vendorFilter,
       status: "Paid",
       createdAt: { $gte: startOfThisWeek.toDate() },
     });
 
     const completedLastWeek = await Payment.countDocuments({
-      vendor: userId,
+      ...vendorFilter,
       status: "Paid",
       createdAt: {
         $gte: startOfLastWeek.toDate(),
@@ -164,13 +177,13 @@ export const getPaymentStats = async (req, res) => {
 
     // Pending Payments
     const pendingThisWeek = await Payment.countDocuments({
-      vendor: userId,
+      ...vendorFilter,
       status: "Pending",
       createdAt: { $gte: startOfThisWeek.toDate() },
     });
 
     const pendingLastWeek = await Payment.countDocuments({
-      vendor: userId,
+      ...vendorFilter,
       status: "Pending",
       createdAt: {
         $gte: startOfLastWeek.toDate(),
@@ -216,16 +229,19 @@ export const getPaymentStats = async (req, res) => {
 
 export const getTrends = async (req, res) => {
   const userId = req.user._id;
+  const isAdmin = req.user.role === "admin";
   const startDate = moment().subtract(7, "weeks").startOf("isoWeek").toDate();
   const endOfLastWeek = moment().subtract(1, "weeks").endOf("isoWeek");
 
   try {
+    const vendorFilter = isAdmin ? {} : { vendor: userId };
+
     const trends = await Payment.aggregate([
       {
         $match: {
-          vendor: userId,
+          ...vendorFilter,
           createdAt: { $gte: startDate },
-          status: "completed",
+          status: "Paid",
         },
       },
       {
@@ -236,19 +252,19 @@ export const getTrends = async (req, res) => {
           totalEarnings: { $sum: "$amount" },
         },
       },
-      { $sort: { "_id.year": 1, "_id.week": 1 } },
+      { $sort: { "_id": 1 } },
     ]);
 
     const totalEarnings = await Payment.aggregate([
-      { $match: { vendor: userId, status: "completed" } },
+      { $match: { ...vendorFilter, status: "Paid" } },
       { $group: { _id: null, total: { $sum: "$amount" } } },
     ]);
 
     const totalEarningsUntilLastWeek = await Payment.aggregate([
       {
         $match: {
-          vendor: userId,
-          status: "completed",
+          ...vendorFilter,
+          status: "Paid",
           createdAt: { $lte: endOfLastWeek.toDate() },
         },
       },
@@ -408,6 +424,71 @@ export const initializePayment = async (req, res) => {
   }
 };
 
+export const getVendorsEarnings = async (req, res) => {
+  try {
+    const { page = 1, limit = 20 } = req.query;
+    const skip = (page - 1) * limit;
+
+    const earnings = await Payment.aggregate([
+      {
+        $match: { status: "Paid" }
+      },
+      {
+        $group: {
+          _id: "$vendor",
+          totalEarnings: { $sum: "$amount" },
+          totalPayments: { $sum: 1 },
+          lastPaymentDate: { $max: "$createdAt" }
+        }
+      },
+      {
+        $lookup: {
+          from: "vendors",
+          localField: "_id",
+          foreignField: "_id",
+          as: "vendor"
+        }
+      },
+      {
+        $unwind: "$vendor"
+      },
+      {
+        $project: {
+          vendorId: "$_id",
+          vendorName: "$vendor.businessName",
+          totalEarnings: 1,
+          totalPayments: 1,
+          lastPaymentDate: 1
+        }
+      },
+      {
+        $sort: { totalEarnings: -1 }
+      },
+      {
+        $skip: skip
+      },
+      {
+        $limit: parseInt(limit)
+      }
+    ]);
+
+    const totalVendors = await Payment.distinct("vendor", { status: "Paid" }).then(vendors => vendors.length);
+
+    return res.json({
+      earnings,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: totalVendors,
+        pages: Math.ceil(totalVendors / limit)
+      }
+    });
+  } catch (error) {
+    console.error("Error fetching vendors earnings:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
 export const verifyPayment = async (req, res) => {
   const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
   const userId = req.user?._id;
@@ -495,9 +576,20 @@ export const verifyPayment = async (req, res) => {
       const updatedVendor = await Vendor.findById(transaction.metadata.vendorId)
       updatedVendor.balance = updatedVendor.balance + (transaction.amount * 0.0092)
       await updatedVendor.save();
-      
+
 
       await newTransactionRecord.save();
+
+      // Emit real-time update for new payment
+      emitPaymentUpdate({
+        type: 'new_payment',
+        paymentId: newTransactionRecord._id,
+        vendorId: transaction.metadata.vendorId,
+        amount: transaction.amount * 0.0092,
+        reference: reference,
+        status: 'Paid',
+        createdAt: newTransactionRecord.createdAt,
+      });
     }
 
     const booking = await Booking.findById(transaction.metadata.bookingId)

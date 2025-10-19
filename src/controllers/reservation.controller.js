@@ -6,6 +6,13 @@ import { recordAuditLog } from "../utils/auditLogger.js";
 import pkg from "json-2-csv";
 import * as XLSX from "xlsx";
 
+// Emit real-time updates for reservations
+const emitReservationUpdate = (data) => {
+  if (global.io) {
+    global.io.to('admin_reservations').emit('reservation_update', data);
+  }
+};
+
 const { AsyncParser } = pkg;
 
 // @desc    Get all reservations with search, filter, sort, pagination
@@ -168,6 +175,15 @@ export const updateReservationStatus = async (req, res) => {
       updatedBy: req.user._id,
       oldStatus,
       newStatus: status,
+    });
+
+    // Emit real-time update for reservation status change
+    emitReservationUpdate({
+      type: 'status_update',
+      reservationId: reservation._id,
+      oldStatus,
+      newStatus: status,
+      updatedBy: req.user._id,
     });
 
     res.status(200).json(reservation);
