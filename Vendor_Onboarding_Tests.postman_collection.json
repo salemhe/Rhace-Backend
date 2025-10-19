@@ -1,0 +1,417 @@
+{
+  "info": {
+    "name": "Vendor Onboarding & Drink Creation Tests",
+    "description": "Complete test collection for vendor registration, onboarding, and drink management",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000",
+      "type": "string"
+    },
+    {
+      "key": "vendorToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "vendorId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "categoryId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "drinkId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Register Vendor",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (pm.response.code === 201) {",
+              "    var jsonData = pm.response.json();",
+              "    pm.collectionVariables.set(\"vendorId\", jsonData.vendor._id);",
+              "    pm.environment.set(\"vendorEmail\", jsonData.vendor.email);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"businessName\": \"Test Night Club\",\n  \"email\": \"testclub{{$randomInt}}@example.com\",\n  \"password\": \"password123\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/vendors/auth/register",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "vendors", "auth", "register"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "2. Verify Vendor OTP",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (pm.response.code === 200) {",
+              "    var jsonData = pm.response.json();",
+              "    pm.collectionVariables.set(\"vendorToken\", jsonData.token);",
+              "    pm.collectionVariables.set(\"vendorId\", jsonData._id);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{vendorEmail}}\",\n  \"otp\": \"123456\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/vendors/auth/verify-otp",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "vendors", "auth", "verify-otp"]
+        },
+        "description": "Note: Check your email or console for the OTP code"
+      },
+      "response": []
+    },
+    {
+      "name": "3. Login Vendor",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (pm.response.code === 200) {",
+              "    var jsonData = pm.response.json();",
+              "    pm.collectionVariables.set(\"vendorToken\", jsonData.token);",
+              "    pm.collectionVariables.set(\"vendorId\", jsonData.vendor._id);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"testclub@example.com\",\n  \"password\": \"password123\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/vendors/auth/login",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "vendors", "auth", "login"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "4. Complete Vendor Onboarding",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (pm.response.code === 200) {",
+              "    console.log(\"Onboarding successful! Now login again to get new token.\");",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{vendorToken}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"vendorType\": \"club\",\n  \"profileImages\": [\"https://example.com/club-image.jpg\"],\n  \"address\": \"123 Party Street, Lagos, Nigeria\",\n  \"phone\": \"+2348012345678\",\n  \"businessDescription\": \"The hottest nightclub in town with amazing vibes and great music\",\n  \"website\": \"https://testnightclub.com\",\n  \"priceRange\": 5000,\n  \"accountName\": \"Test Night Club Limited\",\n  \"accountNumber\": \"0123456789\",\n  \"bankName\": \"Access Bank\",\n  \"bankCode\": \"044\",\n  \"openingTime\": \"20:00\",\n  \"closingTime\": \"04:00\",\n  \"slots\": 200,\n  \"categories\": [\"nightclub\", \"lounge\", \"bar\"],\n  \"dressCode\": [\"smart casual\", \"formal\"],\n  \"ageLimit\": \"18+\",\n  \"offer\": \"Happy Hour: 50% off all drinks from 8pm-10pm\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/vendors/auth/onboard",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "vendors", "auth", "onboard"]
+        },
+        "description": "This tests the ageLimit fix. You can use '18+', '21+', or just numbers."
+      },
+      "response": []
+    },
+    {
+      "name": "5. Login Again (Get New Token)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (pm.response.code === 200) {",
+              "    var jsonData = pm.response.json();",
+              "    pm.collectionVariables.set(\"vendorToken\", jsonData.token);",
+              "    pm.collectionVariables.set(\"vendorId\", jsonData.vendor._id);",
+              "    console.log(\"New token with isOnboarded: true set!\");",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"testclub@example.com\",\n  \"password\": \"password123\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/vendors/auth/login",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "vendors", "auth", "login"]
+        },
+        "description": "Login again to get a token with isOnboarded: true"
+      },
+      "response": []
+    },
+    {
+      "name": "6. Create Drink Category",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (pm.response.code === 201) {",
+              "    var jsonData = pm.response.json();",
+              "    pm.collectionVariables.set(\"categoryId\", jsonData._id);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{vendorToken}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"clubId\": \"{{vendorId}}\",\n  \"name\": \"Cocktails\",\n  \"description\": \"Premium mixed drinks\",\n  \"icon\": \"🍹\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/drinks/categories",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "drinks", "categories"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "7. Get All Drink Categories",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{vendorToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/drinks/categories?clubId={{vendorId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "drinks", "categories"],
+          "query": [
+            {
+              "key": "clubId",
+              "value": "{{vendorId}}"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "8. Create Drink",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (pm.response.code === 201) {",
+              "    var jsonData = pm.response.json();",
+              "    pm.collectionVariables.set(\"drinkId\", jsonData._id);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{vendorToken}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"clubId\": \"{{vendorId}}\",\n  \"name\": \"Mojito\",\n  \"category\": \"{{categoryId}}\",\n  \"volume\": \"500ml\",\n  \"price\": 2500,\n  \"quantity\": 50,\n  \"images\": [\"https://example.com/mojito.jpg\"],\n  \"status\": \"active\",\n  \"showOnBookingScreen\": true\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/drinks",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "drinks"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "9. Get All Drinks",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{vendorToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/drinks?clubId={{vendorId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "drinks"],
+          "query": [
+            {
+              "key": "clubId",
+              "value": "{{vendorId}}"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "10. Get Drink by ID",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{vendorToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/drinks/{{drinkId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "drinks", "{{drinkId}}"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "11. Update Drink",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{vendorToken}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"price\": 3000,\n  \"quantity\": 75,\n  \"status\": \"active\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/drinks/{{drinkId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "drinks", "{{drinkId}}"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "12. Delete Drink",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{vendorToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/drinks/{{drinkId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "drinks", "{{drinkId}}"]
+        }
+      },
+      "response": []
+    }
+  ]
+}
