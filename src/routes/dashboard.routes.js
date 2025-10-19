@@ -9,6 +9,7 @@ import {
   getCustomerFrequency,
   getRevenueByCategory,
   getReservationSources,
+  getTopVendors,
 } from "../controllers/dashboard.controller.js";
 
 const router = express.Router();
@@ -21,5 +22,6 @@ router.get("/revenue-trends", protect, getRevenueTrends);
 router.get("/customer-frequency", protect, getCustomerFrequency);
 router.get("/revenue-by-category", protect, getRevenueByCategory);
 router.get("/reservation-sources", protect, getReservationSources);
+router.get("/top-vendors", protect, getTopVendors);
 
 export default router;

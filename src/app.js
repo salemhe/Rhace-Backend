@@ -51,7 +51,7 @@ app.use("/api/reservations", reservationRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/settings", settingRoutes);
 app.use("/api/notifications", notificationRoutes);
-app.use("/api/payouts", payoutRoutes);
+app.use("/api/payments/payouts", payoutRoutes);
 app.use("/api/reports", reportRoutes);
 
 // 404 Error Handler

@@ -21,10 +21,10 @@ router.use(protect);
 router.post("/reservations", generateReservationsReport);
 
 // Route to list all available reports
-// router.get("/", listReports);
+// router.get("/", listReports); // TODO: Implement listReports function
 
-// // Route to check the status of a specific report
-// router.get("/:id/status", getReportStatus);
+// Route to check the status of a specific report
+router.get("/:id/status", getReportJobStatus);
 
 // Route to download a completed report
 router.get("/:id/download", downloadReport);

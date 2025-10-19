@@ -1,4 +1,3 @@
-
 import { Vendor } from '../models/vendor.model.js';
 import PaymentTransaction from '../models/paymenttransaction.model.js';
 import Payout from '../models/payout.model.js';
@@ -18,24 +17,24 @@ export const reconcileVendorBalances = async () => {
       // Calculate total successful transactions by joining with bookings
       const successfulTransactions = await PaymentTransaction.aggregate([
         {
-            $lookup: {
-                from: 'bookings', // The actual name of the bookings collection in the DB
-                localField: 'booking',
-                foreignField: '_id',
-                as: 'bookingInfo'
-            }
+          $lookup: {
+            from: 'bookings', // The actual name of the bookings collection in the DB
+            localField: 'booking',
+            foreignField: '_id',
+            as: 'bookingInfo'
+          }
         },
         {
-            $unwind: '$bookingInfo'
+          $unwind: '$bookingInfo'
         },
         {
-            $match: {
-                'bookingInfo.vendor': vendor._id,
-                status: 'succeeded'
-            }
+          $match: {
+            'bookingInfo.vendor': vendor._id,
+            status: 'succeeded'
+          }
         },
         {
-            $group: { _id: null, total: { $sum: '$amount' } }
+          $group: { _id: null, total: { $sum: '$amount' } }
         }
       ]);
       const totalEarnings = successfulTransactions.length > 0 ? successfulTransactions[0].total : 0;
@@ -61,19 +60,21 @@ export const reconcileVendorBalances = async () => {
           - Expected Balance: ${expectedBalance}
           - Discrepancy: ${discrepancy}`);
 
-        // Log the discrepancy for audit purposes
-        recordAuditLog(
-          null, // No specific user initiated this
-          'BALANCE_DISCREPANCY_DETECTED',
+        // ✅ Log the discrepancy for audit purposes (now with proper null handling)
+        await recordAuditLog(
+          null, // No specific user initiated this (system action)
+          'balance_reconciliation', // Updated action name to match enum
           'Vendor',
           vendor._id,
           {
+            vendorName: vendor.businessName,
             storedBalance,
             expectedBalance,
             discrepancy,
             totalEarnings,
             totalPayouts,
-            commissionRate
+            commissionRate,
+            reconciliationDate: new Date().toISOString()
           }
         );
       }

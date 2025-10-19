@@ -59,7 +59,30 @@ export const initiatePayout = async (req, res, next) => {
 // @route  GET /api/payouts
 // @access Private (Finance, Admin)
 export const getAllPayouts = async (req, res, next) => {
-  res.status(501).json({ success: false, message: "Not Implemented" });
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+
+    const total = await Payout.countDocuments();
+    const payouts = await Payout.find()
+      .skip(skip)
+      .limit(limit)
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      data: payouts,
+      pagination: {
+        total,
+        page,
+        limit,
+        pages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
 };
 
 // @desc   Get a single payout by ID
