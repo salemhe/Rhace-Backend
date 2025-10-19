@@ -9,7 +9,7 @@ router.post("/auth/register", registerVendor);
 router.get("/", getVendor)
 
 // Vendor login route
-router.post("/auth/login", loginVendor);
+router.post("/auth/login", loginVendor); // Unified login for vendors and admins
 
 router.post("/auth/verify-otp", verifyVendorOTP)
 
