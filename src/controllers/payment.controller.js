@@ -2,12 +2,14 @@ import Payment from "../models/payment.model.js";
 import moment from "moment";
 import { Vendor } from "../models/vendor.model.js";
 import { Booking } from "../models/booking.model.js";
+import { Booking } from "../models/booking.model.js";
 
 const percentChange = (current, previous) => {
   if (previous === 0) return current === 0 ? 0 : 100;
   return ((current - previous) / previous) * 100;
 };
 
+export const getBanks = async (req, res) => {
 export const getBanks = async (req, res) => {
   try {
     const response = await fetch("https://api.paystack.co/bank", {
@@ -344,8 +346,8 @@ export const initializePayment = async (req, res) => {
       email: email,
       amount: amount * 100,
       currency: "NGN",
-      subaccount: vendor.paymentDetails.subaccountCode,
-      callback_url: `http://localhost:5000/${type}s/confirmation/${bookingId}`,
+      subaccount: vendor.paymentDetails.subaccountCode, // vendor's subaccount
+      callback_url: `https://rhace-frontend.vercel.app/${type}s/confirmation/${bookingId}`,
       metadata: {
         vendorId,
         bookingId,
@@ -458,6 +460,7 @@ export const verifyPayment = async (req, res) => {
     }
 
     if (String(userId) !== transaction.metadata.userId) {
+    if (String(userId) !== transaction.metadata.userId) {
       return res
         .status(400)
         .json({ message: "Unauthorized: User Id is missing from metadata" });
@@ -478,13 +481,22 @@ export const verifyPayment = async (req, res) => {
         email: transaction.metadata.email,
         customer_name: transaction.metadata.customerName,
         paid_at: transaction.paid_at,
+        customer_name: transaction.metadata.customerName,
+        paid_at: transaction.paid_at,
         vendor: transaction.metadata.vendorId,
         booking: transaction.metadata.bookingId,
+        paymentMethod: transaction.channel,
+        amount: transaction.amount * 0.0092,
         paymentMethod: transaction.channel,
         amount: transaction.amount * 0.0092,
         reference: reference,
         status: "Paid",
       });
+
+      const updatedVendor = await Vendor.findById(transaction.metadata.vendorId)
+      updatedVendor.balance = updatedVendor.balance + (transaction.amount * 0.0092)
+      await updatedVendor.save();
+      
 
       const updatedVendor = await Vendor.findById(transaction.metadata.vendorId)
       updatedVendor.balance = updatedVendor.balance + (transaction.amount * 0.0092)
@@ -497,6 +509,8 @@ export const verifyPayment = async (req, res) => {
     const booking = await Booking.findById(transaction.metadata.bookingId)
     booking.paymentStatus = transaction.status;
     await booking.save()
+    booking.paymentStatus = transaction.status;
+    await booking.save()
 
     return res.status(200).json({
       message: "Transaction verified",
@@ -507,6 +521,7 @@ export const verifyPayment = async (req, res) => {
       paid_at: transaction.paid_at,
       bookingId: transaction.metadata.bookingId,
       vendorId: transaction.metadata.vendorId,
+      created_at: transaction.created_at,
       created_at: transaction.created_at,
       channel: transaction.channel,
       customer: {
