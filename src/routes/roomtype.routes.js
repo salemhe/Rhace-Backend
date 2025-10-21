@@ -15,20 +15,21 @@ import { uploadRoomTypeImages } from "../middlewares/roomTypeImage.middleware.js
 // mergeParams: true allows us to access params from parent router (e.g., :hotelId)
 const router = express.Router({ mergeParams: true });
 
-router.use(protect);
+router
+  .route("/")
+  .post(protect, authorize(["admin", "vendor"]), createRoomType)
+  .get(getRoomTypes);
 
-router.route("/")
-  .post(authorize(["admin", "vendor"]), createRoomType)
-  .get( getRoomTypes);
-
-router.route("/:id")
-  .get(authorize(["admin", "vendor", "staff"]), getRoomTypeById)
-  .put(authorize(["admin", "vendor"]), updateRoomType)
-  .delete(authorize(["admin", "vendor"]), deleteRoomType);
+router
+  .route("/:id")
+  .get(protect, authorize(["admin", "vendor", "staff"]), getRoomTypeById)
+  .put(protect, authorize(["admin", "vendor"]), updateRoomType)
+  .delete(protect, authorize(["admin", "vendor"]), deleteRoomType);
 
 // New route for uploading room type images
 router.patch(
   "/:id/upload-images",
+  protect,
   authorize(["admin", "vendor"]),
   uploadRoomTypeImages, // Multer middleware to handle file upload
   uploadRoomTypeImagesController // Controller to handle logic after upload

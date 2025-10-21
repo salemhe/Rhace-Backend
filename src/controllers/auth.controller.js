@@ -17,17 +17,17 @@ export const getVendor = async (req, res) => {
   try {
     const query = {};
     if (id) {
-      query._id = id
+      query._id = id;
     }
     if (type) {
-      query.vendorType = type
+      query.vendorType = type;
     }
     const vendor = await Vendor.find(query);
 
     return res.json({
       message: `Fetched ${type} vendor Succesfully!`,
-      data: vendor
-    })
+      data: vendor,
+    });
   } catch (err) {
     console.error(err);
     return res.status(500).json({
@@ -49,7 +49,17 @@ export const loginVendor = async (req, res) => {
       // If not a vendor, check if it's an admin user
       user = await User.findOne({ email });
       isVendor = false;
-      if (!user || !["admin", "superadmin", "finance", "ops", "support", "manager"].includes(user.role)) {
+      if (
+        !user ||
+        ![
+          "admin",
+          "superadmin",
+          "finance",
+          "ops",
+          "support",
+          "manager",
+        ].includes(user.role)
+      ) {
         return res.status(404).json({ message: "User not found" });
       }
     }
@@ -72,9 +82,11 @@ export const loginVendor = async (req, res) => {
       isVendor ? user.vendorType : null
     );
 
-    return res
-      .status(200)
-      .json({ message: "Login successful.", [isVendor ? "vendor" : "user"]: user, token });
+    return res.status(200).json({
+      message: "Login successful.",
+      vendor: user,
+      token,
+    });
   } catch (err) {
     console.error(err);
     return res.status(500).json({
@@ -159,8 +171,8 @@ export const onboardVendor = async (req, res) => {
     } = req.body;
 
     // Find vendor
-    let vendor = await Vendor.findById(id);
-    if (!vendor) {
+    let vendorDetails = await Vendor.findById(id);
+    if (!vendorDetails) {
       return res.status(404).json({ message: "Vendor not found." });
     }
 
@@ -171,7 +183,7 @@ export const onboardVendor = async (req, res) => {
 
     const recipientPayload = {
       type: "nuban",
-      business_name: vendor.businessName,
+      business_name: vendorDetails.businessName,
       account_number: accountNumber,
       settlement_bank: bankCode,
       currency: "NGN",
@@ -196,6 +208,49 @@ export const onboardVendor = async (req, res) => {
         .status(500)
         .json({ message: "Paystack error", error: recipientData.message });
     }
+    vendorDetails.vendorType = vendorType;
+    await vendorDetails.save();
+    let vendor = {};
+
+    // 🔑 Handle vendorType-specific onboarding
+    switch (vendorType) {
+      case "hotel":
+        vendor = await HotelVendor.findById(vendorDetails._id);
+        vendor.offer = offer;
+        break;
+
+      case "restaurant":
+        vendor = await RestaurantVendor.findById(vendorDetails._id);
+        vendor.openingTime = openingTime;
+        vendor.closingTime = closingTime;
+        vendor.cuisines = cuisines;
+        vendor.availableSlots = availableSlots;
+        break;
+
+      case "club":
+        // Prepare update data for club vendor
+        vendor = await ClubVendor.findById(vendorDetails._id);
+
+        if (openingTime) vendor.openingTime = openingTime;
+        if (closingTime) vendor.closingTime = closingTime;
+        if (slots !== undefined) vendor.slots = Number(slots);
+        if (categories) vendor.categories = categories;
+        if (offer) vendor.offer = offer;
+        if (dressCode) vendor.dressCode = dressCode;
+        if (ageLimit !== undefined) {
+          // Clean the ageLimit value - remove any non-numeric characters except the number
+          const cleanedAgeLimit = String(ageLimit).replace(/[^0-9]/g, "");
+          vendor.ageLimit = cleanedAgeLimit;
+          vendor.vendorType = vendorType;
+        }
+
+        console.log("clubData: ", vendor);
+
+        break;
+
+      default:
+        return res.status(400).json({ message: "Invalid vendor type." });
+    }
 
     // Basic updates
     vendor.profileImages = profileImages || vendor.profileImages;
@@ -216,45 +271,7 @@ export const onboardVendor = async (req, res) => {
       } || vendor.paymentDetails;
     vendor.vendorType = vendorType || vendor.vendorType;
 
-    // 🔑 Handle vendorType-specific onboarding
-    switch (vendorType) {
-      case "hotel":
-        await HotelVendor.findByIdAndUpdate(vendor._id, {
-          offer,
-        });
-        break;
-
-      case "restaurant":
-        await RestaurantVendor.findByIdAndUpdate(vendor._id, {
-          openingTime,
-          closingTime,
-          cuisines,
-          availableSlots,
-        });
-        break;
-
-                  case "club":
-        // Prepare update data for club vendor
-        const clubUpdateData = {};
-        if (openingTime) clubUpdateData.openingTime = openingTime;
-        if (closingTime) clubUpdateData.closingTime = closingTime;
-        if (slots !== undefined) clubUpdateData.slots = Number(slots);
-        if (categories) clubUpdateData.categories = categories;
-        if (offer) clubUpdateData.offer = offer;
-        if (dressCode) clubUpdateData.dressCode = dressCode;
-        if (ageLimit !== undefined) {
-          // Clean the ageLimit value - remove any non-numeric characters except the number
-          const cleanedAgeLimit = String(ageLimit).replace(/[^0-9]/g, '');
-          clubUpdateData.ageLimit = cleanedAgeLimit;
-        }
-
-        await ClubVendor.findByIdAndUpdate(vendor._id, clubUpdateData);
-        break;
-
-      default:
-        return res.status(400).json({ message: "Invalid vendor type." });
-    }
-
+    console.log(vendor);
     await vendor.save();
     return res.status(200).json({
       message: "Onboarding completed successfully.",
@@ -279,7 +296,12 @@ export const register = async (req, res) => {
     }
 
     // Prevent admin signup
-    if (role && ["admin", "superadmin", "finance", "ops", "support", "manager"].includes(role)) {
+    if (
+      role &&
+      ["admin", "superadmin", "finance", "ops", "support", "manager"].includes(
+        role
+      )
+    ) {
       return res.status(400).json({ message: "Admin signup not allowed" });
     }
 

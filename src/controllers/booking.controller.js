@@ -1,4 +1,8 @@
-import { Booking, hotelReservation, restaurantReservation } from "../models/booking.model.js";
+import {
+  Booking,
+  hotelReservation,
+  restaurantReservation,
+} from "../models/booking.model.js";
 import { getVendorSocket } from "../websockets/socketManager.js";
 
 export const createReservation = async (req, res) => {
@@ -67,7 +71,7 @@ export const createReservation = async (req, res) => {
 
       const vendorSocket = getVendorSocket(vendor);
       if (vendorSocket && vendorSocket.readyState === 1) {
-        // 1 = OPEN
+
         vendorSocket.send(
           JSON.stringify({
             type: "new_reservation",
@@ -79,6 +83,7 @@ export const createReservation = async (req, res) => {
               vendor,
               date,
               time,
+              mealPreselected,
               guests,
               reservationType: reservationType,
               reservationStatus: "Upcoming",
@@ -89,6 +94,7 @@ export const createReservation = async (req, res) => {
             },
           })
         );
+        console.log("Reservation sent to vendor via WebSocket.");
       }
     }
 
@@ -138,7 +144,7 @@ export const createReservation = async (req, res) => {
       data: reservationData,
     });
   } catch (error) {
-    console.log(error);
+    console.error(error);
     return res.status(500).json({
       message: error.message,
     });
@@ -173,7 +179,10 @@ export const getReservations = async (req, res) => {
       })
       .populate({
         path: "vendor",
-      });
+      })
+      .populate({
+        path: "room"
+      })
 
     return res.status(200).json({
       message: "Fetched Reservations Succesfully",

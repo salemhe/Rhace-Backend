@@ -15,7 +15,6 @@ export const protect = async (req, res, next) => {
 
             // Verify token
       const decoded = verifyToken(token);
-      console.log("Decoded token:", { id: decoded.id, role: decoded.role, isOnboarded: decoded.isOnboarded });
 
       if (decoded.role === "vendor") {
         req.user = await Vendor.findById(decoded.id).select("_id role vendorType isOnboarded");
@@ -30,15 +29,14 @@ export const protect = async (req, res, next) => {
 
       // Set the role from the JWT token to ensure correct authorization
       req.user.role = decoded.role;
-      console.log("User after auth middleware:", { id: req.user._id, role: req.user.role, isOnboarded: req.user.isOnboarded });
 
             // Check if vendor is onboarded
-      if (decoded.role === "vendor" && !req.user.isOnboarded) {
-        return res.status(403).json({ 
-          message: "Forbidden: Please complete vendor onboarding before accessing this resource.",
-          isOnboarded: false 
-        });
-      }
+      // if (decoded.role === "vendor" && !req.user.isOnboarded) {
+      //   return res.status(403).json({ 
+      //     message: "Forbidden: Please complete vendor onboarding before accessing this resource.",
+      //     isOnboarded: false 
+      //   });
+      // }
 
       next();
     } catch (error) {
