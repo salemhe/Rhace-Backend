@@ -145,7 +145,7 @@ export const createMenuItem = async (req, res) => {
 export const getMenuItems = async (req, res) => {
     try {
         const { page = 1, limit = 10, search, category, tags, availability, sortBy = "createdAt", sortOrder = "desc" } = req.query;
-        const userId = req.user.role === "vendor" ? req.user._id : req.query.userId;
+        const { userId }  = rew.query;
 
         let query = {};
 
