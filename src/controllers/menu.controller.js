@@ -144,8 +144,7 @@ export const createMenuItem = async (req, res) => {
 // Get all menu items with search, filter, sort, and pagination
 export const getMenuItems = async (req, res) => {
     try {
-        const { page = 1, limit = 10, search, category, tags, availability, sortBy = "createdAt", sortOrder = "desc" } = req.query;
-        const { userId }  = rew.query;
+        const { page = 1, limit = 10, search, category, tags, availability, sortBy = "createdAt", sortOrder = "desc", userId } = req.query;
 
         let query = {};
 
@@ -169,7 +168,7 @@ export const getMenuItems = async (req, res) => {
         }
 
         // If the user is a vendor, restrict to their menu items
-        if (req.user.role) {
+        if (userId) {
             query.vendor = String(userId);
         }
 

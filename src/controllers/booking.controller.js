@@ -71,7 +71,6 @@ export const createReservation = async (req, res) => {
 
       const vendorSocket = getVendorSocket(vendor);
       if (vendorSocket && vendorSocket.readyState === 1) {
-
         vendorSocket.send(
           JSON.stringify({
             type: "new_reservation",
@@ -103,37 +102,33 @@ export const createReservation = async (req, res) => {
         return res.status(400).json({ message: "Fill hotels required fields" });
       }
 
-      const hotel = await hotelReservation.create({
-        ...initialData,
-        checkInDate,
-        checkOutDate,
-        guests,
-        specialRequest,
-        room,
-      });
+      const hotel = await hotelReservation
+        .create({
+          ...initialData,
+          checkInDate,
+          checkOutDate,
+          guests,
+          specialRequest,
+          room,
+        })
 
       reservationData = hotel;
 
       const vendorSocket = getVendorSocket(vendor);
       if (vendorSocket && vendorSocket.readyState === 1) {
+        const hotelRes = await hotelReservation
+          .findById(hotel._id)
+          .populate({
+            path: "vendor",
+          })
+          .populate({
+            path: "room",
+          });
         // 1 = OPEN
         vendorSocket.send(
           JSON.stringify({
             type: "new_reservation",
-            data: {
-              _id: restaurant._id,
-              customerName,
-              customerId,
-              customerEmail,
-              vendor,
-              guests,
-              reservationType: reservationType,
-              reservationStatus: "Upcoming",
-              location,
-              totalAmount,
-              paymentStatus: "Not Paid",
-              message: "You have a new reservation",
-            },
+            data: hotelRes
           })
         );
       }
@@ -181,8 +176,8 @@ export const getReservations = async (req, res) => {
         path: "vendor",
       })
       .populate({
-        path: "room"
-      })
+        path: "room",
+      });
 
     return res.status(200).json({
       message: "Fetched Reservations Succesfully",

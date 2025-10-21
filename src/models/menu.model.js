@@ -32,7 +32,7 @@ const menuItemSchema = new mongoose.Schema({
     discountPrice: { type: Number },
     mealTimes: [{ type: String }],
     tags: [{ type: String }],
-    images: { type: String },
+    coverImage: { type: String },
     availability: { type: Boolean, default: true },
     isVisible: { type: Boolean, default: true },
     tags: [{ type: String }],
