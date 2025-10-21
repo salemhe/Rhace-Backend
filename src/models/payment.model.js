@@ -15,12 +15,19 @@ const PaymentSchema = new mongoose.Schema({
         type: String,},
     paymentMethod: {
         type: String,
-        enum: ["Card", "Bank Transfer", "Mobile Money"],
         required: true,
     },
     amount: {
         type: Number,
         required: true,
+    },
+    booking: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Booking",
+    },
+    reference: {
+        type: String,
+        unique: true,
     },
     status: {
         type: String,

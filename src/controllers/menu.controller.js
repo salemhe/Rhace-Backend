@@ -145,7 +145,7 @@ export const createMenuItem = async (req, res) => {
 export const getMenuItems = async (req, res) => {
     try {
         const { page = 1, limit = 10, search, category, tags, availability, sortBy = "createdAt", sortOrder = "desc" } = req.query;
-        const userId = req.user.role ? req.user._id : req.query.userId;
+        const userId = req.user.role === "vendor" ? req.user._id : req.query.userId;
 
         let query = {};
 
@@ -170,7 +170,7 @@ export const getMenuItems = async (req, res) => {
 
         // If the user is a vendor, restrict to their menu items
         if (req.user.role) {
-            query.vendor = userId;
+            query.vendor = String(userId);
         }
 
         const totalMenuItems = await MenuItem.countDocuments(query);
