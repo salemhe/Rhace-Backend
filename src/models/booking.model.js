@@ -73,4 +73,30 @@ const hotelReservation =
     })
   );
 
-export { Booking, restaurantReservation, hotelReservation };
+const clubReservation =
+  // mongoose.models.restaurant ||
+  Booking.discriminator(
+    "clubReservation",
+    new mongoose.Schema({
+      date: { type: Date },
+      guests: { type: Number },
+      table: { type: String },
+      drinks: [
+        {
+          drink: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Drink",
+            required: true,
+          },
+          quantity: {
+            type: Number,
+            required: true,
+            min: 1,
+          },
+        }
+      ],
+      specialRequest: { type: String },
+    })
+  );
+
+export { Booking, restaurantReservation, hotelReservation, clubReservation };

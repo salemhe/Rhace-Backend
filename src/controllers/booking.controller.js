@@ -1,5 +1,6 @@
 import {
   Booking,
+  clubReservation,
   hotelReservation,
   restaurantReservation,
 } from "../models/booking.model.js";
@@ -27,6 +28,8 @@ export const createReservation = async (req, res) => {
       checkOutDate,
       specialRequest,
       room,
+      drinks,
+      table,
     } = req.body;
 
     console.log(req.body);
@@ -134,6 +137,43 @@ export const createReservation = async (req, res) => {
       }
     }
 
+    if (reservationType === "club") {
+      if (!drinks || !date || !time || !guests) {
+        return res.status(400).json({ message: "Fill Clubs required fields" });
+      }
+
+      const club = await clubReservation
+        .create({
+          ...initialData,
+          date,
+          time,
+          table,
+          guests,
+          drinks,
+        })
+
+      reservationData = club;
+
+      const vendorSocket = getVendorSocket(vendor);
+      if (vendorSocket && vendorSocket.readyState === 1) {
+        const clubRes = await clubReservation
+          .findById(club._id)
+          .populate({
+            path: "vendor",
+          })
+          .populate({
+            path: "drinks.drink",
+          });
+        // 1 = OPEN
+        vendorSocket.send(
+          JSON.stringify({
+            type: "new_reservation",
+            data: clubRes
+          })
+        );
+      }
+    }
+
     return res.status(201).json({
       message: "Created Reservation succesfully",
       data: reservationData,
@@ -177,6 +217,9 @@ export const getReservations = async (req, res) => {
       })
       .populate({
         path: "room",
+      })
+      .populate({
+        path: "drinks.drink",
       });
 
     return res.status(200).json({
