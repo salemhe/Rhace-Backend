@@ -22,7 +22,7 @@ router
 
 router
   .route("/:id")
-  .get(protect, authorize(["admin", "vendor", "staff"]), getRoomTypeById)
+  .get(protect, authorize(["admin", "vendor", "staff", "user"]), getRoomTypeById)
   .put(protect, authorize(["admin", "vendor"]), updateRoomType)
   .delete(protect, authorize(["admin", "vendor"]), deleteRoomType);
 
