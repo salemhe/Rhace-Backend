@@ -112,7 +112,7 @@ export const getDrinks = async (req, res) => {
     let { clubId, category, status, search, page = 1, limit = 10, sortBy = "createdAt", sortOrder = "desc" } = req.query;
 
     // For vendors, automatically use their vendor ID as clubId
-    if (req.user.role === "vendor") {
+    if (req.user.role && req.user.role === "vendor") {
       clubId = req.user._id.toString();
     }
 
