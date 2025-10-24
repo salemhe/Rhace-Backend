@@ -11,8 +11,11 @@ const bottleSetSchema = new mongoose.Schema({
       order: { type: Number, required: true, default: 0 },
     },
   ],
-  images: [{ type: String }],
+  addOns: [{ type: String }],
+  image: { type: String },
   setPrice: { type: Number, required: true },
+  priceVisibility: { type: Boolean },
+  discount: { type: Number },
 }, { timestamps: true });
 
 const BottleSet = mongoose.model("BottleSet", bottleSetSchema);

@@ -11,7 +11,7 @@ export const createBottleSet = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
-    const { name, clubId, items = [], setPrice, newDrinks = [] } = req.body;
+    const { name, clubId, items = [], setPrice, newDrinks = [], discount, addOns, priceVisibility, image } = req.body;
 
     // Create new drinks if any
     if (newDrinks.length > 0) {
@@ -32,15 +32,11 @@ export const createBottleSet = async (req, res) => {
         if (drink.clubId.toString() !== clubId) {
           throw new Error(`Drink with id ${item.drinkId} does not belong to club ${clubId}`);
         }
-        if (drink.status !== 'active') {
-          throw new Error(`Drink with id ${item.drinkId} is not active`);
-        }
+        console.log(session, "Session")
       }
     }
 
-    const images = req.files ? req.files.map(file => file.path) : [];
-
-    const bottleSet = new BottleSet({ name, clubId, items, setPrice, images });
+    const bottleSet = new BottleSet({ name, clubId, items, setPrice, image, discount, addOns, priceVisibility });
     await bottleSet.save({ session });
 
     await recordAuditLog(req.user.id, "create", "BottleSet", bottleSet._id, { name, clubId, setPrice }, { session });

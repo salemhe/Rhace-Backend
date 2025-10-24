@@ -5,6 +5,203 @@ import {
   restaurantReservation,
 } from "../models/booking.model.js";
 import { getVendorSocket } from "../websockets/socketManager.js";
+import dayjs from "dayjs";
+const getDateRange = (date) => ({
+  start: dayjs(date).startOf("day").toDate(),
+  end: dayjs(date).endOf("day").toDate(),
+});
+
+const percentChange = (current, prev) => {
+  if (prev === 0 && current > 0) return 100;
+  if (prev === 0 && current === 0) return 0;
+  return Number((((current - prev) / prev) * 100).toFixed(2));
+};
+
+// ---------- Controller ----------
+export const getBookingSummary = async (req, res) => {
+  try {
+    const vendorId = req.query.vendorId || null; // optional filter
+    const vendorFilter = vendorId ? { vendor: vendorId } : {};
+
+    const today = new Date();
+    const { start: todayStart, end: todayEnd } = getDateRange(today);
+    const { start: lastWeekStart, end: lastWeekEnd } = getDateRange(
+      dayjs(today).subtract(7, "day")
+    );
+
+    // ---------- 1️⃣ TOTAL RESERVATIONS ----------
+    const [todayCount, lastWeekCount] = await Promise.all([
+      Booking.countDocuments({
+        ...vendorFilter,
+        createdAt: { $gte: todayStart, $lte: todayEnd },
+      }),
+      Booking.countDocuments({
+        ...vendorFilter,
+        createdAt: { $gte: lastWeekStart, $lte: lastWeekEnd },
+      }),
+    ]);
+    const totalReservationsChange = percentChange(todayCount, lastWeekCount);
+
+    // ---------- 2️⃣ PREPAID RESERVATIONS ----------
+    const [todayPrepaid, lastWeekPrepaid] = await Promise.all([
+      Booking.countDocuments({
+        ...vendorFilter,
+        paymentStatus: "paid",
+        createdAt: { $gte: todayStart, $lte: todayEnd },
+      }),
+      Booking.countDocuments({
+        ...vendorFilter,
+        paymentStatus: "paid",
+        createdAt: { $gte: lastWeekStart, $lte: lastWeekEnd },
+      }),
+    ]);
+    const prepaidChange = percentChange(todayPrepaid, lastWeekPrepaid);
+
+    // ---------- 3️⃣ PENDING PAYMENTS ----------
+    const [todayPending, lastWeekPending] = await Promise.all([
+      Booking.countDocuments({
+        ...vendorFilter,
+        paymentStatus: "pending",
+        createdAt: { $gte: todayStart, $lte: todayEnd },
+      }),
+      Booking.countDocuments({
+        ...vendorFilter,
+        paymentStatus: "pending",
+        createdAt: { $gte: lastWeekStart, $lte: lastWeekEnd },
+      }),
+    ]);
+    const pendingChange = percentChange(todayPending, lastWeekPending);
+
+    // ---------- 4️⃣ EXPECTED GUESTS ----------
+    const guestAggregation = async (start, end) => {
+      const result = await Booking.aggregate([
+        {
+          $match: {
+            ...vendorFilter,
+            $or: [
+              { date: { $gte: start, $lte: end } },
+              { checkInDate: { $gte: start, $lte: end } },
+              { createdAt: { $gte: start, $lte: end } },
+            ],
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            guests: { $sum: { $ifNull: ["$guests", 0] } },
+          },
+        },
+      ]);
+      return result[0]?.guests || 0;
+    };
+
+    const [guestsToday, guestsLastWeek] = await Promise.all([
+      guestAggregation(todayStart, todayEnd),
+      guestAggregation(lastWeekStart, lastWeekEnd),
+    ]);
+    const guestsChange = percentChange(guestsToday, guestsLastWeek);
+
+    // ---------- 5️⃣ TODAY'S RESERVATIONS (ARRAY) ----------
+    const todaysReservations = await Booking.find({
+      ...vendorFilter,
+      $or: [
+        { date: { $gte: todayStart, $lte: todayEnd } },
+        { checkInDate: { $gte: todayStart, $lte: todayEnd } },
+        { createdAt: { $gte: todayStart, $lte: todayEnd } },
+      ],
+    })
+      .populate("customerId", "name email")
+      .populate("vendor", "name")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // ---------- 6️⃣ RESERVATION TRENDS (14 days) ----------
+    const fourteenDaysAgo = dayjs().subtract(13, "day").startOf("day").toDate();
+
+    const trends = await Booking.aggregate([
+      {
+        $match: {
+          ...vendorFilter,
+          createdAt: { $gte: fourteenDaysAgo },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            day: { $dayOfMonth: "$createdAt" },
+            month: { $month: "$createdAt" },
+            year: { $year: "$createdAt" },
+          },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { "_id.year": 1, "_id.month": 1, "_id.day": 1 } },
+    ]);
+
+    const last7Days = trends.slice(-7).reduce((acc, d) => acc + d.count, 0);
+    const prev7Days = trends.slice(0, -7).reduce((acc, d) => acc + d.count, 0);
+    const trendChange = percentChange(last7Days, prev7Days);
+
+    // ---------- 7️⃣ CUSTOMER FREQUENCY ----------
+    const customerAgg = await Booking.aggregate([
+      { $match: { ...vendorFilter } },
+      { $group: { _id: "$customerEmail", count: { $sum: 1 } } },
+    ]);
+
+    const returningCustomers = customerAgg.filter((c) => c.count > 1).length;
+    const newCustomers = customerAgg.length - returningCustomers;
+
+    // ---------- ✅ FINAL RESPONSE ----------
+    res.status(200).json({
+      success: true,
+      vendorScope: vendorId ? vendorId : "all",
+      data: {
+        todayStats: [
+          {
+            details: todayCount,
+            change: totalReservationsChange,
+          },
+          {
+            details: todayPrepaid,
+            change: prepaidChange,
+          },
+          {
+            details: guestsToday,
+            change: guestsChange,
+          },
+          {
+            details: todayPending,
+            change: pendingChange,
+          },
+        ],
+        todaysReservations,
+        reservationTrends: {
+          daily: trends.map((t) => ({
+            date: `${t._id.year}-${String(t._id.month).padStart(
+              2,
+              "0"
+            )}-${String(t._id.day).padStart(2, "0")}`,
+            count: t.count,
+          })),
+          last7Days,
+          prev7Days,
+          trendChange,
+        },
+        customerFrequency: {
+          new: newCustomers,
+          returning: returningCustomers,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching vendor summary:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error fetching booking summary",
+      error: error.message,
+    });
+  }
+};
 
 export const createReservation = async (req, res) => {
   try {
@@ -30,6 +227,7 @@ export const createReservation = async (req, res) => {
       room,
       drinks,
       table,
+      combos,
     } = req.body;
 
     console.log(req.body);
@@ -105,15 +303,14 @@ export const createReservation = async (req, res) => {
         return res.status(400).json({ message: "Fill hotels required fields" });
       }
 
-      const hotel = await hotelReservation
-        .create({
-          ...initialData,
-          checkInDate,
-          checkOutDate,
-          guests,
-          specialRequest,
-          room,
-        })
+      const hotel = await hotelReservation.create({
+        ...initialData,
+        checkInDate,
+        checkOutDate,
+        guests,
+        specialRequest,
+        room,
+      });
 
       reservationData = hotel;
 
@@ -131,7 +328,7 @@ export const createReservation = async (req, res) => {
         vendorSocket.send(
           JSON.stringify({
             type: "new_reservation",
-            data: hotelRes
+            data: hotelRes,
           })
         );
       }
@@ -142,15 +339,15 @@ export const createReservation = async (req, res) => {
         return res.status(400).json({ message: "Fill Clubs required fields" });
       }
 
-      const club = await clubReservation
-        .create({
-          ...initialData,
-          date,
-          time,
-          table,
-          guests,
-          drinks,
-        })
+      const club = await clubReservation.create({
+        ...initialData,
+        date,
+        time,
+        table,
+        guests,
+        drinks,
+        combos,
+      });
 
       reservationData = club;
 
@@ -168,7 +365,7 @@ export const createReservation = async (req, res) => {
         vendorSocket.send(
           JSON.stringify({
             type: "new_reservation",
-            data: clubRes
+            data: clubRes,
           })
         );
       }
@@ -185,7 +382,6 @@ export const createReservation = async (req, res) => {
     });
   }
 };
-
 export const getReservations = async (req, res) => {
   const { vendorId, userId, bookingId } = req.query;
   try {
@@ -196,38 +392,70 @@ export const getReservations = async (req, res) => {
       });
     }
 
-    if (bookingId) {
-      query._id = bookingId;
-    }
-
-    if (vendorId) {
-      query.vendor = vendorId;
-    }
-
-    if (userId) {
-      query.customerId = userId;
-    }
+    if (bookingId) query._id = bookingId;
+    if (vendorId) query.vendor = vendorId;
+    if (userId) query.customerId = userId;
 
     const reservations = await Booking.find(query)
-      .populate({
-        path: "menus.menu",
-      })
-      .populate({
-        path: "vendor",
-      })
-      .populate({
-        path: "room",
-      })
-      .populate({
-        path: "drinks.drink",
-      });
+      .populate({ path: "menus.menu" })
+      .populate({ path: "vendor" })
+      .populate({ path: "room" })
+      .populate({ path: "drinks.drink" })
+      .populate({ path: "combos" })
+      .sort({ createdAt: -1 });
 
+    // 🧠 If this is a USER, separate into upcoming and past
+    if (userId) {
+      const now = new Date();
+
+      const upcoming = [];
+      const past = [];
+
+      for (const resv of reservations) {
+        let isUpcoming = false;
+
+        switch (resv.reservationType) {
+          case "restaurantReservation":
+          case "clubReservation":
+            if (resv.date && new Date(resv.date) >= now) {
+              isUpcoming = true;
+            }
+            break;
+
+          case "hotelReservation":
+            if (resv.checkOutDate && new Date(resv.checkOutDate) >= now) {
+              isUpcoming = true;
+            }
+            break;
+
+          default:
+            // fallback on status
+            if (resv.reservationStatus === "Upcoming") {
+              isUpcoming = true;
+            }
+            break;
+        }
+
+        if (isUpcoming) upcoming.push(resv);
+        else past.push(resv);
+      }
+
+      return res.status(200).json({
+        message: "Fetched Reservations Successfully",
+        data: {
+          upcoming,
+          past,
+        },
+      });
+    }
+
+    // 🏢 For vendors or specific booking fetch, return as-is
     return res.status(200).json({
-      message: "Fetched Reservations Succesfully",
+      message: "Fetched Reservations Successfully",
       data: reservations,
     });
   } catch (error) {
-    console.log(error);
+    console.error(error);
     return res.status(500).json({
       message: error.message,
     });
