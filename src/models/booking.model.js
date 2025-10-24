@@ -81,6 +81,10 @@ const clubReservation =
       date: { type: Date },
       guests: { type: Number },
       table: { type: String },
+      combos: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "BottleSet",
+      }],
       drinks: [
         {
           drink: {

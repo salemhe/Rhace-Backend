@@ -16,8 +16,8 @@ const router = express.Router();
 router.use(protect);
 
 router.route("/")
-  .post(authorize(["admin"]), uploadBottleSetImages, createBottleSet)
-  .get(authorize(["admin", "staff"]), getBottleSets);
+  .post(authorize(["admin", "vendor"]), uploadBottleSetImages, createBottleSet)
+  .get(authorize(["admin", "staff", "vendor", "user"]), getBottleSets);
 
 router.route("/:id")
   .get(authorize(["admin", "vendor", "staff"]), getBottleSetById)
