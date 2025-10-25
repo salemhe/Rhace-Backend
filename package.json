@@ -31,6 +31,7 @@
     "multer-s3": "^3.0.1",
     "nanoid": "^5.0.7",
     "node-cron": "^3.0.3",
+    "node-geocoder": "^4.4.1",
     "nodemailer": "^7.0.6",
     "paystack-api": "^2.0.6",
     "pdfkit": "^0.17.2",
