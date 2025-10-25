@@ -16,26 +16,38 @@ const VendorBaseSchema = new Schema(
     address: { type: String },
     password: { type: String },
     role: { type: String, default: "vendor" },
-    profileImages: [{
-          type: String,
-          validate: {
-            validator: function (value) {
-              return (
-                /^(https?:\/\/.*\.(?:png|jpg|jpeg|gif|svg))$/.test(value) ||
-                value === null
-              );
-            },
-            message: "Profile image must be a valid URL.",
+    location: {
+      type: {
+        type: String,
+        enum: ["Point"],
+        default: "Point",
+      },
+      coordinates: {
+        type: [Number],
+        index: "2dsphere",
+      },
+    },
+    profileImages: [
+      {
+        type: String,
+        validate: {
+          validator: function (value) {
+            return (
+              /^(https?:\/\/.*\.(?:png|jpg|jpeg|gif|svg))$/.test(value) ||
+              value === null
+            );
           },
-          default: null,
+          message: "Profile image must be a valid URL.",
         },
+        default: null,
+      },
     ],
     paymentDetails: {
       bankCode: { type: String },
       accountNumber: { type: String },
       subaccountCode: { type: String },
       bankName: { type: String },
-      accountName: {type: String },
+      accountName: { type: String },
     },
     percentageCharge: { type: Number, default: 0 },
     balance: { type: Number, default: 0 },
@@ -49,8 +61,8 @@ const VendorBaseSchema = new Schema(
     priceRange: { type: Number, default: 0 },
     vendorTypeCategory: { type: String },
     branch: { type: String },
-    isVisible: { type: Boolean, default: false},
-    vendorType: { type: String }
+    isVisible: { type: Boolean, default: false },
+    vendorType: { type: String },
   },
   options
 );
@@ -61,9 +73,22 @@ VendorBaseSchema.methods.comparePassword = async function (enteredPassword) {
 
 VendorBaseSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
+  if (!this.isModified("address") || !this.address) return next();
 
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
+  try {
+    const loc = await geocoder.geocode(this.address);
+  
+    if (loc.length > 0) {
+      this.location = {
+        type: "Point",
+        coordinates: [loc[0].longitude, loc[0].latitude],
+      };
+    }
+  } catch (error) {
+    console.error("Error geocoding address:", error);
+  }
   next();
 });
 
