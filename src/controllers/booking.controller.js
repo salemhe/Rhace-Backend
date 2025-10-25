@@ -20,7 +20,7 @@ const percentChange = (current, prev) => {
 // ---------- Controller ----------
 export const getBookingSummary = async (req, res) => {
   try {
-    const vendorId = req.query.vendorId || null; // optional filter
+    const vendorId = req.user._id || null; // optional filter
     const vendorFilter = vendorId ? { vendor: vendorId } : {};
 
     const today = new Date();
