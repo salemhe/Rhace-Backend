@@ -101,9 +101,6 @@
 // };
 
 
-
-
-import nodemailer from "nodemailer";
 import sgMail from "@sendgrid/mail";
 
 // Generic email sending function
@@ -158,7 +155,7 @@ export const sendPasswordResetEmail = async (to, token, role) => {
   <body>
     <div class="container">
       <div class="header">
-        <img src="https://rhace-frontend.vercel.app/assets/images/Rhace-11.png" alt="Rhace Logo" />
+        <img src="https://rhace-frontend.vercel.app/assets/Rhace-09-Cqm7n3Fw.png" alt="Rhace Logo" />
       </div>
       <div class="content">
         <h2>Password Reset Request</h2>
@@ -176,8 +173,79 @@ export const sendPasswordResetEmail = async (to, token, role) => {
 };
 
 //  BOOKING CONFIRMATION EMAIL
-export const sendBookingConfirmationEmail = async (to, bookingDetails) => {
-  const { bookingCode, hotelName, roomType, checkInDate, checkOutDate, totalAmount, currency } = bookingDetails;
+export const sendBookingConfirmationEmail = async (to, bookingDetails, type) => {
+  const {
+    bookingCode,
+    location,
+    date,
+    time,
+    guests,
+    mealPreselected,
+    menus,
+    drinks,
+    table,
+    combos,
+    room,
+    checkInDate,
+    checkOutDate,
+    totalAmount,
+    currency = "Naira",
+    specialOccasion,
+    seatingPreference,
+    vendor,
+    specialRequest,
+    customerName,
+  } = bookingDetails;
+
+  // Generate QR code URL
+  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(
+    `https://rhace-frontend.vercel.app//booking/${bookingCode}`
+  )}&size=150x150`;
+
+  // Build details dynamically
+  let detailsHtml = `
+  <p><strong>Booking Code:</strong> ${bookingCode}</p>`;
+  
+  if (type === "hotel") {
+    detailsHtml += `
+      <p><strong>Hotel name:</strong> ${vendor.businessName}</p>
+      <p><strong>Location:</strong> ${location}</p>
+      <p><strong>Room:</strong> ${room?.name || "N/A"}</p>
+      <p><strong>Check-in:</strong> ${new Date(checkInDate).toDateString()}</p>
+      <p><strong>Check-out:</strong> ${new Date(checkOutDate).toDateString()}</p>
+      <p><strong>Guests:</strong> ${guests}</p>
+      ${specialRequest ? `<p><strong>Special Request:</strong> ${specialRequest}</p>` : ""}
+      <p><strong>Total Amount:</strong> ${totalAmount} ${currency}</p>
+    `;
+  } else if (type === "restaurant") {
+    detailsHtml += `
+      <p><strong>Restaurant Name:</strong> ${vendor.businessName}</p>
+      <p><strong>Location:</strong> ${location}</p>
+      <p><strong>Date:</strong> ${new Date(date).toDateString()}</p>
+      <p><strong>Time:</strong> ${time}</p>
+      <p><strong>Guests:</strong> ${guests}</p>
+      <p><strong>Meal Preselected:</strong> ${mealPreselected ? "Yes" : "No"}</p>
+      ${menus?.length ? `<p><strong>Menus:</strong> ${menus.map(m => m.menu?.name || "N/A").join(", ")}</p>` : ""}
+      ${specialOccasion ? `<p><strong>Special Occasion:</strong> ${specialOccasion}</p>` : ""}
+      ${seatingPreference ? `<p><strong>Seating Preference:</strong> ${seatingPreference}</p>` : ""}
+      ${specialRequest ? `<p><strong>Special Request:</strong> ${specialRequest}</p>` : ""}
+      <p><strong>Total Amount:</strong> ${totalAmount} ${currency}</p>
+    `;
+  } else if (type === "club") {
+    detailsHtml += `
+      <p><strong>Club name:</strong> ${vendor.businessName}</p>
+      <p><strong>Location:</strong> ${location}</p>
+      <p><strong>Date:</strong> ${new Date(date).toDateString()}</p>
+      <p><strong>Time:</strong> ${time}</p>
+      <p><strong>Guests:</strong> ${guests}</p>
+      ${table ? `<p><strong>Table:</strong> ${table}</p>` : ""}
+      ${drinks?.length ? `<p><strong>Drinks:</strong> ${drinks.map(d => `${d.drink?.name || "N/A"} (x${d.quantity})`).join(", ")}</p>` : ""}
+      ${combos?.length ? `<p><strong>Combos:</strong> ${combos.map(c => c?.name || "N/A").join(", ")}</p>` : ""}
+      ${specialRequest ? `<p><strong>Special Request:</strong> ${specialRequest}</p>` : ""}
+      <p><strong>Total Amount:</strong> ${totalAmount} ${currency}</p>
+    `;
+  }
+
   const htmlContent = `
   <!DOCTYPE html>
   <html lang="en">
@@ -195,36 +263,38 @@ export const sendBookingConfirmationEmail = async (to, bookingDetails) => {
       .content p { font-size: 15px; color: #333; line-height: 1.6; }
       .details { margin: 25px 0; padding: 15px 20px; background: #f9fafb; border-radius: 6px; border: 1px solid #eee; }
       .details p { font-size: 15px; color: #555; margin: 8px 0; }
+      .qr-section { text-align: center; margin-top: 30px; }
+      .qr-section img { width: 150px; height: 150px; border-radius: 8px; }
       .footer { background: #f7f8fa; text-align: center; padding: 18px; font-size: 13px; color: #888; border-top: 1px solid #eee; }
     </style>
   </head>
   <body>
     <div class="container">
       <div class="header">
-        <img src="https://rhace-frontend.vercel.app/assets/images/Rhace-11.png" alt="Rhace Logo" />
+        <img src="https://rhace-frontend.vercel.app/assets/Rhace-09-Cqm7n3Fw.png" alt="Rhace Logo" />
       </div>
       <div class="content">
         <h2>Your Booking is Confirmed 🎉</h2>
-        <p>Dear ${to},</p>
-        <p>Great news! Your booking has been successfully confirmed, and we’re excited to host you soon. Below are the details of your reservation.</p>
-        <div class="details">
-          <p><strong>Booking Code:</strong> ${bookingCode}</p>
-          <p><strong>Hotel:</strong> ${hotelName}</p>
-          <p><strong>Room Type:</strong> ${roomType}</p>
-          <p><strong>Check-in:</strong> ${new Date(checkInDate).toDateString()}</p>
-          <p><strong>Check-out:</strong> ${new Date(checkOutDate).toDateString()}</p>
-          <p><strong>Total Amount:</strong> ${totalAmount} ${currency}</p>
+        <p>Dear ${customerName},</p>
+        <p>Your booking has been successfully confirmed. Here are the details:</p>
+        <div class="details">${detailsHtml}</div>
+        <div class="qr-section">
+          <p>Scan this QR code to view your booking details:</p>
+          <img src="${qrCodeUrl}" alt="Booking QR Code" />
         </div>
-        <p>If you need to make any updates or have special requests, simply reply to this email or contact us through your Rhace account.</p>
-        <p>Thank you for choosing <strong>Rhace</strong> — we can’t wait to welcome you!</p>
+        <p>If you need to make any updates or have special requests, reply to this email or contact us through your Rhace account.</p>
+        <p>Thank you for choosing <strong>Rhace</strong>!</p>
         <p style="margin-top: 25px;">Warm regards,<br><strong>The Rhace Team</strong></p>
       </div>
       <div class="footer">© 2025 Rhace. All rights reserved.</div>
     </div>
   </body>
-  </html>`;
+  </html>
+  `;
+
   await sendEmail(to, "Booking Confirmation", htmlContent);
 };
+
 
 //  BOOKING CANCELLATION EMAIL
 export const sendBookingCancellationEmail = async (to, bookingDetails) => {
@@ -252,7 +322,7 @@ export const sendBookingCancellationEmail = async (to, bookingDetails) => {
   <body>
     <div class="container">
       <div class="header">
-        <img src="https://rhace-frontend.vercel.app/assets/images/Rhace-11.png" alt="Rhace Logo" />
+        <img src="https://rhace-frontend.vercel.app/assets/Rhace-09-Cqm7n3Fw.png" alt="Rhace Logo" />
       </div>
       <div class="content">
         <h2><b>Booking Cancelled</b> 😲</h2>
@@ -261,8 +331,16 @@ export const sendBookingCancellationEmail = async (to, bookingDetails) => {
         <div class="details">
           <p><strong>Booking Code:</strong> ${bookingCode}</p>
           <p><strong>Hotel:</strong> ${hotelName}</p>
-          <p><strong>Check-in:</strong> ${new Date(checkInDate).toDateString()}</p>
-          <p><strong>Check-out:</strong> ${new Date(checkOutDate).toDateString()}</p>
+          ${type === "hotel" ? (
+            `
+            <p><strong>Check-in:</strong> ${new Date(checkInDate).toDateString()}</p>
+            <p><strong>Check-out:</strong> ${new Date(checkOutDate).toDateString()}</p>
+            `
+          ) : (
+            `
+            <p><strong>Date:</strong> ${new Date(date).toDateString()}</p>
+            `
+          )}
         </div>
         <p>If this was an error or you'd like to make a new booking, please visit your Rhace account or contact our support team.</p>
         <p>Thank you for considering <strong>Rhace</strong> — we hope to host you soon.</p>
@@ -304,7 +382,7 @@ export const sendPaymentReceiptEmail = async (to, paymentDetails) => {
   <body>
     <div class="container">
       <div class="header">
-        <img src="https://rhace-frontend.vercel.app/assets/images/Rhace-11.png" alt="Rhace Logo" />
+        <img src="https://rhace-frontend.vercel.app/assets/Rhace-09-Cqm7n3Fw.png" alt="Rhace Logo" />
         <div class="receipt-title">Payment Receipt</div>
       </div>
       <div class="content">
