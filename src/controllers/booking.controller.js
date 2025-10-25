@@ -4,6 +4,7 @@ import {
   hotelReservation,
   restaurantReservation,
 } from "../models/booking.model.js";
+import { sendBookingConfirmationEmail } from "../services/mail.service.js";
 import { getVendorSocket } from "../websockets/socketManager.js";
 import dayjs from "dayjs";
 const getDateRange = (date) => ({
@@ -17,10 +18,15 @@ const percentChange = (current, prev) => {
   return Number((((current - prev) / prev) * 100).toFixed(2));
 };
 
+export const generateBookingCode = () => {
+  const randomPart = Math.random().toString(36).substring(2, 10).toUpperCase();
+  return `RHC${randomPart}`;
+};
+
 // ---------- Controller ----------
 export const getBookingSummary = async (req, res) => {
   try {
-    const vendorId = req.query.vendorId || null; // optional filter
+    const vendorId = req.user._id || null; // optional filter
     const vendorFilter = vendorId ? { vendor: vendorId } : {};
 
     const today = new Date();
@@ -151,30 +157,92 @@ export const getBookingSummary = async (req, res) => {
     const returningCustomers = customerAgg.filter((c) => c.count > 1).length;
     const newCustomers = customerAgg.length - returningCustomers;
 
+    const restaurantMenuBreakdown = await restaurantReservation.aggregate([
+      { $match: { ...vendorFilter } },
+      { $unwind: "$menus" }, // flatten menus array
+      { $group: { _id: "$menus.menu", quantity: { $sum: "$menus.quantity" } } },
+      {
+        $lookup: {
+          from: "menuitems", // MongoDB collection name
+          localField: "_id",
+          foreignField: "_id",
+          as: "menuInfo",
+        },
+      },
+      { $unwind: "$menuInfo" },
+      { $project: { menuName: "$menuInfo.name", quantity: 1 } },
+    ]);
+
+    // Drinks
+    const clubDrinksBreakdown = await clubReservation.aggregate([
+      { $match: { ...vendorFilter } },
+      { $unwind: "$drinks" },
+      {
+        $group: {
+          _id: "$drinks.drink",
+          quantity: { $sum: "$drinks.quantity" },
+        },
+      },
+      {
+        $lookup: {
+          from: "drinks",
+          localField: "_id",
+          foreignField: "_id",
+          as: "drinkInfo",
+        },
+      },
+      { $unwind: "$drinkInfo" },
+      { $project: { drinkName: "$drinkInfo.name", quantity: 1 } },
+    ]);
+
+    // Combos
+    const clubCombosBreakdown = await clubReservation.aggregate([
+      { $match: { ...vendorFilter } },
+      { $unwind: "$combos" },
+      { $group: { _id: "$combos", count: { $sum: 1 } } },
+      {
+        $lookup: {
+          from: "bottlesets",
+          localField: "_id",
+          foreignField: "_id",
+          as: "comboInfo",
+        },
+      },
+      { $unwind: "$comboInfo" },
+      { $project: { comboName: "$comboInfo.name", count: 1 } },
+    ]);
+
+    const hotelRoomsBreakdown = await hotelReservation.aggregate([
+      { $match: { ...vendorFilter } },
+      { $group: { _id: "$room", count: { $sum: 1 } } },
+      {
+        $lookup: {
+          from: "roomtypes", // MongoDB collection name
+          localField: "_id",
+          foreignField: "_id",
+          as: "roomInfo",
+        },
+      },
+      { $unwind: "$roomInfo" },
+      { $project: { roomName: "$roomInfo.name", count: 1 } },
+    ]);
+
     // ---------- ✅ FINAL RESPONSE ----------
     res.status(200).json({
       success: true,
-      vendorScope: vendorId ? vendorId : "all",
+      vendorScope: vendorId || "all",
       data: {
         todayStats: [
-          {
-            details: todayCount,
-            change: totalReservationsChange,
-          },
-          {
-            details: todayPrepaid,
-            change: prepaidChange,
-          },
-          {
-            details: guestsToday,
-            change: guestsChange,
-          },
-          {
-            details: todayPending,
-            change: pendingChange,
-          },
+          { details: todayCount, change: totalReservationsChange },
+          { details: todayPrepaid, change: prepaidChange },
+          { details: guestsToday, change: guestsChange },
+          { details: todayPending, change: pendingChange },
         ],
         todaysReservations,
+        hotelRoomsBreakdown,
+        restaurantMenuBreakdown,
+        clubDrinksBreakdown,
+        clubCombosBreakdown,
         reservationTrends: {
           daily: trends.map((t) => ({
             date: `${t._id.year}-${String(t._id.month).padStart(
@@ -235,6 +303,8 @@ export const createReservation = async (req, res) => {
       return res.status(400).json({ message: "Fill required fields" });
     }
 
+    const bookingCode = generateBookingCode();
+
     const initialData = {
       customerName,
       customerId,
@@ -245,6 +315,7 @@ export const createReservation = async (req, res) => {
       location,
       totalAmount,
       paymentStatus: "Not Paid",
+      bookingCode,
     };
 
     let reservationData = {};
@@ -371,6 +442,19 @@ export const createReservation = async (req, res) => {
       }
     }
 
+    const reservation = await Booking.findOne({ bookingCode })
+      .populate({ path: "menus.menu" })
+      .populate({ path: "vendor" })
+      .populate({ path: "room" })
+      .populate({ path: "drinks.drink" })
+      .populate({ path: "combos" });
+
+    await sendBookingConfirmationEmail(
+      reservation.customerEmail,
+      reservation,
+      reservationType
+    );
+
     return res.status(201).json({
       message: "Created Reservation succesfully",
       data: reservationData,
@@ -382,6 +466,7 @@ export const createReservation = async (req, res) => {
     });
   }
 };
+
 export const getReservations = async (req, res) => {
   const { vendorId, userId, bookingId } = req.query;
   try {
@@ -449,7 +534,6 @@ export const getReservations = async (req, res) => {
       });
     }
 
-    // 🏢 For vendors or specific booking fetch, return as-is
     return res.status(200).json({
       message: "Fetched Reservations Successfully",
       data: reservations,

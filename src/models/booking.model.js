@@ -20,6 +20,7 @@ const bookingSchema = new Schema(
     image: { type: String },
     location: { type: String },
     totalAmount: { type: Number },
+    bookingCode: { type: String },
   },
   options
 );
