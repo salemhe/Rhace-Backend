@@ -1,5 +1,6 @@
 import mongoose, { Schema } from "mongoose";
 import bcrypt from "bcrypt";
+import geocoder from "../utils/geocoder";
 
 const options = {
   discriminatorKey: "vendorType",
@@ -73,10 +74,14 @@ VendorBaseSchema.methods.comparePassword = async function (enteredPassword) {
 
 VendorBaseSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
-  if (!this.isModified("address") || !this.address) return next();
 
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
+  next();
+});
+
+VendorBaseSchema.pre("save", async function (next) {
+  if (!this.isModified("address") || !this.address) return next();
   try {
     const loc = await geocoder.geocode(this.address);
   
