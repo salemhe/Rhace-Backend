@@ -155,7 +155,7 @@ export const sendPasswordResetEmail = async (to, token, role) => {
   <body>
     <div class="container">
       <div class="header">
-        <img src="https://rhace-frontend.vercel.app/assets/Rhace-09-Cqm7n3Fw.png" alt="Rhace Logo" />
+        <img src="https://rhace-frontend.vercel.app/assets/Rhace-11-DtGOoxzF.png" alt="Rhace Logo" />
       </div>
       <div class="content">
         <h2>Password Reset Request</h2>
@@ -382,7 +382,7 @@ export const sendPaymentReceiptEmail = async (to, paymentDetails) => {
   <body>
     <div class="container">
       <div class="header">
-        <img src="https://rhace-frontend.vercel.app/assets/Rhace-09-Cqm7n3Fw.png" alt="Rhace Logo" />
+        <img src="https://rhace-frontend.vercel.app/assets/Rhace-11-DtGOoxzF.png" alt="Rhace Logo" />
         <div class="receipt-title">Payment Receipt</div>
       </div>
       <div class="content">
