@@ -1,17 +1,12 @@
 import mongoose from "mongoose";
 
 const reviewSchema = new mongoose.Schema({
-  clubId: { type: mongoose.Schema.Types.ObjectId, ref: "Club", required: true },
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  vendor: { type: mongoose.Schema.Types.ObjectId, ref: "Vendor", required: true },
+  user: { type: String, default: "Anonymous"},
   rating: { type: Number, required: true, min: 1, max: 5 },
-  reviewText: { type: String, trim: true },
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now },
-});
-
-reviewSchema.pre("save", function (next) {
-  this.updatedAt = Date.now();
-  next();
+  comment: { type: String, trim: true },
+}, {
+  timestamps: true
 });
 
 const Review = mongoose.model("Review", reviewSchema);

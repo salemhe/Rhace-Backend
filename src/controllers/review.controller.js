@@ -2,74 +2,39 @@ import Review from "../models/review.model.js";
 import Club from "../models/club.model.js";
 import mongoose from "mongoose";
 import { recordAuditLog } from "../utils/auditLogger.js";
+import { Vendor } from "../models/vendor.model.js";
 
-// @desc    Create a new review for a club
-// @route   POST /api/reviews
-// @access  Private
 export const createReview = async (req, res) => {
   try {
-    const { clubId, rating, reviewText } = req.body;
-    const userId = req.user._id;
+    const { rating, comment, user, vendor } = req.body;
 
-    // Check if club exists
-    const club = await Club.findById(clubId);
-    if (!club) {
-      return res.status(404).json({ message: "Club not found" });
-    }
-
-    // Check if user already reviewed this club
-    const existingReview = await Review.findOne({ clubId, userId });
-    if (existingReview) {
-      return res.status(400).json({ message: "You have already reviewed this club" });
-    }
-
-    const review = new Review({ clubId, userId, rating, reviewText });
+    // Create and save new review
+    const review = new Review({ vendor, rating, comment, user });
     await review.save();
 
-    recordAuditLog(userId, "CREATE_REVIEW", "Review", review._id, review.toObject());
+    // Recalculate restaurant average rating
+    const allReviews = await Review.find({ vendor });
+    const avgRating =
+      allReviews.reduce((sum, r) => sum + r.rating, 0) / allReviews.length;
+
+    await Vendor.findByIdAndUpdate(vendor, {
+      rating: avgRating.toFixed(1),
+      reviews: allReviews.length,
+    });
 
     res.status(201).json(review);
-  } catch (error) {
-    res.status(400).json({ message: error.message });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 };
 
-// @desc    Get all reviews for a club
-// @route   GET /api/reviews
-// @access  Public
-export const getReviewsForClub = async (req, res) => {
+export const getReviews = async (req, res) => {
   try {
-    const { clubId, page = 1, limit = 10, sortBy = "createdAt", sortOrder = "desc" } = req.query;
-
-    const query = { clubId };
-
-    const totalReviews = await Review.countDocuments(query);
-
-    const sort = {};
-    sort[sortBy] = sortOrder === "asc" ? 1 : -1;
-
-    const reviews = await Review.find(query)
-      .populate("userId", "name")
-      .sort(sort)
-      .skip((page - 1) * limit)
-      .limit(parseInt(limit));
-
-    // Calculate average rating
-    const avgRating = await Review.aggregate([
-      { $match: { clubId: mongoose.Types.ObjectId(clubId) } },
-      { $group: { _id: null, average: { $avg: "$rating" } } }
-    ]);
-    const averageRating = avgRating.length > 0 ? avgRating[0].average : 0;
-
-    res.status(200).json({
-      total: totalReviews,
-      page: parseInt(page),
-      limit: parseInt(limit),
-      averageRating,
-      reviews,
-    });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
+    const reviews = await Review.find({ vendor: req.params.vendor })
+      .sort({ createdAt: -1 });
+    res.json({data: reviews});
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 };
 
