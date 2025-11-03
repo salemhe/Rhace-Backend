@@ -1,6 +1,6 @@
 import mongoose, { Schema } from "mongoose";
 import bcrypt from "bcrypt";
-import geocoder from "../utils/geocoder";
+import geocoder from "../utils/geocoder.js";
 
 const options = {
   discriminatorKey: "vendorType",
