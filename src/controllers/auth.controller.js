@@ -217,6 +217,14 @@ export const onboardVendor = async (req, res) => {
       case "hotel":
         vendor = await HotelVendor.findById(vendorDetails._id);
         vendor.offer = offer;
+        vendor.policies = [
+          "Check-in time is 3:00 PM and check-out time is 11:00 AM.",
+          "Cancellation policy: Free cancellation up to 24 hours before arrival.",
+          "No smoking in rooms and public areas.",
+          "Pets are not allowed.",
+          "Guests must present a valid ID at check-in.",
+          "Additional charges may apply for extra guests.",
+        ];
         break;
 
       case "restaurant":

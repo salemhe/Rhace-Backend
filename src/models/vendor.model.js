@@ -105,6 +105,7 @@ const HotelVendor = Vendor.discriminator(
   new mongoose.Schema({
     totalBooked: { type: Number, default: 0 },
     offer: { type: String },
+    policies: [{ type: String }],
   })
 );
 
