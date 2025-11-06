@@ -53,13 +53,11 @@ export const getMenus = async (req, res) => {
 
         const menus = await Menu.find(query)
             .sort(sort)
-            .skip((page - 1) * limit)
-            .limit(parseInt(limit));
+            .skip(page - 1)
 
         res.status(200).json({
             total: totalMenus,
             page: parseInt(page),
-            limit: parseInt(limit),
             menus,
         });
     } catch (error) {
@@ -144,7 +142,7 @@ export const createMenuItem = async (req, res) => {
 // Get all menu items with search, filter, sort, and pagination
 export const getMenuItems = async (req, res) => {
     try {
-        const { page = 1, limit = 10, search, category, tags, availability, sortBy = "createdAt", sortOrder = "desc", userId } = req.query;
+        const { page = 1, search, category, tags, availability, sortBy = "createdAt", sortOrder = "desc", userId } = req.query;
 
         let query = {};
 
@@ -178,13 +176,11 @@ export const getMenuItems = async (req, res) => {
 
         const menuItems = await MenuItem.find(query)
             .sort(sort)
-            .skip((page - 1) * limit)
-            .limit(parseInt(limit));
+            .skip((page - 1))
 
         res.status(200).json({
             total: totalMenuItems,
             page: parseInt(page),
-            limit: parseInt(limit),
             menuItems,
         });
     } catch (error) {

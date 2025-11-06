@@ -26,7 +26,7 @@ export const generateBookingCode = () => {
 // ---------- Controller ----------
 export const getBookingSummary = async (req, res) => {
   try {
-    const vendorId = req.user._id || null; // optional filter
+    const vendorId = req.user._id || null;
     const vendorFilter = vendorId ? { vendor: vendorId } : {};
 
     const today = new Date();
@@ -296,6 +296,7 @@ export const createReservation = async (req, res) => {
       drinks,
       table,
       combos,
+      partPaid,
     } = req.body;
 
     console.log(req.body);
@@ -314,7 +315,7 @@ export const createReservation = async (req, res) => {
       reservationStatus: "Upcoming",
       location,
       totalAmount,
-      paymentStatus: "Not Paid",
+      paymentStatus: partPaid ? "Part Paid" : "Not Paid",
       bookingCode,
     };
 
@@ -542,6 +543,106 @@ export const getReservations = async (req, res) => {
     console.error(error);
     return res.status(500).json({
       message: error.message,
+    });
+  }
+};
+
+export const getReservationStats = async (req, res) => {
+  try {
+    const vendorId = req.user._id || null; // optional filter
+    const vendorFilter = vendorId ? { vendor: vendorId } : {};
+
+    const today = new Date();
+    const { start: todayStart, end: todayEnd } = getDateRange(today);
+    const { start: lastWeekStart, end: lastWeekEnd } = getDateRange(
+      dayjs(today).subtract(7, "day")
+    );
+
+    // 1. Total Reservations Today vs Last Week
+    const [todayCount, lastWeekCount] = await Promise.all([
+      Booking.countDocuments({
+        ...vendorFilter,
+        createdAt: { $gte: todayStart, $lte: todayEnd },
+      }),
+      Booking.countDocuments({
+        ...vendorFilter,
+        createdAt: { $gte: lastWeekStart, $lte: lastWeekEnd },
+      }),
+    ]);
+    const totalReservationsChange = percentChange(todayCount, lastWeekCount);
+
+    // 2. Prepaid Reservations
+    const [todayPrepaid, lastWeekPrepaid] = await Promise.all([
+      Booking.countDocuments({
+        ...vendorFilter,
+        paymentStatus: "paid",
+        createdAt: { $gte: todayStart, $lte: todayEnd },
+      }),
+      Booking.countDocuments({
+        ...vendorFilter,
+        paymentStatus: "paid",
+        createdAt: { $gte: lastWeekStart, $lte: lastWeekEnd },
+      }),
+    ]);
+    const prepaidChange = percentChange(todayPrepaid, lastWeekPrepaid);
+
+    const guestAggregation = async (start, end) => {
+      const result = await Booking.aggregate([
+        {
+          $match: {
+            ...vendorFilter,
+            $or: [
+              { date: { $gte: start, $lte: end } },
+              { checkInDate: { $gte: start, $lte: end } },
+              { createdAt: { $gte: start, $lte: end } },
+            ],
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            guests: { $sum: { $ifNull: ["$guests", 0] } },
+          },
+        },
+      ]);
+      return result[0]?.guests || 0;
+    };
+
+    const [guestsToday, guestsLastWeek] = await Promise.all([
+      guestAggregation(todayStart, todayEnd),
+      guestAggregation(lastWeekStart, lastWeekEnd),
+    ]);
+    const guestsChange = percentChange(guestsToday, guestsLastWeek);
+
+    // 4. Pending Payments
+    const [todayPending, lastWeekPending] = await Promise.all([
+      Booking.countDocuments({
+        ...vendorFilter,
+        paymentStatus: "pending",
+        createdAt: { $gte: todayStart, $lte: todayEnd },
+      }),
+      Booking.countDocuments({
+        ...vendorFilter,
+        paymentStatus: "pending",
+        createdAt: { $gte: lastWeekStart, $lte: lastWeekEnd },
+      }),
+    ]);
+    const pendingChange = percentChange(todayPending, lastWeekPending);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        totalReservations: { count: todayCount, change: totalReservationsChange },
+        prepaidReservations: { count: todayPrepaid, change: prepaidChange },
+        expectedGuests: { count: guestsToday, change: guestsChange },
+        pendingPayments: { count: todayPending, change: pendingChange },
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error fetching reservation stats",
+      error: error.message,
     });
   }
 };

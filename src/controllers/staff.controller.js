@@ -13,6 +13,9 @@ export const createStaff = async (req, res) => {
     if (req.body.password) {
       const salt = await bcrypt.genSalt(10);
       req.body.password = await bcrypt.hash(req.body.password, salt);
+    } else {
+      const salt = await bcrypt.genSalt(10);
+      req.body.password = await bcrypt.hash("staff", salt);
     }
     const staff = new Staff(req.body);
     await staff.save();
@@ -25,7 +28,7 @@ export const createStaff = async (req, res) => {
 // Get all staff members with search, filter, sort, and pagination
 export const getStaff = async (req, res) => {
   try {
-    const { page = 1, limit = 10, search, status, role, sortBy, sortOrder } = req.query;
+    const { page = 1, limit = 50, search, status, role, sortBy, sortOrder } = req.query;
     const query = {};
 
     if (search) {
@@ -56,7 +59,6 @@ export const getStaff = async (req, res) => {
       page: parseInt(page, 10),
       limit: parseInt(limit, 10),
       sort,
-      populate: { path: 'branch', select: 'name' } // Populate branch name
     };
 
     const staff = await Staff.paginate(query, options);
