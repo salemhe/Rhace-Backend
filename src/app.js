@@ -23,6 +23,7 @@ import notificationRoutes from "./routes/notification.routes.js";
 import payoutRoutes from "./routes/payout.routes.js";
 import reportRoutes from "./routes/report.routes.js";
 import searchRoutes from "./routes/search.routes.js";
+import staffRoutes from "./routes/staff.routes.js";
 
 
 const app = express();
@@ -55,6 +56,7 @@ app.use("/api/settings", settingRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/payments/payouts", payoutRoutes);
 app.use("/api/search", searchRoutes)
+app.use("/api/staff", staffRoutes)
 app.use("/api/reports", reportRoutes);
 
 // 404 Error Handler

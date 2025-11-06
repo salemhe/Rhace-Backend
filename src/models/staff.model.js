@@ -10,16 +10,17 @@ const staffSchema = new mongoose.Schema({
   photo: { type: String },
   staffId: { type: String, required: true, unique: true },
   jobTitle: { type: String },
-  branch: { type: mongoose.Schema.Types.ObjectId, ref: "Branch", required: true },
   role: { type: String, required: true }, // Consider a separate Role model for more complex RBAC
   // For custom permissions
   permissions: {
     type: Map,
     of: Boolean,
   },
-  status: { type: String, enum: ["Active", "Inactive"], default: "Active" },
+  status: { type: String, enum: ["active", "inactive"], default: "active" },
   resetPasswordToken: { type: String },
   resetPasswordExpires: { type: Date },
+}, {
+  timestamps: true
 });
 
 staffSchema.plugin(mongoosePaginate);
