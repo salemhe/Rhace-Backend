@@ -296,6 +296,7 @@ export const createReservation = async (req, res) => {
       drinks,
       table,
       combos,
+      partPaid,
     } = req.body;
 
     console.log(req.body);
@@ -314,7 +315,7 @@ export const createReservation = async (req, res) => {
       reservationStatus: "Upcoming",
       location,
       totalAmount,
-      paymentStatus: "Not Paid",
+      paymentStatus: partPaid ? "Part Paid" : "Not Paid",
       bookingCode,
     };
 
