@@ -57,7 +57,7 @@ export const createBottleSet = async (req, res) => {
 // @access  Private/Admin
 export const getBottleSets = async (req, res) => {
   try {
-    const { clubId, search, sortBy, sortOrder, page = 1, limit = 10 } = req.query;
+    const { clubId, search, sortBy, sortOrder, page = 1, limit = 1000 } = req.query;
     const query = { clubId };
 
     if (search) {

@@ -78,7 +78,7 @@ export const createClub = async (req, res) => {
 // @access  Public
 export const getClubs = async (req, res) => {
   try {
-    const { status, city, state, search, page = 1, limit = 10, sortBy = "createdAt", sortOrder = "desc" } = req.query;
+    const { status, city, state, search, page = 1, limit = 1000, sortBy = "createdAt", sortOrder = "desc" } = req.query;
 
     let query = {};
 

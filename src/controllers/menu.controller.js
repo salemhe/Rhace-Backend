@@ -19,7 +19,7 @@ export const createMenu = async (req, res) => {
 export const getMenus = async (req, res) => {
     try {
         const userId = req.user.role ? req.user._id : req.query.userId;
-        const { page = 1, limit = 10, search, menuType, id, published, sortBy = "createdAt", sortOrder = "desc" } = req.query;
+        const { page = 1, limit = 1000, search, menuType, id, published, sortBy = "createdAt", sortOrder = "desc" } = req.query;
 
         let query = {};
 
