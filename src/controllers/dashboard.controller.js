@@ -483,5 +483,16 @@ export const getVendorsEarnings = async (req, res) => {
   }
 };
 
+export const getRecentTransactions = async (req, res) => {
+  try {
+    const recentTransactions = await PaymentTransaction.find()
+      .sort({ createdAt: -1 })
+      .limit(10)
+      .populate("guest", "name email")
+      .populate("hotel", "name");
 
-
+    res.status(200).json(recentTransactions);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
