@@ -584,3 +584,43 @@ export const resetPassword = async (req, res) => {
     return res.status(500).json({ message: error.message });
   }
 };
+
+export const loginAdmin = async (req, res) => {
+  const { email, password } = req.body;
+
+  try {
+    // Check if it's an admin user
+    const user = await User.findOne({ email });
+    if (!user || !["admin", "superadmin", "finance", "ops", "support", "manager"].includes(user.role)) {
+      return res.status(404).json({ message: "Admin user not found" });
+    }
+
+    const isMatch = await user.comparePassword(password);
+    if (!isMatch) {
+      return res.status(400).json({ message: "Invalid email or password." });
+    }
+
+    if (!user.isVerified) {
+      return res.status(401).json({
+        message: "Please verify your email with the OTP sent to your inbox.",
+      });
+    }
+
+    const token = generateToken(
+      user._id,
+      user.role,
+      user.isOnboarded,
+      null // No vendorType for admins
+    );
+
+    return res
+      .status(200)
+      .json({ message: "Admin login successful.", user, token });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({
+      message: "Error logging in.",
+      error: err.message,
+    });
+  }
+};
