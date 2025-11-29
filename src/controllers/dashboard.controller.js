@@ -4,6 +4,7 @@ import Payment from "../models/payment.model.js";
 import Hotel from "../models/hotel.model.js";
 import RoomType from "../models/roomtype.model.js";
 import { Vendor } from "../models/vendor.model.js";
+import Reservation from "../models/reservation.model.js";
 
 // Emit real-time updates
 const emitDashboardUpdate = (userId, data) => {
@@ -14,15 +15,22 @@ const emitDashboardUpdate = (userId, data) => {
 
 // @desc    Get dashboard KPIs
 // @route   GET /api/dashboard/kpis
-// @access  Private
+// @access  Private (Admin only)
 export const getKPIs = async (req, res) => {
   try {
-    const userId = req.user._id;
-    const vendorType = req.user.vendorType;
+    if (req.user.role !== "admin") {
+      return res.status(403).json({ message: "Access denied. Admin only." });
+    }
 
-    // Get hotels owned by the user
-    const hotels = await Hotel.find({ createdBy: userId });
+    // For admin, get all hotels, clubs, restaurants
+    const hotels = await Hotel.find();
     const hotelIds = hotels.map(h => h._id);
+
+    const clubs = await Vendor.find({ vendorType: "club" });
+    const clubIds = clubs.map(c => c._id);
+
+    const restaurants = await Vendor.find({ vendorType: "restaurant" });
+    const restaurantIds = restaurants.map(r => r._id);
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -34,62 +42,138 @@ export const getKPIs = async (req, res) => {
     const twoWeeksAgo = new Date(today);
     twoWeeksAgo.setDate(today.getDate() - 14);
 
-    // Total Bookings
-    const totalBookings = await Booking.countDocuments({ hotel: { $in: hotelIds } });
+    // Total Bookings (hotels)
+    const totalHotelBookings = await Booking.countDocuments({ hotel: { $in: hotelIds } });
 
-    // Reservations made today
-    const reservationsToday = await Booking.countDocuments({
+    // Total Reservations (clubs + restaurants)
+    const totalReservations = await Reservation.countDocuments({ vendor: { $in: [...clubIds, ...restaurantIds] } });
+
+    // Total Bookings/Reservations combined
+    const totalBookings = totalHotelBookings + totalReservations;
+
+    // Reservations made today (hotels)
+    const hotelReservationsToday = await Booking.countDocuments({
       hotel: { $in: hotelIds },
       createdAt: { $gte: today, $lt: tomorrow },
     });
 
-    // Confirmed Bookings (upcoming or completed)
+    // Reservations made today (clubs + restaurants)
+    const vendorReservationsToday = await Reservation.countDocuments({
+      vendor: { $in: [...clubIds, ...restaurantIds] },
+      createdAt: { $gte: today, $lt: tomorrow },
+    });
+
+    const reservationsToday = hotelReservationsToday + vendorReservationsToday;
+
+    // Confirmed Bookings (upcoming or completed for hotels)
     const confirmedBookings = await Booking.countDocuments({
       hotel: { $in: hotelIds },
       status: { $in: ["upcoming", "completed"] }
     });
 
-    // Total Bookings Last Week
-    const totalBookingsLastWeek = await Booking.countDocuments({
+    // Confirmed Reservations (confirmed for vendors)
+    const confirmedReservations = await Reservation.countDocuments({
+      vendor: { $in: [...clubIds, ...restaurantIds] },
+      reservation_status: "Confirmed"
+    });
+
+    // Total Bookings Last Week (hotels)
+    const totalHotelBookingsLastWeek = await Booking.countDocuments({
       hotel: { $in: hotelIds },
       createdAt: { $gte: lastWeek, $lt: today },
     });
 
+    // Total Reservations Last Week
+    const totalReservationsLastWeek = await Reservation.countDocuments({
+      vendor: { $in: [...clubIds, ...restaurantIds] },
+      createdAt: { $gte: lastWeek, $lt: today },
+    });
+
+    const totalBookingsLastWeek = totalHotelBookingsLastWeek + totalReservationsLastWeek;
+
     // Total Bookings Two Weeks Ago (for delta calculation)
-    const totalBookingsTwoWeeksAgo = await Booking.countDocuments({
+    const totalHotelBookingsTwoWeeksAgo = await Booking.countDocuments({
       hotel: { $in: hotelIds },
       createdAt: { $gte: twoWeeksAgo, $lt: lastWeek },
     });
 
-    // Total Revenue
-    const totalRevenue = await PaymentTransaction.aggregate([
-      { $match: { hotel: { $in: hotelIds }, status: "succeeded" } },
-      { $group: { _id: null, total: { $sum: "$amount" } } }
-    ]);
-    const revenue = totalRevenue.length > 0 ? totalRevenue[0].total : 0;
-
-    // Total Revenue Last Week
-    const totalRevenueLastWeek = await PaymentTransaction.aggregate([
-      { $match: { hotel: { $in: hotelIds }, status: "succeeded", createdAt: { $gte: lastWeek, $lt: today } } },
-      { $group: { _id: null, total: { $sum: "$amount" } } }
-    ]);
-    const revenueLastWeek = totalRevenueLastWeek.length > 0 ? totalRevenueLastWeek[0].total : 0;
-
-    // Total Revenue Two Weeks Ago (for delta calculation)
-    const totalRevenueTwoWeeksAgo = await PaymentTransaction.aggregate([
-      { $match: { hotel: { $in: hotelIds }, status: "succeeded", createdAt: { $gte: twoWeeksAgo, $lt: lastWeek } } },
-      { $group: { _id: null, total: { $sum: "$amount" } } }
-    ]);
-    const revenueTwoWeeksAgo = totalRevenueTwoWeeksAgo.length > 0 ? totalRevenueTwoWeeksAgo[0].total : 0;
-
-    // Pending Payments
-    const pendingPayments = await PaymentTransaction.countDocuments({
-      hotel: { $in: hotelIds },
-      status: "pending"
+    const totalReservationsTwoWeeksAgo = await Reservation.countDocuments({
+      vendor: { $in: [...clubIds, ...restaurantIds] },
+      createdAt: { $gte: twoWeeksAgo, $lt: lastWeek },
     });
 
-    // Occupancy Rate (simplified: based on total bookings vs total rooms)
-    // This is a rough estimate; real occupancy would need date ranges
+    const totalBookingsTwoWeeksAgo = totalHotelBookingsTwoWeeksAgo + totalReservationsTwoWeeksAgo;
+
+    // Total Revenue from hotels
+    const hotelRevenueAgg = await PaymentTransaction.aggregate([
+      { $lookup: { from: "bookings", localField: "booking", foreignField: "_id", as: "booking" } },
+      { $unwind: "$booking" },
+      { $match: { "booking.hotel": { $in: hotelIds }, status: "succeeded" } },
+      { $group: { _id: null, total: { $sum: "$amount" } } }
+    ]);
+    const hotelRevenue = hotelRevenueAgg.length > 0 ? hotelRevenueAgg[0].total : 0;
+
+    // Total Revenue from reservations (assuming deposit or payment amount)
+    const reservationRevenueAgg = await Reservation.aggregate([
+      { $match: { vendor: { $in: [...clubIds, ...restaurantIds] }, payment_status: "Paid" } },
+      { $group: { _id: null, total: { $sum: "$deposit" } } } // Assuming deposit is the revenue
+    ]);
+    const reservationRevenue = reservationRevenueAgg.length > 0 ? reservationRevenueAgg[0].total : 0;
+
+    const totalRevenue = hotelRevenue + reservationRevenue;
+
+    // Total Revenue Last Week
+    const hotelRevenueLastWeekAgg = await PaymentTransaction.aggregate([
+      { $lookup: { from: "bookings", localField: "booking", foreignField: "_id", as: "booking" } },
+      { $unwind: "$booking" },
+      { $match: { "booking.hotel": { $in: hotelIds }, status: "succeeded", createdAt: { $gte: lastWeek, $lt: today } } },
+      { $group: { _id: null, total: { $sum: "$amount" } } }
+    ]);
+    const hotelRevenueLastWeek = hotelRevenueLastWeekAgg.length > 0 ? hotelRevenueLastWeekAgg[0].total : 0;
+
+    const reservationRevenueLastWeekAgg = await Reservation.aggregate([
+      { $match: { vendor: { $in: [...clubIds, ...restaurantIds] }, payment_status: "Paid", createdAt: { $gte: lastWeek, $lt: today } } },
+      { $group: { _id: null, total: { $sum: "$deposit" } } }
+    ]);
+    const reservationRevenueLastWeek = reservationRevenueLastWeekAgg.length > 0 ? reservationRevenueLastWeekAgg[0].total : 0;
+
+    const revenueLastWeek = hotelRevenueLastWeek + reservationRevenueLastWeek;
+
+    // Total Revenue Two Weeks Ago (for delta calculation)
+    const hotelRevenueTwoWeeksAgoAgg = await PaymentTransaction.aggregate([
+      { $lookup: { from: "bookings", localField: "booking", foreignField: "_id", as: "booking" } },
+      { $unwind: "$booking" },
+      { $match: { "booking.hotel": { $in: hotelIds }, status: "succeeded", createdAt: { $gte: twoWeeksAgo, $lt: lastWeek } } },
+      { $group: { _id: null, total: { $sum: "$amount" } } }
+    ]);
+    const hotelRevenueTwoWeeksAgo = hotelRevenueTwoWeeksAgoAgg.length > 0 ? hotelRevenueTwoWeeksAgoAgg[0].total : 0;
+
+    const reservationRevenueTwoWeeksAgoAgg = await Reservation.aggregate([
+      { $match: { vendor: { $in: [...clubIds, ...restaurantIds] }, payment_status: "Paid", createdAt: { $gte: twoWeeksAgo, $lt: lastWeek } } },
+      { $group: { _id: null, total: { $sum: "$deposit" } } }
+    ]);
+    const reservationRevenueTwoWeeksAgo = reservationRevenueTwoWeeksAgoAgg.length > 0 ? reservationRevenueTwoWeeksAgoAgg[0].total : 0;
+
+    const revenueTwoWeeksAgo = hotelRevenueTwoWeeksAgo + reservationRevenueTwoWeeksAgo;
+
+    // Pending Payments from hotels
+    const hotelPendingPaymentsAgg = await PaymentTransaction.aggregate([
+      { $lookup: { from: "bookings", localField: "booking", foreignField: "_id", as: "booking" } },
+      { $unwind: "$booking" },
+      { $match: { "booking.hotel": { $in: hotelIds }, status: "pending" } },
+      { $count: "count" }
+    ]);
+    const hotelPendingPayments = hotelPendingPaymentsAgg.length > 0 ? hotelPendingPaymentsAgg[0].count : 0;
+
+    // Pending Payments from reservations
+    const reservationPendingPayments = await Reservation.countDocuments({
+      vendor: { $in: [...clubIds, ...restaurantIds] },
+      payment_status: "Pending"
+    });
+
+    const pendingPayments = hotelPendingPayments + reservationPendingPayments;
+
+    // Occupancy Rate (simplified: based on total bookings vs total rooms for hotels only)
     const totalRooms = await RoomType.aggregate([
       { $match: { hotelId: { $in: hotelIds } } },
       { $group: { _id: null, total: { $sum: "$totalUnits" } } }
@@ -104,8 +188,8 @@ export const getKPIs = async (req, res) => {
     const kpiData = {
       totalBookings,
       reservationsToday,
-      confirmedBookings,
-      totalRevenue: revenue,
+      confirmedBookings: confirmedBookings + confirmedReservations,
+      totalRevenue,
       pendingPayments,
       occupancyRate: Math.min(occupancyRate, 100), // Cap at 100%
       bookingsDelta,
@@ -113,7 +197,7 @@ export const getKPIs = async (req, res) => {
     };
 
     // Emit real-time update
-    emitDashboardUpdate(userId, { type: 'kpis', data: kpiData });
+    emitDashboardUpdate(req.user._id, kpiData);
 
     res.status(200).json(kpiData);
   } catch (error) {
@@ -123,11 +207,15 @@ export const getKPIs = async (req, res) => {
 
 // @desc    Get reservations commencing banner (upcoming bookings starting soon)
 // @route   GET /api/dashboard/upcoming-reservations
-// @access  Private
+// @access  Private (Admin only)
 export const getUpcomingReservations = async (req, res) => {
   try {
-    const userId = req.user._id;
-    const hotels = await Hotel.find({ createdBy: userId });
+    if (req.user.role !== "admin") {
+      return res.status(403).json({ message: "Access denied. Admin only." });
+    }
+
+    // For admin, get all hotels
+    const hotels = await Hotel.find();
     const hotelIds = hotels.map(h => h._id);
 
     const today = new Date();
@@ -148,11 +236,15 @@ export const getUpcomingReservations = async (req, res) => {
 
 // @desc    Get today's reservations with countdown
 // @route   GET /api/dashboard/todays-reservations
-// @access  Private
+// @access  Private (Admin only)
 export const getTodaysReservations = async (req, res) => {
   try {
-    const userId = req.user._id;
-    const hotels = await Hotel.find({ createdBy: userId });
+    if (req.user.role !== "admin") {
+      return res.status(403).json({ message: "Access denied. Admin only." });
+    }
+
+    // For admin, get all hotels
+    const hotels = await Hotel.find();
     const hotelIds = hotels.map(h => h._id);
 
     const today = new Date();
@@ -191,11 +283,15 @@ export const getTodaysReservations = async (req, res) => {
 
 // @desc    Get booking trends chart data
 // @route   GET /api/dashboard/booking-trends
-// @access  Private
+// @access  Private (Admin only)
 export const getBookingTrends = async (req, res) => {
   try {
-    const userId = req.user._id;
-    const hotels = await Hotel.find({ createdBy: userId });
+    if (req.user.role !== "admin") {
+      return res.status(403).json({ message: "Access denied. Admin only." });
+    }
+
+    // For admin, get all hotels
+    const hotels = await Hotel.find();
     const hotelIds = hotels.map(h => h._id);
 
     // Group bookings by month
@@ -221,16 +317,22 @@ export const getBookingTrends = async (req, res) => {
 
 // @desc    Get revenue trends chart data
 // @route   GET /api/dashboard/revenue-trends
-// @access  Private
+// @access  Private (Admin only)
 export const getRevenueTrends = async (req, res) => {
   try {
-    const userId = req.user._id;
-    const hotels = await Hotel.find({ createdBy: userId });
+    if (req.user.role !== "admin") {
+      return res.status(403).json({ message: "Access denied. Admin only." });
+    }
+
+    // For admin, get all hotels
+    const hotels = await Hotel.find();
     const hotelIds = hotels.map(h => h._id);
 
     // Group payments by month
     const trends = await PaymentTransaction.aggregate([
-      { $match: { hotel: { $in: hotelIds }, status: "completed" } },
+      { $lookup: { from: "bookings", localField: "booking", foreignField: "_id", as: "booking" } },
+      { $unwind: "$booking" },
+      { $match: { "booking.hotel": { $in: hotelIds }, status: "succeeded" } },
       {
         $group: {
           _id: {
@@ -372,7 +474,7 @@ export const getTopVendors = async (req, res) => {
           _id: "$vendor",
           totalReservations: { $sum: 1 },
           totalGuests: { $sum: "$partySize" },
-          totalRevenue: { $sum: "$totalAmount" },
+          totalRevenue: { $sum: "$deposit" },
         },
       },
       {
@@ -488,8 +590,13 @@ export const getRecentTransactions = async (req, res) => {
     const recentTransactions = await PaymentTransaction.find()
       .sort({ createdAt: -1 })
       .limit(10)
-      .populate("guest", "name email")
-      .populate("hotel", "name");
+      .populate({
+        path: "booking",
+        populate: [
+          { path: "guest", select: "name email" },
+          { path: "hotel", select: "name" }
+        ]
+      });
 
     res.status(200).json(recentTransactions);
   } catch (error) {
