@@ -12,6 +12,39 @@ import {
   ClubVendor,
 } from "../models/vendor.model.js";
 
+export const registerAdmin = async (req, res) => {
+  const { firstName, lastName, email, password } = req.body;
+
+  try {
+    const userExists = await User.findOne({ email });
+
+    if (userExists) {
+      return res.status(400).json({ message: "Admin user already exists" });
+    }
+
+    const user = await User.create({
+      firstName,
+      lastName,
+      email,
+      password,
+      role: "admin",
+      isVerified: true,
+    });
+
+    if (user) {
+      return res.status(201).json({
+        message: "Admin user registered successfully.",
+        userId: user._id,
+        email: user.email,
+      });
+    } else {
+      return res.status(400).json({ message: "Invalid user data" });
+    }
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
 export const getVendor = async (req, res) => {
   const { type, id } = req.query;
 
