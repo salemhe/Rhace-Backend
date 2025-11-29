@@ -294,7 +294,7 @@ export const createReservation = async (req, res) => {
       specialRequest,
       room,
       drinks,
-      table,
+      // table,
       combos,
       partPaid,
     } = req.body;
@@ -415,7 +415,7 @@ export const createReservation = async (req, res) => {
         ...initialData,
         date,
         time,
-        table,
+        // table,
         guests,
         drinks,
         combos,

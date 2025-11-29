@@ -73,13 +73,13 @@ export const getVendors = async (req, res) => {
     let model = Vendor;
     if (type) {
       switch (type.toLowerCase()) {
-        case "hotel":
+        case "hotels":
           model = HotelVendor;
           break;
-        case "restaurant":
+        case "restaurants":
           model = RestaurantVendor;
           break;
-        case "club":
+        case "clubs":
           model = ClubVendor;
           break;
         default:
