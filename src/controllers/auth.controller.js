@@ -4,6 +4,7 @@ import crypto from "crypto";
 import bcrypt from "bcrypt";
 import * as otpService from "../services/otp.service.js"; // New import
 import { sendPasswordResetEmail } from "../services/mail.service.js";
+import { OAuth2Client } from "google-auth-library";
 import {
   Vendor,
   HotelVendor,
@@ -327,7 +328,7 @@ export const onboardVendor = async (req, res) => {
 };
 
 export const register = async (req, res) => {
-  const { firstName, lastName, email, password, phone, role } = req.body; // Added role
+  const { firstName, lastName, email, password } = req.body; // Added role
 
   try {
     const userExists = await User.findOne({ email });
@@ -336,24 +337,62 @@ export const register = async (req, res) => {
       return res.status(400).json({ message: "User already exists" });
     }
 
-    // Prevent admin signup
-    if (
-      role &&
-      ["admin", "superadmin", "finance", "ops", "support", "manager"].includes(
-        role
-      )
-    ) {
-      return res.status(400).json({ message: "Admin signup not allowed" });
+    const user = await User.create({
+      firstName,
+      lastName,
+      email,
+      password,
+      role: "user",
+      isVerified: false,
+    });
+
+    if (user) {
+      await otpService.sendAndSaveOTP(user.email); // Send OTP
+      return res.status(201).json({
+        message:
+          "User registered. Please verify your email with the OTP sent to your inbox.",
+        userId: user._id,
+        email: user.email,
+      });
+    } else {
+      return res.status(400).json({ message: "Invalid user data" });
+    }
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+export const registerGoogle = async (req, res) => {
+  const { code } = req.body
+  const client = new OAuth2Client(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    'postmessage'
+  );
+  try {
+    const { tokens } = await client.getToken(code)
+
+    const ticket = await client.verifyIdToken({
+      idToken: tokens.id_token,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+    const { email, sub: googleId, given_name: firstName, family_name: lastName, picture: profilePic } = payload;
+    const userExists = await User.findOne({ email });
+
+    if (userExists) {
+      return res.status(400).json({ message: "User already exists" });
     }
 
     const user = await User.create({
       firstName,
       lastName,
       email,
-      password,
-      phone,
-      role: role || "user",
-      isVerified: false,
+      googleId,
+      profilePic,
+      role: "user",
+      isVerified: true,
     });
 
     if (user) {
@@ -401,6 +440,54 @@ export const login = async (req, res) => {
     return res.status(500).json({ message: error.message });
   }
 };
+
+export const loginGoogle = async (req, res) => {
+  const { code } = req.body
+  const client = new OAuth2Client(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    'postmessage'
+  );
+  try {
+    const { tokens } = await client.getToken(code)
+
+    const ticket = await client.verifyIdToken({
+      idToken: tokens.id_token,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+    const { email, sub: googleId } = payload;
+
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(401).json({ message: "Invalid email or password" });
+    }
+
+    if (!user.isVerified) {
+      return res.status(401).json({
+        message: "Please verify your email with the OTP sent to your inbox.",
+      });
+    }
+
+    if (!user.googleId) {
+        user.googleId = googleId;
+        await user.save();
+    }
+
+    return res.json({
+      message: "Login Succesfully!",
+      user,
+      token: generateToken(user._id, "user"),
+    });
+  } catch (error) {
+    console.error(error)
+    return res.status(500).json({
+      message: "Error Logging in with Google"
+    })
+  }
+}
 
 export const verifyOTP = async (req, res) => {
   const { email, otp } = req.body;

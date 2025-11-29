@@ -46,7 +46,7 @@ export const createPaymentTransaction = async (req, res) => {
 export const getPaymentTransactions = async (req, res) => {
   try {
     const bookingId = req.params.bookingId;
-    const { page = 1, limit = 10, search, status, sortBy = "createdAt", sortOrder = "desc" } = req.query;
+    const { page = 1, limit = 1000, search, status, sortBy = "createdAt", sortOrder = "desc" } = req.query;
 
     let query = { booking: bookingId };
 
