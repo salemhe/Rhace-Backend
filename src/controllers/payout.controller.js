@@ -1,5 +1,13 @@
 import Payout from "../models/payout.model.js";
 import { Vendor } from "../models/vendor.model.js";
+import mongoose from "mongoose";
+
+// Emit real-time updates for payouts
+const emitPayoutUpdate = (data) => {
+  if (global.io) {
+    global.io.to('admin_payments').emit('payout_update', data);
+  }
+};
 
 // @desc   Initiate a new payout for a vendor
 // @route  POST /api/payouts
@@ -41,6 +49,16 @@ export const initiatePayout = async (req, res, next) => {
       status: "pending",
     });
     await payout.save({ session });
+
+    // Emit real-time update for new payout
+    emitPayoutUpdate({
+      type: 'new_payout',
+      payoutId: payout._id,
+      vendorId: vendorId,
+      amount: amount,
+      status: 'pending',
+      createdAt: payout.createdAt,
+    });
 
     // 4. Commit Transaction
     await session.commitTransaction();
