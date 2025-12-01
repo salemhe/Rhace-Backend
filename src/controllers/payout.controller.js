@@ -12,6 +12,7 @@ const emitPayoutUpdate = (data) => {
 // Emit real-time updates for payments
 const emitPaymentUpdate = (data) => {
   if (global.io) {
+    console.log('Emitting payment_update event:', data);
     global.io.to('admin_payments').emit('payment_update', data);
   }
 };
