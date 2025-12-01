@@ -9,6 +9,13 @@ const emitPayoutUpdate = (data) => {
   }
 };
 
+// Emit real-time updates for payments
+const emitPaymentUpdate = (data) => {
+  if (global.io) {
+    global.io.to('admin_payments').emit('payment_update', data);
+  }
+};
+
 // @desc   Initiate a new payout for a vendor
 // @route  POST /api/payouts
 // @access Private (Finance role)
@@ -39,6 +46,15 @@ export const initiatePayout = async (req, res, next) => {
     // 2. Update Vendor Balance
     vendor.balance -= amount;
     await vendor.save({ session });
+
+    // Emit real-time update for earnings change due to payout
+    emitPaymentUpdate({
+      type: 'payout',
+      vendorId: vendorId,
+      amount: amount,
+      status: 'pending',
+      createdAt: new Date(),
+    });
 
     // 3. Create Payout Record
     const payout = new Payout({
