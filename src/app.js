@@ -30,7 +30,10 @@ import staffRoutes from "./routes/staff.routes.js";
 const app = express();
 
 app.use(express.json());
-app.use(cors());
+app.use(cors({
+  origin: ["http://localhost:5173", "https://your-frontend-domain.com"], // Add your frontend URLs
+  credentials: true
+}));
 app.use(morgan("dev"));
 
 app.use("/api/auth", authRoutes);
