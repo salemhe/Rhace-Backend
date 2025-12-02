@@ -19,7 +19,7 @@ export const createMenu = async (req, res) => {
 export const getMenus = async (req, res) => {
     try {
         const userId = req.user.role ? req.user._id : req.query.userId;
-        const { page = 1, limit = 10, search, menuType, id, published, sortBy = "createdAt", sortOrder = "desc" } = req.query;
+        const { page = 1, limit = 1000, search, menuType, id, published, sortBy = "createdAt", sortOrder = "desc" } = req.query;
 
         let query = {};
 
@@ -53,13 +53,11 @@ export const getMenus = async (req, res) => {
 
         const menus = await Menu.find(query)
             .sort(sort)
-            .skip((page - 1) * limit)
-            .limit(parseInt(limit));
+            .skip(page - 1)
 
         res.status(200).json({
             total: totalMenus,
             page: parseInt(page),
-            limit: parseInt(limit),
             menus,
         });
     } catch (error) {
@@ -144,8 +142,7 @@ export const createMenuItem = async (req, res) => {
 // Get all menu items with search, filter, sort, and pagination
 export const getMenuItems = async (req, res) => {
     try {
-        const { page = 1, limit = 10, search, category, tags, availability, sortBy = "createdAt", sortOrder = "desc" } = req.query;
-        const userId = req.user.role ? req.user._id : req.query.userId;
+        const { page = 1, search, category, tags, availability, sortBy = "createdAt", sortOrder = "desc", userId } = req.query;
 
         let query = {};
 
@@ -169,8 +166,8 @@ export const getMenuItems = async (req, res) => {
         }
 
         // If the user is a vendor, restrict to their menu items
-        if (req.user.role) {
-            query.vendor = userId;
+        if (userId) {
+            query.vendor = String(userId);
         }
 
         const totalMenuItems = await MenuItem.countDocuments(query);
@@ -179,13 +176,11 @@ export const getMenuItems = async (req, res) => {
 
         const menuItems = await MenuItem.find(query)
             .sort(sort)
-            .skip((page - 1) * limit)
-            .limit(parseInt(limit));
+            .skip((page - 1))
 
         res.status(200).json({
             total: totalMenuItems,
             page: parseInt(page),
-            limit: parseInt(limit),
             menuItems,
         });
     } catch (error) {

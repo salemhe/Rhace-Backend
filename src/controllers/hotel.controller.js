@@ -87,7 +87,7 @@ export const getHotels = async (req, res) => {
       search,
       category,
       page = 1,
-      limit = 10,
+      limit = 1000,
       sortBy = "createdAt",
       sortOrder = "desc",
     } = req.query;

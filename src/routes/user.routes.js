@@ -1,5 +1,5 @@
 import express from "express";
-import { login, register, resendOTP, verifyOTP, forgotPassword, resetPassword } from "../controllers/auth.controller.js";
+import { login, register, resendOTP, verifyOTP, forgotPassword, resetPassword, loginGoogle, registerGoogle } from "../controllers/auth.controller.js";
 import {
   getUsers,
   getUserById,
@@ -27,7 +27,9 @@ router.get("/export", exportUsers);
 
 // Auth routes
 router.post("/auth/register", register);
+router.post("/auth/register/google", registerGoogle);
 router.post("/auth/login", login);
+router.post("/auth/login/google", loginGoogle)
 router.post("/auth/verify-otp", verifyOTP);
 router.post("/auth/resend-otp", resendOTP);
 router.post("/auth/forgot-password", forgotPassword);

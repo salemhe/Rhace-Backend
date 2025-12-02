@@ -15,14 +15,14 @@ import { uploadStaffAvatar } from "../middlewares/staffImage.middleware.js"; // 
 
 const router = express.Router();
 
-router.post("/", protect, authorize(["admin", "manager"]), uploadStaffAvatar, createStaff);
-router.get("/", protect, authorize(["admin", "manager", "staff"]), getStaff);
+router.post("/", protect, authorize(["admin", "manager", "vendor"]), uploadStaffAvatar, createStaff);
+router.get("/", protect, authorize(["admin", "manager", "staff", "vendor"]), getStaff);
 router.get("/export-csv", protect, authorize(["admin", "manager"]), exportStaffCSV);
 
 router.route("/:id")
-  .get(protect, authorize(["admin", "manager", "staff"]), getStaffById)
-  .put(protect, authorize(["admin", "manager"]), uploadStaffAvatar, updateStaff)
-  .delete(protect, authorize(["admin"]), deleteStaff);
+  .get(protect, authorize(["admin", "manager", "staff", "vendor"]), getStaffById)
+  .put(protect, authorize(["admin", "manager", "vendor"]), uploadStaffAvatar, updateStaff)
+  .delete(protect, authorize(["admin", "user"]), deleteStaff);
 
 router.patch("/:id/roles", protect, authorize(["admin", "manager"]), modifyStaffRoles);
 router.patch("/:id/status", protect, authorize(["admin", "manager"]), toggleStaffStatus);
