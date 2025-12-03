@@ -421,6 +421,10 @@ export const login = async (req, res) => {
       return res.status(401).json({ message: "Invalid email or password" });
     }
 
+    if (!user.password) {
+      return res.status(401).json({ message: "Click Forgot Password to generate a passowrd"})
+    }
+
     if (!(await user.comparePassword(password))) {
       return res.status(401).json({ message: "Invalid email or password" });
     }
@@ -430,7 +434,7 @@ export const login = async (req, res) => {
         message: "Please verify your email with the OTP sent to your inbox.",
       });
     }
-
+    
     return res.json({
       message: "Login Succesfully!",
       user,
@@ -670,10 +674,12 @@ export const resetPassword = async (req, res) => {
   const { token, password } = req.body;
 
   try {
+    console.log("Token: ", token)
     const resetPasswordToken = crypto
       .createHash("sha256")
       .update(token)
       .digest("hex");
+
 
     const guest = await User.findOne({
       resetPasswordToken,
