@@ -9,6 +9,7 @@ import {
   generateVendorsReport,
   getReportJobStatus,
   downloadReport,
+  listReports,
 } from "../controllers/report.controller.js";
 
 const router = express.Router();
@@ -18,10 +19,30 @@ router.use(protect);
 // Report generation
 
 // Route to generate a reservations report
-router.post("/reservations", generateReservationsReport);
+router.post(
+  "/reservations",
+  authorize(["superadmin" , "admin"]),
+  generateReservationsReport
+);
+
+// Route to generate a vendor earnings report
+router.post(
+  "/vendor-earnings",
+  authorize(["superadmin" , "admin"]),
+  generateVendorEarningsReport
+);
+
+// Route to generate a payments report
+router.post("/payments", authorize(["superadmin" , "admin"]), generatePaymentsReport);
+
+// Route to generate a users report
+router.post("/users", authorize(["superadmin" , "admin"]), generateUsersReport);
+
+// Route to generate a vendors report
+router.post("/vendors", authorize(["superadmin"]), generateVendorsReport);
 
 // Route to list all available reports
-// router.get("/", listReports); // TODO: Implement listReports function
+router.get("/", listReports);
 
 // Route to check the status of a specific report
 router.get("/:id/status", getReportJobStatus);
