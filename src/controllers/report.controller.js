@@ -1,4 +1,4 @@
-                                                           import ReportJob from "../models/reportjob.model.js";
+import ReportJob from "../models/reportjob.model.js";
 import { Vendor } from "../models/vendor.model.js";
 import Reservation from "../models/reservation.model.js";
 import PaymentTransaction from "../models/paymenttransaction.model.js";
@@ -9,6 +9,18 @@ import * as XLSX from "xlsx";
 import { uploadToCloudinary } from "../services/cloudinary.service.js";
 
 const { AsyncParser } = pkg;
+
+// @desc    List all available reports
+// @route   GET /api/reports
+// @access  Private (Admin)
+export const listReports = async (req, res) => {
+  try {
+    const reports = await ReportJob.find({ requestedBy: req.user._id }).sort({ createdAt: -1 });
+    res.status(200).json(reports);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
 
 // @desc    Generate vendor earnings report
 // @route   POST /api/reports/vendor-earnings
