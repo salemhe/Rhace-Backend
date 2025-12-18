@@ -1,4 +1,4 @@
-                                                           import ReportJob from "../models/reportjob.model.js";
+import ReportJob from "../models/reportjob.model.js";
 import { Vendor } from "../models/vendor.model.js";
 import Reservation from "../models/reservation.model.js";
 import PaymentTransaction from "../models/paymenttransaction.model.js";
@@ -9,6 +9,18 @@ import * as XLSX from "xlsx";
 import { uploadToCloudinary } from "../services/cloudinary.service.js";
 
 const { AsyncParser } = pkg;
+
+// @desc    List all available reports
+// @route   GET /api/reports
+// @access  Private (Admin)
+export const listReports = async (req, res) => {
+  try {
+    const reports = await ReportJob.find({ requestedBy: req.user._id }).sort({ createdAt: -1 });
+    res.status(200).json(reports);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
 
 // @desc    Generate vendor earnings report
 // @route   POST /api/reports/vendor-earnings
@@ -25,13 +37,11 @@ export const generateVendorEarningsReport = async (req, res) => {
     });
     await reportJob.save();
 
-    // Process report asynchronously
-    processVendorEarningsReport(reportJob._id);
+    // Process report synchronously
+    await processVendorEarningsReport(reportJob._id);
 
-    res.status(202).json({
-      message: "Report generation started",
-      jobId: reportJob._id,
-    });
+    const completedJob = await ReportJob.findById(reportJob._id);
+    res.status(201).json(completedJob);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -42,7 +52,8 @@ export const generateVendorEarningsReport = async (req, res) => {
 // @access  Private (Admin, Ops)
 export const generateReservationsReport = async (req, res) => {
   try {
-    const { vendorId, branchId, dateFrom, dateTo, status, format = "csv" } = req.body;
+    const { vendorId, branchId, dateFrom, dateTo, status, format = "csv" } =
+      req.body;
 
     const reportJob = new ReportJob({
       type: "reservations",
@@ -51,12 +62,10 @@ export const generateReservationsReport = async (req, res) => {
     });
     await reportJob.save();
 
-    processReservationsReport(reportJob._id);
+    await processReservationsReport(reportJob._id);
 
-    res.status(202).json({
-      message: "Report generation started",
-      jobId: reportJob._id,
-    });
+    const completedJob = await ReportJob.findById(reportJob._id);
+    res.status(201).json(completedJob);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -76,12 +85,10 @@ export const generatePaymentsReport = async (req, res) => {
     });
     await reportJob.save();
 
-    processPaymentsReport(reportJob._id);
+    await processPaymentsReport(reportJob._id);
 
-    res.status(202).json({
-      message: "Report generation started",
-      jobId: reportJob._id,
-    });
+    const completedJob = await ReportJob.findById(reportJob._id);
+    res.status(201).json(completedJob);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -101,12 +108,10 @@ export const generateUsersReport = async (req, res) => {
     });
     await reportJob.save();
 
-    processUsersReport(reportJob._id);
+    await processUsersReport(reportJob._id);
 
-    res.status(202).json({
-      message: "Report generation started",
-      jobId: reportJob._id,
-    });
+    const completedJob = await ReportJob.findById(reportJob._id);
+    res.status(201).json(completedJob);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -126,12 +131,10 @@ export const generateVendorsReport = async (req, res) => {
     });
     await reportJob.save();
 
-    processVendorsReport(reportJob._id);
+    await processVendorsReport(reportJob._id);
 
-    res.status(202).json({
-      message: "Report generation started",
-      jobId: reportJob._id,
-    });
+    const completedJob = await ReportJob.findById(reportJob._id);
+    res.status(201).json(completedJob);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
