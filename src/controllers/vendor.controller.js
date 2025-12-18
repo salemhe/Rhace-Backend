@@ -5,6 +5,7 @@ import Reservation from "../models/reservation.model.js";
 import { recordAuditLog } from "../utils/auditLogger.js";
 import pkg from "json-2-csv";
 import * as XLSX from "xlsx";
+import { Menu } from "../models/menu.model.js";
 
 const { AsyncParser } = pkg;
 
@@ -442,3 +443,60 @@ export const exportVendors = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+
+export const getOffers = async (req, res) => {
+ try {
+  const { id } = req.query;
+  let offers = [];
+  if (id) {
+    offers = await Menu.findById(id)
+      .populate({ path: "vendor"})
+      .populate({ path: "items"})
+      .sort({ createdAt: -1 });
+  } else {
+    offers = await Menu.find()
+      .populate({ path: "vendor"})
+      .populate({ path: "items"})
+      .sort({ createdAt: -1 });
+  }
+
+  return res.status(200).json({
+    message: "Fetched Offers Succesfully",
+    data: offers,
+  })
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+export const getNearest = async (req, res) => {
+  try {
+    const { latitude, longitude, type } = req.query
+    const nearbyQuery =
+      latitude && longitude
+        ? {
+            location: {
+              $near: {
+                $geometry: {
+                  type: "Point",
+                  coordinates: [parseFloat(longitude), parseFloat(latitude)],
+                },
+                $maxDistance: 5000,
+              },
+            },
+            vendorType: type,
+          }
+        : { isVisible: true, vendorType: type };
+
+    const vendors = await Vendor.find(nearbyQuery).sort({ createdAt: -1})
+
+    return res.json({
+      message: "Fetched Nearest Vendors",
+      data: vendors
+    })
+   } catch (error) {
+    console.error(error)
+     res.status(500).json({ message: error.message });
+   }
+}

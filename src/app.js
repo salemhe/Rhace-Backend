@@ -42,6 +42,10 @@ app.use("/api/branches", branchRoutes);
 app.use("/api/menus", menuRoutes);
 app.use("/api/bookings", bookingRoutes);
 
+app.use("/", (req, res) => {
+  res.send("Welcome to Rhace Backend API");
+})
+
 app.use("/api/hotels", hotelRoutes);
 app.use("/api/amenities", amenityRoutes);
 app.use("/api/guests", guestRoutes);

@@ -49,6 +49,17 @@ const updateVendorLocations = async () => {
           successCount++;
         } else {
           console.log(`⚠️ No location found for address: ${vendor.address}`);
+          vendor.location = {
+            type: "Point",
+            coordinates: [0, 0],
+          };
+
+          // We use updateOne instead of save() to avoid triggering 
+          // other validation hooks or password hashing again
+          await Vendor.updateOne(
+            { _id: vendor._id },
+            { $set: { location: vendor.location } }
+          );
           errorCount++;
         }
 
