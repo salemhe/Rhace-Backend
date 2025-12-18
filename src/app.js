@@ -42,10 +42,6 @@ app.use("/api/branches", branchRoutes);
 app.use("/api/menus", menuRoutes);
 app.use("/api/bookings", bookingRoutes);
 
-app.use("/", (req, res) => {
-  res.send("Welcome to Rhace Backend API");
-})
-
 app.use("/api/hotels", hotelRoutes);
 app.use("/api/amenities", amenityRoutes);
 app.use("/api/guests", guestRoutes);
@@ -67,6 +63,11 @@ app.use("/api/payments/payouts", payoutRoutes);
 app.use("/api/search", searchRoutes)
 app.use("/api/staff", staffRoutes)
 app.use("/api/reports", reportRoutes);
+
+
+app.use("/", (req, res) => {
+  res.send("Welcome to Rhace Backend API");
+})
 
 // 404 Error Handler
 app.use((req, res, next) => {

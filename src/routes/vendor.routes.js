@@ -9,7 +9,6 @@ const router = express.Router();
 router.post("/auth/register", registerVendor);
 
 router.get("/", getVendor)
-router.get("/:id", protect, getVendorById)
 
 router.get("/offers", getOffers);
 
@@ -40,5 +39,6 @@ router.get("/auth/me", protect, (req, res) => {
     }
   });
 });
+router.get("/:id", protect, getVendorById)
 
 export default router;
