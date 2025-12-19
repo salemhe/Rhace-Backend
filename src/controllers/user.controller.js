@@ -1,4 +1,5 @@
 import User from "../models/user.model.js";
+import Reservation from "../models/reservation.model.js";
 import { recordAuditLog } from "../utils/auditLogger.js";
 import { sendPasswordResetEmail } from "../services/mail.service.js";
 import crypto from "crypto";
@@ -52,6 +53,12 @@ export const getUsers = async (req, res) => {
     };
 
     const users = await User.paginate(query, options);
+
+    // Add reservation count to each user
+    for (let user of users.docs) {
+      const reservationCount = await Reservation.countDocuments({ guest: user._id });
+      user.reservationCount = reservationCount;
+    }
 
     // Update lastActive
     if (req.user && req.user._id) {
@@ -254,6 +261,29 @@ export const toggleVIPStatus = async (req, res) => {
     }
 
     res.status(200).json(user);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Get user statistics
+// @route   GET /api/users/stats
+// @access  Private (Admin, Manager)
+export const getUserStats = async (req, res) => {
+  try {
+    const total = await User.countDocuments();
+    const active = await User.countDocuments({ status: "active" });
+    const inactive = await User.countDocuments({ status: "inactive" });
+    const suspended = await User.countDocuments({ status: "suspended" });
+    const vip = await User.countDocuments({ isVIP: true });
+
+    res.status(200).json({
+      total,
+      active,
+      inactive,
+      suspended,
+      vip,
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

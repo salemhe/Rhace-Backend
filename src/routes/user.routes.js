@@ -9,6 +9,7 @@ import {
   toggleUserStatus,
   resetUserPassword,
   toggleVIPStatus,
+  getUserStats,
   exportUsers,
 } from "../controllers/user.controller.js";
 
@@ -28,6 +29,7 @@ router.post("/auth/reset-password", (req, res, next) => {
 
 // User management routes
 router.get("/", getUsers);
+router.get("/stats", getUserStats);
 router.get("/:id", getUserById);
 router.post("/", createUser);
 router.put("/:id", updateUser);
