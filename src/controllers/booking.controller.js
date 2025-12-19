@@ -322,7 +322,7 @@ export const createReservation = async (req, res) => {
     let reservationData = {};
 
     if (reservationType === "restaurant") {
-      if (!image || !date || !time || !guests || !mealPreselected || !menus) {
+      if (!image || !date || !time || !guests) {
         return res
           .status(400)
           .json({ message: "Fill restaurants required fields" });
