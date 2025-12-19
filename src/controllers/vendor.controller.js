@@ -2,6 +2,7 @@ import { Vendor } from "../models/vendor.model.js";
 import KYC from "../models/kyc.model.js";
 import BankAccount from "../models/bankaccount.model.js";
 import Reservation from "../models/reservation.model.js";
+import Branch from "../models/branch.model.js";
 import { recordAuditLog } from "../utils/auditLogger.js";
 import pkg from "json-2-csv";
 import * as XLSX from "xlsx";
@@ -384,6 +385,27 @@ export const bulkUpdateVendors = async (req, res) => {
     res.status(200).json({
       message: `${result.modifiedCount} vendors updated`,
       modifiedCount: result.modifiedCount,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Get vendor statistics
+// @route   GET /api/vendors/stats
+// @access  Private (Admin, Manager)
+export const getVendorStats = async (req, res) => {
+  try {
+    const total = await Vendor.countDocuments();
+    const active = await Vendor.countDocuments({ status: "active" });
+    const inactive = await Vendor.countDocuments({ status: "inactive" });
+    const suspended = await Vendor.countDocuments({ status: "suspended" });
+
+    res.status(200).json({
+      total,
+      active,
+      inactive,
+      suspended,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });

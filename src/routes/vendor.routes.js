@@ -1,13 +1,14 @@
 import express from "express";
 import {protect} from "../middlewares/auth.middleware.js"
 import { getVendor, forgotVendorPassword, loginVendor, onboardVendor, registerVendor, resendVendorOTP, resetPassword, verifyVendorOTP } from "../controllers/auth.controller.js";
-import { getVendorById } from "../controllers/vendor.controller.js";
+import { getVendorById, getVendorStats } from "../controllers/vendor.controller.js";
 
 const router = express.Router();
 
 router.post("/auth/register", registerVendor);
 
 router.get("/", getVendor)
+router.get("/stats", protect, getVendorStats)
 router.get("/:id", protect, getVendorById)
 
 // Vendor login route

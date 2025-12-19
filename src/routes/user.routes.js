@@ -9,6 +9,7 @@ import {
   toggleUserStatus,
   resetUserPassword,
   toggleVIPStatus,
+  getUserStats,
   exportUsers,
 } from "../controllers/user.controller.js";
 
@@ -16,6 +17,7 @@ const router = express.Router();
 
 // User management routes
 router.get("/", getUsers);
+router.get("/stats", getUserStats);
 router.get("/:id", getUserById);
 router.post("/", createUser);
 router.put("/:id", updateUser);
