@@ -587,7 +587,12 @@ export const getVendorsEarnings = async (req, res) => {
 
 export const getRecentTransactions = async (req, res) => {
   try {
-    const recentTransactions = await PaymentTransaction.find()
+    if (req.user.role !== "admin") {
+      return res.status(403).json({ message: "Access denied. Admin only." });
+    }
+
+    // Fetch recent hotel payment transactions
+    const hotelTransactions = await PaymentTransaction.find({ status: "succeeded" })
       .sort({ createdAt: -1 })
       .limit(10)
       .populate({
@@ -597,6 +602,40 @@ export const getRecentTransactions = async (req, res) => {
           { path: "hotel", select: "name" }
         ]
       });
+
+    // Fetch recent vendor payments (clubs and restaurants)
+    const vendorPayments = await Payment.find({ status: "Paid" })
+      .sort({ createdAt: -1 })
+      .limit(10)
+      .populate("vendor", "businessName");
+
+    // Combine and format transactions
+    const allTransactions = [
+      ...hotelTransactions.map(t => ({
+        id: t._id,
+        type: "hotel",
+        amount: t.amount,
+        status: t.status,
+        createdAt: t.createdAt,
+        guest: t.booking?.guest,
+        entity: t.booking?.hotel?.name,
+        method: t.method
+      })),
+      ...vendorPayments.map(p => ({
+        id: p._id,
+        type: "vendor",
+        amount: p.amount,
+        status: p.status,
+        createdAt: p.createdAt,
+        guest: { name: p.customer_name, email: p.email },
+        entity: p.vendor?.businessName,
+        method: p.paymentMethod
+      }))
+    ];
+
+    // Sort by createdAt descending and limit to 10
+    allTransactions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const recentTransactions = allTransactions.slice(0, 10);
 
     res.status(200).json(recentTransactions);
   } catch (error) {
