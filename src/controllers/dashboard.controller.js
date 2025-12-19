@@ -265,8 +265,8 @@ export const getTodaysReservations = async (req, res) => {
     // Get today's vendor reservations
     const todaysReservations = await Reservation.find({
       vendor: { $in: vendorIds },
-      reservation_date: { $gte: today, $lt: tomorrow },
-      reservation_status: "Confirmed"
+      checkInDate: { $gte: today, $lt: tomorrow },
+      status: "confirmed"
     }).populate("vendor", "businessName");
 
     // Combine and add countdown
@@ -281,7 +281,7 @@ export const getTodaysReservations = async (req, res) => {
       ...todaysReservations.map(reservation => ({
         ...reservation.toObject(),
         type: "vendor",
-        eventDate: reservation.reservation_date,
+        eventDate: reservation.checkInDate,
         entity: reservation.vendor?.businessName,
         guest: { name: reservation.customer_name, email: reservation.email },
       }))

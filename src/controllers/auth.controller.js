@@ -59,6 +59,7 @@ export const getVendor = async (req, res) => {
     const vendor = await Vendor.find(query);
 
     return res.json({
+      status: "active",
       message: `Fetched ${type} vendor Succesfully!`,
       data: vendor,
     });
