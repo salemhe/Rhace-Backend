@@ -78,10 +78,12 @@ export const verifyAccount = async (req, res) => {
 export const getPayments = async (req, res) => {
   try {
     let query = {};
-    if (req.user.role !== "admin") {
+    if (req.user.role !== "admin" && req.user.role === "vendor") {
       query.vendor = req.user._id;
+    } else {
+      query.user = req.user._id;
     }
-    const payments = await Payment.find(query).sort({ createdAt: -1 });
+    const payments = await Payment.find(query).sort({ createdAt: -1 }).populate("vendor");
 
     return res.json(payments);
   } catch (error) {
@@ -558,6 +560,7 @@ export const verifyPayment = async (req, res) => {
         customer_name: transaction.metadata.customerName,
         paid_at: transaction.paid_at,
         vendor: vendorId,
+        user: userId,
         booking: transaction.metadata.bookingId,
         paymentMethod: transaction.channel,
         amount: amountInUSD,
@@ -602,6 +605,7 @@ export const verifyPayment = async (req, res) => {
       paid_at: transaction.paid_at,
       bookingId: transaction.metadata.bookingId,
       vendorId: vendorId,
+      userId: userId,
       created_at: transaction.created_at,
       channel: transaction.channel,
       customer: {
