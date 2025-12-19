@@ -1,7 +1,9 @@
 import express from "express";
 import {protect} from "../middlewares/auth.middleware.js"
 import { getVendor, forgotVendorPassword, loginVendor, onboardVendor, registerVendor, resendVendorOTP, resetPassword, verifyVendorOTP } from "../controllers/auth.controller.js";
-import { getVendorById, getVendorStats } from "../controllers/vendor.controller.js";
+import { getVendorById, getOffers, getNearest, getVendorStats } from "../controllers/vendor.controller.js";
+import { getOffers, getNearest, getVendorById } from "../controllers/vendor.controller.js"
+
 
 const router = express.Router();
 
@@ -36,5 +38,6 @@ router.get("/auth/me", protect, (req, res) => {
     }
   });
 });
+router.get("/:id", protect, getVendorById)
 
 export default router;

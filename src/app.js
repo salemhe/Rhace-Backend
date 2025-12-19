@@ -31,7 +31,7 @@ const app = express();
 
 app.use(express.json());
 app.use(cors({
-  origin: ["http://localhost:5173", "https://your-frontend-domain.com"], // Add your frontend URLs
+  origin: ["http://localhost:5173", "https://rhace-frontend.vercel.app"], // Add your frontend URLs
   credentials: true
 }));
 app.use(morgan("dev"));
@@ -63,6 +63,11 @@ app.use("/api/payments/payouts", payoutRoutes);
 app.use("/api/search", searchRoutes)
 app.use("/api/staff", staffRoutes)
 app.use("/api/reports", reportRoutes);
+
+
+app.use("/", (req, res) => {
+  res.send("Welcome to Rhace Backend API");
+})
 
 // 404 Error Handler
 app.use((req, res, next) => {

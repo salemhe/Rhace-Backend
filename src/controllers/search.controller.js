@@ -8,7 +8,7 @@ import {Menu, MenuItem} from "../models/menu.model.js";
 import BottleSet from "../models/bottleSet.model.js";
 import Drink from "../models/drink.model.js";
 
-const selectFields = "_id businessName";
+const selectFields = "_id businessName businessDescription";
 
 export const getVendorSuggestions = async (req, res) => {
   try {
@@ -21,7 +21,6 @@ export const getVendorSuggestions = async (req, res) => {
     const nearbyQuery =
       latitude && longitude
         ? {
-            isVisible: true,
             location: {
               $near: {
                 $geometry: {
