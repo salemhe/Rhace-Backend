@@ -14,8 +14,8 @@ const router = express.Router();
 // All routes are protected
 router.use(protect);
 
-// Route to initiate a payout (e.g., only for finance roles)
-router.post("/", authorize(["finance"]), initiatePayout);
+// Route to initiate a payout (e.g., for finance and admin roles)
+router.post("/", authorize(["finance", "superadmin", "admin"]), initiatePayout);
 
 // Route to get all payouts (e.g., for finance and admin roles)
 router.get("/", authorize(["finance", "superadmin", "admin"]), getAllPayouts);

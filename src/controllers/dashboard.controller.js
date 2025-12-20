@@ -243,30 +243,58 @@ export const getTodaysReservations = async (req, res) => {
       return res.status(403).json({ message: "Access denied. Admin only." });
     }
 
-    // For admin, get all hotels
+    // For admin, get all hotels and vendors
     const hotels = await Hotel.find();
     const hotelIds = hotels.map(h => h._id);
+
+    const vendors = await Vendor.find({ vendorType: { $in: ["club", "restaurant"] } });
+    const vendorIds = vendors.map(v => v._id);
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(today.getDate() + 1);
 
+    // Get today's hotel bookings
     const todaysBookings = await Booking.find({
       hotel: { $in: hotelIds },
       checkInDate: { $gte: today, $lt: tomorrow },
       status: "upcoming"
     }).populate("guest", "name email").populate("hotel", "name");
 
-    // Add countdown to each booking
+    // Get today's vendor reservations
+    const todaysReservations = await Reservation.find({
+      vendor: { $in: vendorIds },
+      checkInDate: { $gte: today, $lt: tomorrow },
+      status: "confirmed"
+    }).populate("vendor", "businessName");
+
+    // Combine and add countdown
     const now = new Date();
-    const bookingsWithCountdown = todaysBookings.map(booking => {
-      const checkInTime = new Date(booking.checkInDate);
-      const timeDiff = checkInTime - now;
+    const allReservations = [
+      ...todaysBookings.map(booking => ({
+        ...booking.toObject(),
+        type: "hotel",
+        eventDate: booking.checkInDate,
+        entity: booking.hotel?.name,
+      })),
+      ...todaysReservations.map(reservation => ({
+        ...reservation.toObject(),
+        type: "vendor",
+        eventDate: reservation.checkInDate,
+        entity: reservation.vendor?.businessName,
+        guest: { name: reservation.customer_name, email: reservation.email },
+      }))
+    ];
+
+    // Add countdown to each
+    const reservationsWithCountdown = allReservations.map(reservation => {
+      const eventTime = new Date(reservation.eventDate);
+      const timeDiff = eventTime - now;
       const hours = Math.floor(timeDiff / (1000 * 60 * 60));
       const minutes = Math.floor((timeDiff % (1000 * 60 * 60)) / (1000 * 60));
       return {
-        ...booking.toObject(),
+        ...reservation,
         countdown: {
           hours: Math.max(0, hours),
           minutes: Math.max(0, minutes),
@@ -275,7 +303,7 @@ export const getTodaysReservations = async (req, res) => {
       };
     });
 
-    res.status(200).json(bookingsWithCountdown);
+    res.status(200).json(reservationsWithCountdown);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -324,12 +352,15 @@ export const getRevenueTrends = async (req, res) => {
       return res.status(403).json({ message: "Access denied. Admin only." });
     }
 
-    // For admin, get all hotels
+    // For admin, get all hotels and vendors
     const hotels = await Hotel.find();
     const hotelIds = hotels.map(h => h._id);
 
-    // Group payments by month
-    const trends = await PaymentTransaction.aggregate([
+    const vendors = await Vendor.find({ vendorType: { $in: ["club", "restaurant"] } });
+    const vendorIds = vendors.map(v => v._id);
+
+    // Group hotel payments by month
+    const hotelTrends = await PaymentTransaction.aggregate([
       { $lookup: { from: "bookings", localField: "booking", foreignField: "_id", as: "booking" } },
       { $unwind: "$booking" },
       { $match: { "booking.hotel": { $in: hotelIds }, status: "succeeded" } },
@@ -341,9 +372,55 @@ export const getRevenueTrends = async (req, res) => {
           },
           total: { $sum: "$amount" }
         }
-      },
-      { $sort: { "_id.year": 1, "_id.month": 1 } }
+      }
     ]);
+
+    // Group vendor payments by month
+    const vendorTrends = await Payment.aggregate([
+      { $match: { vendor: { $in: vendorIds }, status: "Paid" } },
+      {
+        $group: {
+          _id: {
+            year: { $year: "$createdAt" },
+            month: { $month: "$createdAt" }
+          },
+          total: { $sum: "$amount" }
+        }
+      }
+    ]);
+
+    // Combine and merge trends by year/month
+    const trendsMap = new Map();
+
+    // Add hotel trends
+    hotelTrends.forEach(trend => {
+      const key = `${trend._id.year}-${trend._id.month}`;
+      trendsMap.set(key, {
+        _id: trend._id,
+        total: trend.total
+      });
+    });
+
+    // Add vendor trends
+    vendorTrends.forEach(trend => {
+      const key = `${trend._id.year}-${trend._id.month}`;
+      if (trendsMap.has(key)) {
+        trendsMap.get(key).total += trend.total;
+      } else {
+        trendsMap.set(key, {
+          _id: trend._id,
+          total: trend.total
+        });
+      }
+    });
+
+    // Convert back to array and sort
+    const trends = Array.from(trendsMap.values()).sort((a, b) => {
+      if (a._id.year !== b._id.year) {
+        return a._id.year - b._id.year;
+      }
+      return a._id.month - b._id.month;
+    });
 
     res.status(200).json(trends);
   } catch (error) {
@@ -466,7 +543,7 @@ export const getTopVendors = async (req, res) => {
       {
         $match: {
           createdAt: { $gte: currentMonth, $lt: nextMonth },
-          status: { $in: ["confirmed", "seated"] },
+          reservation_status: "Confirmed",
         },
       },
       {
@@ -474,7 +551,15 @@ export const getTopVendors = async (req, res) => {
           _id: "$vendor",
           totalReservations: { $sum: 1 },
           totalGuests: { $sum: "$partySize" },
-          totalRevenue: { $sum: "$deposit" },
+          totalRevenue: {
+            $sum: {
+              $cond: {
+                if: { $eq: ["$payment_status", "Paid"] },
+                then: "$deposit",
+                else: 0
+              }
+            }
+          },
         },
       },
       {
@@ -587,7 +672,12 @@ export const getVendorsEarnings = async (req, res) => {
 
 export const getRecentTransactions = async (req, res) => {
   try {
-    const recentTransactions = await PaymentTransaction.find()
+    if (req.user.role !== "admin") {
+      return res.status(403).json({ message: "Access denied. Admin only." });
+    }
+
+    // Fetch recent hotel payment transactions
+    const hotelTransactions = await PaymentTransaction.find({ status: "succeeded" })
       .sort({ createdAt: -1 })
       .limit(10)
       .populate({
@@ -597,6 +687,40 @@ export const getRecentTransactions = async (req, res) => {
           { path: "hotel", select: "name" }
         ]
       });
+
+    // Fetch recent vendor payments (clubs and restaurants)
+    const vendorPayments = await Payment.find({ status: "Paid" })
+      .sort({ createdAt: -1 })
+      .limit(10)
+      .populate("vendor", "businessName");
+
+    // Combine and format transactions
+    const allTransactions = [
+      ...hotelTransactions.map(t => ({
+        id: t._id,
+        type: "hotel",
+        amount: t.amount,
+        status: t.status,
+        createdAt: t.createdAt,
+        guest: t.booking?.guest,
+        entity: t.booking?.hotel?.name,
+        method: t.method
+      })),
+      ...vendorPayments.map(p => ({
+        id: p._id,
+        type: "vendor",
+        amount: p.amount,
+        status: p.status,
+        createdAt: p.createdAt,
+        guest: { name: p.customer_name, email: p.email },
+        entity: p.vendor?.businessName,
+        method: p.paymentMethod
+      }))
+    ];
+
+    // Sort by createdAt descending and limit to 10
+    allTransactions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const recentTransactions = allTransactions.slice(0, 10);
 
     res.status(200).json(recentTransactions);
   } catch (error) {

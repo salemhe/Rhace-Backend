@@ -1,8 +1,8 @@
 import express from "express";
 import {protect} from "../middlewares/auth.middleware.js"
-import { getOffers, getNearest, getVendorById } from "../controllers/vendor.controller.js"
-import { getVendor, forgotVendorPassword, loginVendor, onboardVendor, updateVendor, registerVendor, resendVendorOTP, resetPassword, verifyVendorOTP, } from "../controllers/auth.controller.js";
- 
+import { getVendor, forgotVendorPassword, loginVendor, onboardVendor, updateVendor, registerVendor, resendVendorOTP, resetPassword, verifyVendorOTP } from "../controllers/auth.controller.js";
+import { getVendorById, getOffers, getNearest, getVendorStats } from "../controllers/vendor.controller.js";
+
 
 const router = express.Router();
 
@@ -11,6 +11,8 @@ router.post("/auth/register", registerVendor);
 router.get("/", getVendor)
 
 router.put("/", protect, updateVendor);
+
+router.get("/stats", protect, getVendorStats)
 
 router.get("/offers", getOffers);
 
@@ -41,6 +43,5 @@ router.get("/auth/me", protect, (req, res) => {
     }
   });
 });
-router.get("/:id", protect, getVendorById)
 
 export default router;

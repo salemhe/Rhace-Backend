@@ -9,6 +9,7 @@ import {
   toggleUserStatus,
   resetUserPassword,
   toggleVIPStatus,
+  getUserStats,
   exportUsers,
 } from "../controllers/user.controller.js";
 import { addFavorite, getFavorites } from "../controllers/favorites.controller.js";
@@ -32,6 +33,7 @@ router.post("/auth/reset-password", (req, res, next) => {
 router.get("/favorites", protect, getFavorites);
 router.post("/favorites", protect, addFavorite);
 router.get("/", getUsers);
+router.get("/stats", getUserStats);
 router.get("/:id", getUserById);
 router.post("/", createUser);
 router.put("/:id", updateUser);
