@@ -575,12 +575,12 @@ export const getReservationStats = async (req, res) => {
     const [todayPrepaid, lastWeekPrepaid] = await Promise.all([
       Booking.countDocuments({
         ...vendorFilter,
-        paymentStatus: "paid",
+        paymentStatus: "success",
         createdAt: { $gte: todayStart, $lte: todayEnd },
       }),
       Booking.countDocuments({
         ...vendorFilter,
-        paymentStatus: "paid",
+        paymentStatus: "success",
         createdAt: { $gte: lastWeekStart, $lte: lastWeekEnd },
       }),
     ]);

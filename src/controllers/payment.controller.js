@@ -78,12 +78,15 @@ export const verifyAccount = async (req, res) => {
 export const getPayments = async (req, res) => {
   try {
     let query = {};
-    if (req.user.role !== "admin" && req.user.role === "vendor") {
-      query.vendor = req.user._id;
-    } else {
-      query.user = req.user._id;
+    console.log(req.user)
+    if (req.user.role !== "admin") {
+      if (req.user.role === "vendor") {
+        query.vendor = req.user._id;
+      } else {
+        query.user = req.user._id;
+      }
     }
-    const payments = await Payment.find(query).sort({ createdAt: -1 }).populate("vendor");
+    const payments = await Payment.find(query).sort({ createdAt: -1 }).populate({path: "vendor"});
 
     return res.json(payments);
   } catch (error) {
@@ -318,7 +321,7 @@ export const getPaymentInfo = async (req, res) => {
     
     const maskedAccountNumber = paymentDetails?.accountNumber
       ? paymentDetails.accountNumber
-          .slice(-4)
+          .slice(-5)
           .padStart(paymentDetails.accountNumber.length, "*")
       : "N/A";
 
@@ -551,7 +554,7 @@ export const verifyPayment = async (req, res) => {
     }
 
     const existingTransaction = await Payment.findOne({ reference });
-    const amountInUSD = transaction.amount * 0.0092;
+    const amount = transaction.amount * 0.0092;
 
     if (!existingTransaction) {
       // Save the payment
@@ -563,7 +566,8 @@ export const verifyPayment = async (req, res) => {
         user: userId,
         booking: transaction.metadata.bookingId,
         paymentMethod: transaction.channel,
-        amount: amountInUSD,
+        amount: amount,
+        amountPayed: transaction.amount / 100,
         reference,
         status: "Paid",
       });
@@ -573,7 +577,7 @@ export const verifyPayment = async (req, res) => {
       // Update vendor balance
       const updatedVendor = await Vendor.findById(vendorId);
       if (updatedVendor) {
-        updatedVendor.balance += amountInUSD;
+        updatedVendor.balance += amount;
         await updatedVendor.save();
       }
 
@@ -582,7 +586,7 @@ export const verifyPayment = async (req, res) => {
         type: 'new_payment',
         paymentId: newTransaction._id,
         vendorId: vendorId,
-        amount: amountInUSD,
+        amount: amount,
         reference: reference,
         status: 'Paid',
         createdAt: newTransaction.createdAt,

@@ -11,12 +11,27 @@ const options = {
 const VendorBaseSchema = new Schema(
   {
     businessName: { type: String, required: true },
+    logo: { 
+      type: String,
+      validate: {
+          validator: function (value) {
+            return (
+              /^(https?:\/\/.*\.(?:png|jpg|jpeg|gif|svg))$/.test(value) ||
+              value === null
+            );
+          },
+          message: "Logo must be a valid URL.",
+        },
+        default: null,
+      },
     businessDescription: { type: String },
     email: { type: String, required: true, unique: true },
     phone: { type: String },
     address: { type: String },
     password: { type: String },
-    role: { type: String, default: "vendor" },
+    role: { 
+      type: String, 
+      default: "vendor", },
     location: {
       type: {
         type: String,
