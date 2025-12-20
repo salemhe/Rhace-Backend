@@ -1,7 +1,7 @@
 import express from "express";
 import {protect} from "../middlewares/auth.middleware.js"
 import { getOffers, getNearest, getVendorById } from "../controllers/vendor.controller.js"
-import { getVendor, forgotVendorPassword, loginVendor, onboardVendor, registerVendor, resendVendorOTP, resetPassword, verifyVendorOTP, } from "../controllers/auth.controller.js";
+import { getVendor, forgotVendorPassword, loginVendor, onboardVendor, updateVendor, registerVendor, resendVendorOTP, resetPassword, verifyVendorOTP, } from "../controllers/auth.controller.js";
  
 
 const router = express.Router();
@@ -9,6 +9,8 @@ const router = express.Router();
 router.post("/auth/register", registerVendor);
 
 router.get("/", getVendor)
+
+router.put("/", protect, updateVendor);
 
 router.get("/offers", getOffers);
 

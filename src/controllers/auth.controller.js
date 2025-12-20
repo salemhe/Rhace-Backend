@@ -326,6 +326,141 @@ export const onboardVendor = async (req, res) => {
       .json({ message: "Onboarding failed.", error: error.message });
   }
 };
+export const updateVendor = async (req, res) => {
+  try {
+    const id = req.user._id;
+
+    const {
+      businessName,
+      vendorType,
+      profileImages,
+      address,
+      phone,
+      website,
+      priceRange,
+      businessDescription,
+      logo,
+      accountName,
+      accountNumber,
+      bankName,
+      bankCode,
+      openingTime,
+      closingTime,
+      cuisines,
+      availableSlots,
+      categories,
+      slots,
+      dressCode,
+      ageLimit,
+      offer,
+    } = req.body;
+
+    // Find vendor
+    let vendorDetails = await Vendor.findById(id);
+    if (!vendorDetails) {
+      return res.status(404).json({ message: "Vendor not found." });
+    }
+
+    let vendor = await vendorDetails.constructor.findById(id);
+    if (!vendor) {
+      return res.status(404).json({ message: "Vendor not found." });
+    }
+
+    // Update payment details only if all fields provided
+    if (accountName && accountNumber && bankName && bankCode) {
+      const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
+      if (!PAYSTACK_SECRET_KEY) {
+        return res.status(500).json({ message: "Paystack key not configured." });
+      }
+
+      const recipientPayload = {
+        type: "nuban",
+        business_name: vendorDetails.businessName,
+        account_number: accountNumber,
+        settlement_bank: bankCode,
+        currency: "NGN",
+        percentage_charge: 8,
+      };
+
+      const recipientResponse = await fetch(
+        "https://api.paystack.co/subaccount",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(recipientPayload),
+        }
+      );
+
+      const recipientData = await recipientResponse.json();
+      if (!recipientResponse.ok || !recipientData.status) {
+        return res
+          .status(500)
+          .json({ message: "Paystack error", error: recipientData.message });
+      }
+
+      vendor.paymentDetails = {
+        bankCode,
+        accountNumber,
+        subaccountCode: recipientData.data.subaccount_code,
+        bankName,
+        accountName,
+      };
+    }
+
+    // Handle vendorType-specific updates
+    if (vendorType) {
+      switch (vendorType) {
+        case "hotel":
+          if (offer) vendor.offer = offer;
+          break;
+
+        case "restaurant":
+          if (openingTime) vendor.openingTime = openingTime;
+          if (closingTime) vendor.closingTime = closingTime;
+          if (cuisines) vendor.cuisines = cuisines;
+          if (availableSlots) vendor.availableSlots = availableSlots;
+          break;
+
+        case "club":
+          if (openingTime) vendor.openingTime = openingTime;
+          if (closingTime) vendor.closingTime = closingTime;
+          if (slots !== undefined) vendor.slots = Number(slots);
+          if (categories) vendor.categories = categories;
+          if (offer) vendor.offer = offer;
+          if (dressCode) vendor.dressCode = dressCode;
+          if (ageLimit !== undefined) {
+            vendor.ageLimit = String(ageLimit).replace(/[^0-9]/g, "");
+          }
+          break;
+      }
+    }
+
+    // Basic updates (settings page compatible)
+    if (profileImages) vendor.profileImages = profileImages;
+    if (logo) vendor.logo = logo;
+    if (businessName) vendor.businessName = businessName;
+    if (address) vendor.address = address;
+    if (businessDescription) vendor.businessDescription = businessDescription;
+    if (phone) vendor.phone = phone;
+    if (website) vendor.website = website;
+    if (priceRange) vendor.priceRange = priceRange;
+
+    console.log(vendor, businessName)
+    await vendor.save();
+    return res.status(200).json({
+      message: "Update completed successfully.",
+      vendor,
+    });
+  } catch (error) {
+    console.error(error);
+    return res
+      .status(500)
+      .json({ message: "Update failed.", error: error.message });
+  }
+};
 
 export const register = async (req, res) => {
   const { firstName, lastName, email, password } = req.body; // Added role

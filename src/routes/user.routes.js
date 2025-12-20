@@ -11,6 +11,8 @@ import {
   toggleVIPStatus,
   exportUsers,
 } from "../controllers/user.controller.js";
+import { addFavorite, getFavorites } from "../controllers/favorites.controller.js";
+import { protect } from "../middlewares/auth.middleware.js";
 
 const router = express.Router();
 // Auth routes
@@ -27,6 +29,8 @@ router.post("/auth/reset-password", (req, res, next) => {
 }, resetPassword);
 
 // User management routes
+router.get("/favorites", protect, getFavorites);
+router.post("/favorites", protect, addFavorite);
 router.get("/", getUsers);
 router.get("/:id", getUserById);
 router.post("/", createUser);
