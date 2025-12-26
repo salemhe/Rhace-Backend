@@ -41,6 +41,7 @@ const VendorBaseSchema = new Schema(
       coordinates: {
         type: [Number],
         index: "2dsphere",
+        default: [0, 0],
       },
     },
     profileImages: [
@@ -79,6 +80,7 @@ const VendorBaseSchema = new Schema(
     branch: { type: String },
     isVisible: { type: Boolean, default: false },
     vendorType: { type: String },
+    specialCategory: { type: String },
   },
   options
 );
@@ -100,6 +102,8 @@ VendorBaseSchema.pre("save", async function (next) {
 VendorBaseSchema.pre("save", async function (next) {
   if (!this.isModified("address") || !this.address) return next();
   try {
+    if (!this.address) return next();
+
     const loc = await geocoder.geocode(this.address);
   
     if (loc.length > 0) {

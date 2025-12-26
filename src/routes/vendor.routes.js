@@ -1,7 +1,7 @@
 import express from "express";
 import {protect} from "../middlewares/auth.middleware.js"
 import { getVendor, forgotVendorPassword, loginVendor, onboardVendor, updateVendor, registerVendor, resendVendorOTP, resetPassword, verifyVendorOTP } from "../controllers/auth.controller.js";
-import { getVendorById, getOffers, getNearest, getVendorStats } from "../controllers/vendor.controller.js";
+import { getVendorById, getOffers, getNearest, getTopRated, getVendorStats } from "../controllers/vendor.controller.js";
 
 
 const router = express.Router();
@@ -17,6 +17,8 @@ router.get("/stats", protect, getVendorStats)
 router.get("/offers", getOffers);
 
 router.get("/nearest", getNearest)
+
+router.get("/top-rated", getTopRated);
 
 // Vendor login route
 router.post("/auth/login", loginVendor); // Unified login for vendors and admins
