@@ -522,3 +522,27 @@ export const getNearest = async (req, res) => {
      res.status(500).json({ message: error.message });
    }
 }
+
+export const getTopRated = async (req, res) => {
+  try {
+    const { type, limit = 10 } = req.query;
+    const query = { isVisible: true, isVerified: true };
+    
+    if (type) {
+      query.vendorType = type;
+    }
+
+    const vendors = await Vendor.find(query)
+      .sort({ rating: -1 })
+      .limit(parseInt(limit, 10))
+      .select("businessName vendorType email phone address profileImages rating reviews website priceRange vendorTypeCategory createdAt");
+
+    return res.json({
+      message: "Fetched Top Rated Vendors",
+      data: vendors,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: error.message });
+  }
+};
