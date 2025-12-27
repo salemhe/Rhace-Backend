@@ -26,7 +26,7 @@ const PaymentSchema = new mongoose.Schema({
         type: Number,
         required: true,
     },
-    amountPayed: {
+    amountPaid: {
         type: Number,
         required: true,
     },

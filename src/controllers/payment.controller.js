@@ -567,7 +567,7 @@ export const verifyPayment = async (req, res) => {
         booking: transaction.metadata.bookingId,
         paymentMethod: transaction.channel,
         amount: amount,
-        amountPayed: transaction.amount / 100,
+        amountPaid: transaction.amount / 100,
         reference,
         status: "Paid",
       });
