@@ -15,7 +15,7 @@ export const getSettings = async (req, res) => {
       general: {
         platformName: "Rhace",
         bookingWindowLimit: 30, // days
-        supportEmail: "support@rhace.com",
+        supportEmail: "support@rhace.co",
         supportPhone: "+2341234567890",
         defaultCurrency: "NGN",
         defaultTimezone: "Africa/Lagos",
