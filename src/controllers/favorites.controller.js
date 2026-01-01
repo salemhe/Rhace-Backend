@@ -36,7 +36,7 @@ export const getFavorites = async (req, res) => {
 
 export const addFavorite = async (req, res) => {
     try {
-        const { vendorId } = req.body;
+        const { vendorId, vendorType } = req.body;
         const user = req.user;
 
         // Ensure the user is defined
@@ -53,6 +53,8 @@ export const addFavorite = async (req, res) => {
             userId: user._id, // Use the user ID here
             vendorId,
             businessName: vendor.businessName, // Assuming vendor has a businessName field
+            vendorType: vendor.vendorType,
+            logo: vendor.logo,
         });
 
         await favorites.save();
