@@ -12,7 +12,7 @@ import {
   getUserStats,
   exportUsers,
 } from "../controllers/user.controller.js";
-import { addFavorite, getFavorites } from "../controllers/favorites.controller.js";
+import { addFavorite, deleteFavorites, getFavorites } from "../controllers/favorites.controller.js";
 import { protect } from "../middlewares/auth.middleware.js";
 
 const router = express.Router();
@@ -32,6 +32,7 @@ router.post("/auth/reset-password", (req, res, next) => {
 // User management routes
 router.get("/favorites", protect, getFavorites);
 router.post("/favorites", protect, addFavorite);
+router.delete("/favorites", protect, deleteFavorites);
 router.get("/", getUsers);
 router.get("/stats", getUserStats);
 router.get("/:id", getUserById);
