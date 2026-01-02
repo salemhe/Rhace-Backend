@@ -21,7 +21,7 @@ export const getFavorites = async (req, res) => {
       .sort(sort)
       .skip((page - 1) * limit)
       .limit(parseInt(limit))
-      .populate({ path: 'vendorId', model: 'Vendor' });
+      .populate({ path: 'vendor', model: 'Vendor' });
 
     res.status(200).json({
       total: totalFavorites,
@@ -33,6 +33,16 @@ export const getFavorites = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+export const deleteFavorites = async (req, res) => {
+  try {
+    const { vendorId } = req.body;
+    await Favorites.deleteOne({ vendor: vendorId });
+    res.status(200).json({ message: "Favorite deleted successfully" });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
 
 export const addFavorite = async (req, res) => {
     try {
@@ -51,8 +61,10 @@ export const addFavorite = async (req, res) => {
 
         const favorites = new Favorites({
             userId: user._id, // Use the user ID here
-            vendorId,
+            vendor: vendorId,
             businessName: vendor.businessName, // Assuming vendor has a businessName field
+            vendorType: vendor.vendorType,
+            logo: vendor.logo,
         });
 
         await favorites.save();
