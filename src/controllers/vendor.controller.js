@@ -509,7 +509,7 @@ export const getNearest = async (req, res) => {
             },
             vendorType: type,
           }
-        : { isVisible: true, vendorType: type };
+        : { vendorType: type };
 
     const vendors = await Vendor.find(nearbyQuery).sort({ createdAt: -1})
 
@@ -526,7 +526,7 @@ export const getNearest = async (req, res) => {
 export const getTopRated = async (req, res) => {
   try {
     const { type, limit = 10 } = req.query;
-    const query = { isVisible: true, isVerified: true };
+    const query = { isVerified: true };
     
     if (type) {
       query.vendorType = type;
@@ -535,7 +535,7 @@ export const getTopRated = async (req, res) => {
     const vendors = await Vendor.find(query)
       .sort({ rating: -1 })
       .limit(parseInt(limit, 10))
-      .select("businessName vendorType email phone address profileImages rating reviews website priceRange vendorTypeCategory createdAt");
+      .select("businessName vendorType email phone address profileImages rating reviews website priceRange vendorTypeCategory createdAt offers categories");
 
     return res.json({
       message: "Fetched Top Rated Vendors",
