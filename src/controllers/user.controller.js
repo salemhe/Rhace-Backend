@@ -1,5 +1,6 @@
 import User from "../models/user.model.js";
 import Reservation from "../models/reservation.model.js";
+import { Booking } from "../models/booking.model.js";
 import { recordAuditLog } from "../utils/auditLogger.js";
 import { sendPasswordResetEmail } from "../services/mail.service.js";
 import crypto from "crypto";
@@ -57,7 +58,8 @@ export const getUsers = async (req, res) => {
     // Add reservation count to each user
     for (let user of users.docs) {
       const reservationCount = await Reservation.countDocuments({ guest: user._id });
-      user.reservationCount = reservationCount;
+      const bookingCount = await Booking.countDocuments({ customerId: user._id });
+      user.reservationCount = reservationCount + bookingCount;
     }
 
     // Update lastActive
@@ -257,6 +259,16 @@ export const toggleVIPStatus = async (req, res) => {
       await recordAuditLog(req.user._id, "CHANGE_VIP_STATUS", "User", user._id, {
         changedBy: req.user._id,
         newVIPStatus: isVIP,
+      });
+    }
+
+    // Emit real-time update for VIP status change
+    if (global.io) {
+      global.io.to('admin_users').emit('user_update', {
+        type: 'vip_status_change',
+        userId: user._id,
+        isVIP: user.isVIP,
+        updatedBy: req.user ? req.user._id : null,
       });
     }
 
