@@ -147,7 +147,7 @@ export const sendPasswordResetEmail = async (to, token, role) => {
       .content { padding: 40px 30px; text-align: center; }
       .content h2 { color: #0d0d0d; font-size: 22px; font-weight: 700; margin-bottom: 15px; }
       .content p { color: #555; line-height: 1.6; font-size: 15px; margin: 15px 0; }
-      .btn { display: inline-block; background: #0b544b; color: #fff; padding: 18px 26px; text-decoration: none; font-weight: 700; font-size: 18px; letter-spacing: 1px; margin: 25px 0; transition: background 0.3s ease; }
+      .btn { display: inline-block; background: #0b544b; color: #fff; padding: 18px 26px; text-decoration: none; font-weight: 700; font-size: 18px; letter-spacing: 1px; margin: 25px 0; transition: background 0.3s ease; cursor: pointer }
       .btn:hover { background: #09473e; }
       .footer { background: #f7f8fa; text-align: center; padding: 18px; font-size: 13px; color: #888; border-top: 1px solid #eee; }
     </style>

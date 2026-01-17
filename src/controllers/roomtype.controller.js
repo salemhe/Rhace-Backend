@@ -12,7 +12,7 @@ import path from "path";
 export const createRoomType = async (req, res) => {
   try {
     const { hotelId } = req.params;
-    const { name, description, pricePerNight, adultsCapacity, childrenCapacity, totalUnits, amenities, images } = req.body;
+    const { name, description, pricePerNight, adultsCapacity, childrenCapacity, totalUnits, amenities, images, category, discount } = req.body;
 
     if (totalUnits === undefined || totalUnits === null || (typeof totalUnits === 'string' && totalUnits.trim() === '')) {
       return res.status(400).json({ message: "totalUnits is required" });
@@ -26,54 +26,6 @@ export const createRoomType = async (req, res) => {
     if (!hotel) {
       return res.status(404).json({ message: "Hotel not found" });
     }
-
-    // Handle image uploads if files are present
-    // if (req.files && req.files.length > 0) {
-    //   images = req.files.map(file => file.location); // Assuming multer-s3 provides 'location'
-    // }
-
-    // Process amenities: if string, parse; then convert names to ObjectIds
-    // let amenityNames = [];
-    // if (amenities) {
-    //   if (typeof amenities === 'string') {
-    //     let str = amenities.trim();
-    //     if (str.startsWith('[') && str.endsWith(']')) {
-    //       // Extract quoted strings using regex
-    //       const regex = /['"]([^'"]+)['"]/g;
-    //       let matches = [];
-    //       let match;
-    //       while ((match = regex.exec(str)) !== null) {
-    //         matches.push(match[1]);
-    //       }
-    //       amenityNames = matches;
-    //     } else {
-    //       // Fallback to JSON or comma-separated
-    //       try {
-    //         amenityNames = JSON.parse(str);
-    //       } catch {
-    //         amenityNames = str.split(',').map(s => s.trim().replace(/['"]/g, ''));
-    //       }
-    //     }
-    //   } else if (Array.isArray(amenities)) {
-    //     amenityNames = amenities;
-    //   }
-    // }
-
-    // if (!Array.isArray(amenityNames)) {
-    //   return res.status(400).json({ message: "Amenities must be an array or a valid string format" });
-    // }
-
-    // const amenityIds = [];
-    // for (const name of amenityNames) {
-    //   if (typeof name !== 'string') continue;
-    //   let amenity = await Amenity.findOne({ name: name.trim() });
-    //   if (!amenity) {
-    //     amenity = new Amenity({ name: name.trim(), scope: 'global' });
-    //     await amenity.save();
-    //   }
-    //   amenityIds.push(amenity._id);
-    // }
-
     const roomType = new RoomType({
       hotelId,
       name,
@@ -84,6 +36,8 @@ export const createRoomType = async (req, res) => {
       totalUnits: numTotal,
       amenities,
       images,
+      category,
+      discount,
     });
 
     await roomType.save();
@@ -139,7 +93,7 @@ export const getRoomTypeById = async (req, res) => {
 export const updateRoomType = async (req, res) => {
   try {
     const { hotelId, id } = req.params;
-    const { name, description, pricePerNight, adultsCapacity, childrenCapacity, totalUnits, amenities, images } = req.body;
+    const { name, description, pricePerNight, adultsCapacity, childrenCapacity, totalUnits, amenities, images, category, discount } = req.body;
 
     const roomType = await RoomType.findOne({ _id: id, hotelId });
 
@@ -147,54 +101,14 @@ export const updateRoomType = async (req, res) => {
       return res.status(404).json({ message: "Room type not found for this hotel" });
     }
 
-    // Process amenities if provided
-    let amenityIds = roomType.amenities;
-    if (amenities !== undefined) {
-      let amenityNames = [];
-      if (typeof amenities === 'string') {
-        let str = amenities.trim();
-        if (str.startsWith('[') && str.endsWith(']')) {
-          // Extract quoted strings using regex
-          const regex = /['"]([^'"]+)['"]/g;
-          let matches = [];
-          let match;
-          while ((match = regex.exec(str)) !== null) {
-            matches.push(match[1]);
-          }
-          amenityNames = matches;
-        } else {
-          // Fallback to JSON
-          try {
-            amenityNames = JSON.parse(str);
-          } catch {
-            return res.status(400).json({ message: "Invalid amenities format" });
-          }
-        }
-      } else if (Array.isArray(amenities)) {
-        amenityNames = amenities;
-      }
-
-      if (!Array.isArray(amenityNames)) {
-        return res.status(400).json({ message: "Amenities must be an array" });
-      }
-
-      amenityIds = [];
-      for (const name of amenityNames) {
-        if (typeof name !== 'string') continue;
-        let amenity = await Amenity.findOne({ name: name.trim() });
-        if (!amenity) {
-          amenity = new Amenity({ name: name.trim(), scope: 'global' });
-          await amenity.save();
-        }
-        amenityIds.push(amenity._id);
-      }
-    }
-
     roomType.name = name || roomType.name;
     roomType.description = description || roomType.description;
     roomType.pricePerNight = pricePerNight || roomType.pricePerNight;
     roomType.adultsCapacity = adultsCapacity || roomType.adultsCapacity;
     roomType.childrenCapacity = childrenCapacity || roomType.childrenCapacity;
+    roomType.amenities = amenities || roomType.amenities;
+    roomType.category = category || roomType.category;
+    roomType.discount = discount || roomType.discount
     if (totalUnits !== undefined) {
       const numTotal = Number(totalUnits);
       if (isNaN(numTotal) || numTotal < 0) {
