@@ -297,6 +297,7 @@ export const createReservation = async (req, res) => {
       // table,
       combos,
       partPaid,
+      payLater,
     } = req.body;
 
     console.log(req.body);
@@ -316,6 +317,7 @@ export const createReservation = async (req, res) => {
       location,
       totalAmount,
       paymentStatus: partPaid ? "Part Paid" : "Not Paid",
+      payLater,
       bookingCode,
     };
 
@@ -341,33 +343,6 @@ export const createReservation = async (req, res) => {
       });
 
       reservationData = restaurant;
-
-      const vendorSocket = getVendorSocket(vendor);
-      if (vendorSocket && vendorSocket.readyState === 1) {
-        vendorSocket.send(
-          JSON.stringify({
-            type: "new_reservation",
-            data: {
-              _id: restaurant._id,
-              customerName,
-              customerId,
-              customerEmail,
-              vendor,
-              date,
-              time,
-              mealPreselected,
-              guests,
-              reservationType: reservationType,
-              reservationStatus: "Upcoming",
-              location,
-              totalAmount,
-              paymentStatus: "Not Paid",
-              message: "You have a new reservation",
-            },
-          })
-        );
-        console.log("Reservation sent to vendor via WebSocket.");
-      }
     }
 
     if (reservationType === "hotel") {
@@ -385,25 +360,6 @@ export const createReservation = async (req, res) => {
       });
 
       reservationData = hotel;
-
-      const vendorSocket = getVendorSocket(vendor);
-      if (vendorSocket && vendorSocket.readyState === 1) {
-        const hotelRes = await hotelReservation
-          .findById(hotel._id)
-          .populate({
-            path: "vendor",
-          })
-          .populate({
-            path: "room",
-          });
-        // 1 = OPEN
-        vendorSocket.send(
-          JSON.stringify({
-            type: "new_reservation",
-            data: hotelRes,
-          })
-        );
-      }
     }
 
     if (reservationType === "club") {
@@ -422,39 +378,7 @@ export const createReservation = async (req, res) => {
       });
 
       reservationData = club;
-
-      const vendorSocket = getVendorSocket(vendor);
-      if (vendorSocket && vendorSocket.readyState === 1) {
-        const clubRes = await clubReservation
-          .findById(club._id)
-          .populate({
-            path: "vendor",
-          })
-          .populate({
-            path: "drinks.drink",
-          });
-        // 1 = OPEN
-        vendorSocket.send(
-          JSON.stringify({
-            type: "new_reservation",
-            data: clubRes,
-          })
-        );
-      }
     }
-
-    const reservation = await Booking.findOne({ bookingCode })
-      .populate({ path: "menus.menu" })
-      .populate({ path: "vendor" })
-      .populate({ path: "room" })
-      .populate({ path: "drinks.drink" })
-      .populate({ path: "combos" });
-
-    await sendBookingConfirmationEmail(
-      reservation.customerEmail,
-      reservation,
-      reservationType
-    );
 
     return res.status(201).json({
       message: "Created Reservation succesfully",
@@ -478,6 +402,7 @@ export const getReservations = async (req, res) => {
       });
     }
 
+    if(!bookingId) query.paidFor = true;
     if (bookingId) query._id = bookingId;
     if (vendorId) query.vendor = vendorId;
     if (userId) query.customerId = userId;
@@ -490,7 +415,6 @@ export const getReservations = async (req, res) => {
       .populate({ path: "combos" })
       .sort({ createdAt: -1 });
 
-    // 🧠 If this is a USER, separate into upcoming and past
     if (userId) {
       const now = new Date();
 

@@ -349,7 +349,7 @@ export const initializePayment = async (req, res) => {
         .json({ message: "Unauthorized: No User ID found" });
     }
 
-    const { amount, email, vendorId, bookingId, type, customerName } = req.body;
+    const { amount, email, vendorId, bookingId, type, customerName, payLater } = req.body;
 
     if (!amount || !email || !vendorId || !type) {
       return res
@@ -372,7 +372,6 @@ export const initializePayment = async (req, res) => {
       email: email,
       amount: amount * 100,
       currency: "NGN",
-      subaccount: vendor.paymentDetails.subaccountCode,
       callback_url: `https://www.rhace.co/${type.split("R")[0]}s/confirmation/${bookingId}`,
       metadata: {
         vendorId,
@@ -381,6 +380,8 @@ export const initializePayment = async (req, res) => {
         userId: req.user._id
       }
     };
+
+    if(!payLater) paymentData.subaccount = vendor.paymentDetails.subaccountCode;
 
     const createPaymentOnPaystack = async (data) => {
       const response = await fetch(
@@ -560,7 +561,7 @@ export const verifyPayment = async (req, res) => {
       // Save the payment
       const newTransaction = new Payment({
         email: transaction.metadata.email,
-        customer_name: transaction.metadata.customerName,
+        customerName: transaction.metadata.customerName,
         paid_at: transaction.paid_at,
         vendor: vendorId,
         user: userId,
@@ -596,7 +597,8 @@ export const verifyPayment = async (req, res) => {
     // Update booking payment status
     const booking = await Booking.findById(transaction.metadata.bookingId);
     if (booking) {
-      booking.paymentStatus = transaction.status;
+      booking.paymentStatus = !booking.payLater ? transaction.status : "Not Paid";
+      booking.paidFor = true;
       await booking.save();
     }
 
