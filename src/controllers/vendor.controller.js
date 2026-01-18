@@ -148,12 +148,30 @@ export const getVendorById = async (req, res) => {
       vendor: req.params.id,
     });
 
-    res.status(200).json({
-      ...vendor.toObject(),
+    // Get branch count
+    const branchCount = await Branch.countDocuments({
+      vendor: req.params.id,
+    });
+
+    const vendorData = vendor.toObject();
+
+    // Provide defaults for missing fields to prevent "Unknown" displays
+    const responseData = {
+      ...vendorData,
+      businessName: vendorData.businessName || "Unknown Vendor",
+      vendorTypeCategory: vendorData.vendorTypeCategory || "No category",
+      status: vendorData.status || "Inactive",
+      email: vendorData.email || "Not specified",
+      phone: vendorData.phone || "Not provided",
+      address: vendorData.address || "Not provided",
+      website: vendorData.website || "Not provided",
       kyc,
       bankAccount,
       reservationCount,
-    });
+      branchCount,
+    };
+
+    res.status(200).json(responseData);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
