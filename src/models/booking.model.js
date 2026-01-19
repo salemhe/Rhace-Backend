@@ -21,6 +21,8 @@ const bookingSchema = new Schema(
     location: { type: String },
     totalAmount: { type: Number },
     bookingCode: { type: String },
+    paidFor: { type: Boolean, default: false },
+    payLater: { type: Boolean, default: false },
   },
   options
 );

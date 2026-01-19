@@ -1,37 +1,40 @@
 import express from "express";
 import cors from "cors";
 import morgan from "morgan";
-import authRoutes from "./routes/auth.routes.js";
-import adminRoutes from "./routes/admin.routes.js";
-import branchRoutes from "./routes/branch.routes.js";
-import menuRoutes from "./routes/menu.routes.js";
-import bookingRoutes from "./routes/booking.routes.js";
-import hotelRoutes from "./routes/hotel.routes.js";
-import amenityRoutes from "./routes/amenity.routes.js";
-import guestRoutes from "./routes/guest.routes.js";
-import dashboardRoutes from "./routes/dashboard.routes.js";
-import { drinkRoutes, addOnRouter } from "./routes/drink.routes.js";
-import bottleSetRoutes from "./routes/bottleSet.routes.js";
-import clubRoutes from "./routes/club.routes.js";
-import reviewRoutes from "./routes/review.routes.js";
-import accountSettingsRoutes from "./routes/accountsettings.routes.js";
-import userRoutes from "./routes/user.routes.js";
-import vendorRoutes from "./routes/vendor.routes.js";
-import reservationRoutes from "./routes/reservation.routes.js";
-import paymentRoutes from "./routes/payment.routes.js";
-import settingRoutes from "./routes/setting.routes.js";
-import notificationRoutes from "./routes/notification.routes.js";
-import payoutRoutes from "./routes/payout.routes.js";
-import reportRoutes from "./routes/report.routes.js";
-import searchRoutes from "./routes/search.routes.js";
-import staffRoutes from "./routes/staff.routes.js";
+import { authRoutes,
+adminRoutes,
+branchRoutes,
+menuRoutes,
+bookingRoutes,
+hotelRoutes,
+amenityRoutes,
+guestRoutes,
+dashboardRoutes,
+drinkRoutes,
+tableRoutes,
+addOnRouter,
+bottleSetRoutes,
+clubRoutes,
+reviewRoutes,
+accountSettingsRoutes,
+userRoutes,
+vendorRoutes,
+reservationRoutes,
+paymentRoutes,
+settingRoutes,
+notificationRoutes,
+payoutRoutes,
+reportRoutes,
+searchRoutes,
+staffRoutes,
+paystackRoutes } from "./routes/index.js"
 
 
 const app = express();
 
 app.use(express.json());
 app.use(cors({
-  origin: ["http://localhost:5173", "https://rhace-frontend.vercel.app"], // Add your frontend URLs
+  origin: ["http://localhost:5173", "https://rhace-frontend.vercel.app", "https://www.rhace.co", "52.31.139.75", "52.49.173.169", "52.214.14.220"],
   credentials: true
 }));
 app.use(morgan("dev"));
@@ -49,6 +52,7 @@ app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/account-settings", accountSettingsRoutes);
 app.use("/api/clubs", clubRoutes);
 app.use("/api/reviews", reviewRoutes);
+app.use("/api/tables", tableRoutes);
 app.use("/api/drinks", drinkRoutes);
 app.use("/api/addons", addOnRouter);
 app.use("/api/bottle-sets", bottleSetRoutes);
@@ -64,10 +68,12 @@ app.use("/api/search", searchRoutes)
 app.use("/api/staff", staffRoutes)
 app.use("/api/reports", reportRoutes);
 
+app.use("/api/paystack/webhook", paystackRoutes);
 
-app.use("/", (req, res) => {
+app.use("/", (_req, res) => {
   res.send("Welcome to Rhace Backend API");
 })
+
 
 // 404 Error Handler
 app.use((req, res, next) => {

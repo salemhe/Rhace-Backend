@@ -10,6 +10,8 @@ const roomTypeSchema = new mongoose.Schema({
   totalUnits: { type: Number, required: true, min: 0 },
   amenities: [{ type: String }],
   images: [{ type: String }],
+  category: { type: String },
+  discount: { type: Number },
 }, { timestamps: true });
 
 const RoomType = mongoose.model("RoomType", roomTypeSchema);

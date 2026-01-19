@@ -78,12 +78,15 @@ export const verifyAccount = async (req, res) => {
 export const getPayments = async (req, res) => {
   try {
     let query = {};
-    if (req.user.role !== "admin" && req.user.role === "vendor") {
-      query.vendor = req.user._id;
-    } else {
-      query.user = req.user._id;
+    console.log(req.user)
+    if (req.user.role !== "admin") {
+      if (req.user.role === "vendor") {
+        query.vendor = req.user._id;
+      } else {
+        query.user = req.user._id;
+      }
     }
-    const payments = await Payment.find(query).sort({ createdAt: -1 }).populate("vendor");
+    const payments = await Payment.find(query).sort({ createdAt: -1 }).populate({path: "vendor"});
 
     return res.json(payments);
   } catch (error) {
@@ -318,7 +321,7 @@ export const getPaymentInfo = async (req, res) => {
     
     const maskedAccountNumber = paymentDetails?.accountNumber
       ? paymentDetails.accountNumber
-          .slice(-4)
+          .slice(-5)
           .padStart(paymentDetails.accountNumber.length, "*")
       : "N/A";
 
@@ -346,7 +349,7 @@ export const initializePayment = async (req, res) => {
         .json({ message: "Unauthorized: No User ID found" });
     }
 
-    const { amount, email, vendorId, bookingId, type, customerName } = req.body;
+    const { amount, email, vendorId, bookingId, type, customerName, payLater } = req.body;
 
     if (!amount || !email || !vendorId || !type) {
       return res
@@ -369,8 +372,7 @@ export const initializePayment = async (req, res) => {
       email: email,
       amount: amount * 100,
       currency: "NGN",
-      subaccount: vendor.paymentDetails.subaccountCode,
-      callback_url: `https://rhace-frontend.vercel.app/${type.split("R")[0]}s/confirmation/${bookingId}`,
+      callback_url: `https://www.rhace.co/${type.split("R")[0]}s/confirmation/${bookingId}`,
       metadata: {
         vendorId,
         bookingId,
@@ -378,6 +380,8 @@ export const initializePayment = async (req, res) => {
         userId: req.user._id
       }
     };
+
+    if(!payLater) paymentData.subaccount = vendor.paymentDetails.subaccountCode;
 
     const createPaymentOnPaystack = async (data) => {
       const response = await fetch(
@@ -551,19 +555,20 @@ export const verifyPayment = async (req, res) => {
     }
 
     const existingTransaction = await Payment.findOne({ reference });
-    const amountInUSD = transaction.amount * 0.0092;
+    const amount = transaction.amount * 0.0092;
 
     if (!existingTransaction) {
       // Save the payment
       const newTransaction = new Payment({
         email: transaction.metadata.email,
-        customer_name: transaction.metadata.customerName,
+        customerName: transaction.metadata.customerName,
         paid_at: transaction.paid_at,
         vendor: vendorId,
         user: userId,
         booking: transaction.metadata.bookingId,
         paymentMethod: transaction.channel,
-        amount: amountInUSD,
+        amount: amount,
+        amountPaid: transaction.amount / 100,
         reference,
         status: "Paid",
       });
@@ -573,7 +578,7 @@ export const verifyPayment = async (req, res) => {
       // Update vendor balance
       const updatedVendor = await Vendor.findById(vendorId);
       if (updatedVendor) {
-        updatedVendor.balance += amountInUSD;
+        updatedVendor.balance += amount;
         await updatedVendor.save();
       }
 
@@ -582,7 +587,7 @@ export const verifyPayment = async (req, res) => {
         type: 'new_payment',
         paymentId: newTransaction._id,
         vendorId: vendorId,
-        amount: amountInUSD,
+        amount: amount,
         reference: reference,
         status: 'Paid',
         createdAt: newTransaction.createdAt,
@@ -592,7 +597,8 @@ export const verifyPayment = async (req, res) => {
     // Update booking payment status
     const booking = await Booking.findById(transaction.metadata.bookingId);
     if (booking) {
-      booking.paymentStatus = transaction.status;
+      booking.paymentStatus = !booking.payLater ? transaction.status : "Not Paid";
+      booking.paidFor = true;
       await booking.save();
     }
 

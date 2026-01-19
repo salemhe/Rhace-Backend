@@ -12,7 +12,7 @@ const PaymentSchema = new mongoose.Schema({
         ref: "User",
         required: true,
     },
-    customer_name: {
+    customerName: {
         type: String,
         required: true,
     },
@@ -23,6 +23,10 @@ const PaymentSchema = new mongoose.Schema({
         required: true,
     },
     amount: {
+        type: Number,
+        required: true,
+    },
+    amountPaid: {
         type: Number,
         required: true,
     },
@@ -39,6 +43,9 @@ const PaymentSchema = new mongoose.Schema({
         enum: ["Pending", "Paid", "Part-paid", "Failed"],
         default: "Pending",
     },
+    isSplitPayment: { type: Boolean, default: false },
+
+    paidAt: { type: Date },
 }, { timestamps: true });
 
 const Payment = mongoose.model("Payment", PaymentSchema);
