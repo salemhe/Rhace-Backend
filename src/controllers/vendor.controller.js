@@ -558,7 +558,7 @@ export const deleteVendor = async (req, res) => {
     // Check if vendor has active reservations
     const activeReservations = await Reservation.countDocuments({
       vendor: req.params.id,
-      reservation_status: { $in: ['Confirmed', 'Pending'] }
+      status: { $in: ['pending', 'confirmed'] }
     });
 
     if (activeReservations > 0) {
