@@ -108,8 +108,8 @@ export const getVendors = async (req, res) => {
     const vendorsWithCounts = await Promise.all(
       vendors.docs.map(async (vendor) => {
         const reservationCount = await Reservation.countDocuments({
-          // Assuming vendor field exists in Reservation
           vendor: vendor._id,
+          status: { $nin: ['cancelled'] } // Count all reservations except cancelled ones
         });
         return {
           ...vendor.toObject(),
@@ -509,6 +509,76 @@ export const getOffers = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 }
+
+// @desc    Update vendor details
+// @route   PUT /api/vendors/:id
+// @access  Private (Admin)
+export const updateVendor = async (req, res) => {
+  try {
+    const vendor = await Vendor.findById(req.params.id);
+    if (!vendor) {
+      return res.status(404).json({ message: "Vendor not found" });
+    }
+
+    const allowedFields = [
+      'businessName', 'businessDescription', 'email', 'phone', 'address',
+      'website', 'priceRange', 'vendorTypeCategory', 'profileImages',
+      'percentageCharge', 'status', 'isVisible'
+    ];
+
+    allowedFields.forEach(field => {
+      if (req.body[field] !== undefined) {
+        vendor[field] = req.body[field];
+      }
+    });
+
+    await vendor.save();
+
+    await recordAuditLog(req.user._id, "VENDOR_UPDATE", "Vendor", vendor._id, {
+      changedBy: req.user._id,
+      updatedFields: allowedFields.filter(field => req.body[field] !== undefined),
+    });
+
+    res.status(200).json(vendor);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Delete vendor
+// @route   DELETE /api/vendors/:id
+// @access  Private (Admin)
+export const deleteVendor = async (req, res) => {
+  try {
+    const vendor = await Vendor.findById(req.params.id);
+    if (!vendor) {
+      return res.status(404).json({ message: "Vendor not found" });
+    }
+
+    // Check if vendor has active reservations
+    const activeReservations = await Reservation.countDocuments({
+      vendor: req.params.id,
+      reservation_status: { $in: ['Confirmed', 'Pending'] }
+    });
+
+    if (activeReservations > 0) {
+      return res.status(400).json({
+        message: "Cannot delete vendor with active reservations. Cancel all reservations first."
+      });
+    }
+
+    await Vendor.findByIdAndDelete(req.params.id);
+
+    await recordAuditLog(req.user._id, "VENDOR_DELETE", "Vendor", req.params.id, {
+      deletedBy: req.user._id,
+      vendorName: vendor.businessName,
+    });
+
+    res.status(200).json({ message: "Vendor deleted successfully" });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
 
 export const getNearest = async (req, res) => {
   try {

@@ -13,6 +13,9 @@ router.get("/", getVendor)
 router.put("/", protect, updateVendor);
 
 router.get("/stats", protect, getVendorStats)
+router.get("/:id", protect, getVendorById)
+router.put("/:id", protect, updateVendor)
+router.delete("/:id", protect, deleteVendor)
 
 router.get("/offers", getOffers);
 
