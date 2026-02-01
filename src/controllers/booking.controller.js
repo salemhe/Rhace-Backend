@@ -476,7 +476,7 @@ export const getReservations = async (req, res) => {
   } = req.query;
   try {
     const query = {};
-    if (!vendorId && !userId && !bookingId) {
+    if (!vendorId && !userId && !bookingId && !resId) {
       return res.status(401).json({
         message: "Not Authorized",
       });
