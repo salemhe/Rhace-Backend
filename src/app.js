@@ -39,6 +39,7 @@ app.use(cors({
 }));
 app.use(morgan("dev"));
 
+
 app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/branches", branchRoutes);
@@ -73,6 +74,11 @@ app.use("/api/paystack/webhook", paystackRoutes);
 app.use("/", (_req, res) => {
   res.send("Welcome to Rhace Backend API");
 })
+
+
+app.use((_req, res) => {
+  res.status(404).json({ message: "Not Found" });
+});  
 
 
 // 404 Error Handler
