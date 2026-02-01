@@ -1,10 +1,10 @@
-import Payout from "../models/payout.model.js";
+// import Payout from "../models/payout.model.js";
 import { Vendor } from "../models/vendor.model.js";
-import BankAccount from "../models/bankaccount.model.js";
-import PaymentTransaction from "../models/paymenttransaction.model.js";
-import { recordAuditLog } from "../utils/auditLogger.js";
-import pkg from "json-2-csv";
-import * as XLSX from "xlsx";
+// import BankAccount from "../models/bankaccount.model.js";
+// import PaymentTransaction from "../models/paymenttransaction.model.js";
+// import { recordAuditLog } from "../utils/auditLogger.js";
+// import pkg from "json-2-csv";
+// import * as XLSX from "xlsx";
 import Payment from "../models/payment.model.js";
 import moment from "moment";
 import { Booking } from "../models/booking.model.js";
@@ -595,12 +595,7 @@ export const verifyPayment = async (req, res) => {
     }
 
     // Update booking payment status
-    const booking = await Booking.findById(transaction.metadata.bookingId);
-    if (booking) {
-      booking.paymentStatus = !booking.payLater ? transaction.status : "Not Paid";
-      booking.paidFor = true;
-      await booking.save();
-    }
+    const booking = await Booking.findOne({ resId: transaction.metadata.bookingId });
 
     return res.status(200).json({
       message: "Transaction verified",
@@ -619,7 +614,7 @@ export const verifyPayment = async (req, res) => {
         email: transaction.customer.email,
         customer_code: transaction.customer.customer_code,
       },
-      booking,
+      booked: !!booking,
     });
   } catch (error) {
     console.error("Error Verifying Payment:", error);

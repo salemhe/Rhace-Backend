@@ -13,8 +13,15 @@ export const createTable = async (req, res) => {
       }
       req.body.clubId = req.user._id.toString();
     }
+    const { clubId, name, price, addOns } = req.body;
 
-    const table = new Table(req.body);
+    if (addOns.length < 4) {
+      return res.status(401).json({
+        error: "Addons must be 4 or more"
+      })
+    }
+
+    const table = new Table({clubId, name, price, addOns});
     await table.save();
     res.status(201).json(table);
   } catch (error) {
@@ -84,7 +91,16 @@ export const updateTable = async (req, res) => {
       }
     }
 
-    const updatedTable = await Table.findByIdAndUpdate(id, req.body, { new: true });
+    const { clubId, name, price, addOns } = req.body;
+
+    if (addOns.length < 4) {
+      return res.status(401).json({
+        error: "Addons must be 4 or more"
+      })
+    }
+
+
+    const updatedTable = await Table.findByIdAndUpdate(id, { clubId, name, price, addOns }, { new: true });
     res.status(200).json(updatedTable);
   } catch (error) {
     res.status(400).json({ message: error.message });

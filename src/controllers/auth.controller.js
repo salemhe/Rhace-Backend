@@ -11,6 +11,7 @@ import {
   RestaurantVendor,
   ClubVendor,
 } from "../models/vendor.model.js";
+import { filterVendorData } from "../utils/vendor.js";
 
 export const registerAdmin = async (req, res) => {
   const { firstName, lastName, email, password } = req.body;
@@ -46,7 +47,7 @@ export const registerAdmin = async (req, res) => {
 };
 
 export const getVendor = async (req, res) => {
-  const { type, id } = req.query;
+  const { type, id, limit = 10, page = 1 } = req.query;
 
   try {
     const query = {};
@@ -56,12 +57,19 @@ export const getVendor = async (req, res) => {
     if (type) {
       query.vendorType = type;
     }
-    const vendor = await Vendor.find(query);
+    const vendor = await Vendor.find(query)
+      .skip((page - 1) * limit)
+      .limit(parseInt(limit));
+
+    const total = await Vendor.countDocuments(query);
 
     return res.json({
       status: "active",
-      message: `Fetched ${type} vendor Succesfully!`,
-      data: vendor,
+      message: `Fetched ${type || "all"} vendor Succesfully!`,
+      data: filterVendorData(vendor),
+      total,
+      page: parseInt(page),
+      pages: Math.ceil(total / limit),
     });
   } catch (err) {
     console.error(err);

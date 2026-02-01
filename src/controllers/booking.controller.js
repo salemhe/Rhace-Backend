@@ -32,7 +32,7 @@ export const getBookingSummary = async (req, res) => {
     const today = new Date();
     const { start: todayStart, end: todayEnd } = getDateRange(today);
     const { start: lastWeekStart, end: lastWeekEnd } = getDateRange(
-      dayjs(today).subtract(7, "day")
+      dayjs(today).subtract(7, "day"),
     );
 
     // ---------- 1️⃣ TOTAL RESERVATIONS ----------
@@ -247,7 +247,7 @@ export const getBookingSummary = async (req, res) => {
           daily: trends.map((t) => ({
             date: `${t._id.year}-${String(t._id.month).padStart(
               2,
-              "0"
+              "0",
             )}-${String(t._id.day).padStart(2, "0")}`,
             count: t.count,
           })),
@@ -274,6 +274,7 @@ export const getBookingSummary = async (req, res) => {
 export const createReservation = async (req, res) => {
   try {
     const {
+      resId,
       vendor,
       customerName,
       customerId,
@@ -294,7 +295,7 @@ export const createReservation = async (req, res) => {
       specialRequest,
       room,
       drinks,
-      // table,
+      table,
       combos,
       partPaid,
       payLater,
@@ -308,6 +309,7 @@ export const createReservation = async (req, res) => {
     const bookingCode = generateBookingCode();
 
     const initialData = {
+      resId,
       customerName,
       customerId,
       customerEmail,
@@ -316,8 +318,9 @@ export const createReservation = async (req, res) => {
       reservationStatus: "Upcoming",
       location,
       totalAmount,
-      paymentStatus: partPaid ? "Part Paid" : "Not Paid",
+      paymentStatus: partPaid ? "Part Paid" : !payLater ? "Paid" : "Not Paid",
       payLater,
+      paidFor: true,
       bookingCode,
     };
 
@@ -343,6 +346,20 @@ export const createReservation = async (req, res) => {
       });
 
       reservationData = restaurant;
+
+      const vendorSocket = getVendorSocket(vendor);
+      if (vendorSocket && vendorSocket.readyState === 1) {
+        vendorSocket.send(
+          JSON.stringify({
+            type: "new_reservation",
+            data: {
+              ...restaurant,
+              message: "You have a new reservation",
+            },
+          }),
+        );
+        console.log("Reservation sent to vendor via WebSocket.");
+      }
     }
 
     if (reservationType === "hotel") {
@@ -360,6 +377,27 @@ export const createReservation = async (req, res) => {
       });
 
       reservationData = hotel;
+
+      const vendorSocket = getVendorSocket(vendor);
+      if (vendorSocket && vendorSocket.readyState === 1) {
+        const hotelRes = await hotelReservation
+          .findById(hotel._id)
+          .populate({
+            path: "vendor",
+          })
+          .populate({
+            path: "room",
+          });
+        vendorSocket.send(
+          JSON.stringify({
+            type: "new_reservation",
+            data: {
+              ...hotelRes,
+              message: "You have a new reservation",
+            },
+          }),
+        );
+      }
     }
 
     if (reservationType === "club") {
@@ -371,14 +409,49 @@ export const createReservation = async (req, res) => {
         ...initialData,
         date,
         time,
-        // table,
+        table,
         guests,
         drinks,
         combos,
       });
 
       reservationData = club;
+
+      const vendorSocket = getVendorSocket(vendor);
+      if (vendorSocket && vendorSocket.readyState === 1) {
+        const clubRes = await clubReservation
+          .findById(club._id)
+          .populate({
+            path: "vendor",
+          })
+          .populate({
+            path: "drinks.drink",
+          });
+        // 1 = OPEN
+        vendorSocket.send(
+          JSON.stringify({
+            type: "new_reservation",
+            data: {
+              ...clubRes,
+              message: "You have a new reservation",
+            },
+          }),
+        );
+      }
     }
+
+    const reservation = await Booking.findOne({ bookingCode })
+      .populate({ path: "menus.menu" })
+      .populate({ path: "vendor" })
+      .populate({ path: "room" })
+      .populate({ path: "drinks.drink" })
+      .populate({ path: "combos" });
+
+    await sendBookingConfirmationEmail(
+      reservation.customerEmail,
+      reservation,
+      reservationType,
+    );
 
     return res.status(201).json({
       message: "Created Reservation succesfully",
@@ -393,7 +466,14 @@ export const createReservation = async (req, res) => {
 };
 
 export const getReservations = async (req, res) => {
-  const { vendorId, userId, bookingId } = req.query;
+  const {
+    vendorId,
+    userId,
+    bookingId,
+    resId,
+    limit = 10,
+    page = 1,
+  } = req.query;
   try {
     const query = {};
     if (!vendorId && !userId && !bookingId) {
@@ -402,10 +482,11 @@ export const getReservations = async (req, res) => {
       });
     }
 
-    if(!bookingId) query.paidFor = true;
+    if (!bookingId) query.paidFor = true;
     if (bookingId) query._id = bookingId;
     if (vendorId) query.vendor = vendorId;
     if (userId) query.customerId = userId;
+    if (resId) query.resId = resId;
 
     const reservations = await Booking.find(query)
       .populate({ path: "menus.menu" })
@@ -413,7 +494,11 @@ export const getReservations = async (req, res) => {
       .populate({ path: "room" })
       .populate({ path: "drinks.drink" })
       .populate({ path: "combos" })
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(parseInt(limit));
+
+    const total = await Booking.countDocuments(query);
 
     if (userId) {
       const now = new Date();
@@ -456,12 +541,18 @@ export const getReservations = async (req, res) => {
           upcoming,
           past,
         },
+        total,
+        page: parseInt(page),
+        pages: Math.ceil(total / limit),
       });
     }
 
     return res.status(200).json({
       message: "Fetched Reservations Successfully",
       data: reservations,
+      total,
+      page: parseInt(page),
+      pages: Math.ceil(total / limit),
     });
   } catch (error) {
     console.error(error);
@@ -479,7 +570,7 @@ export const getReservationStats = async (req, res) => {
     const today = new Date();
     const { start: todayStart, end: todayEnd } = getDateRange(today);
     const { start: lastWeekStart, end: lastWeekEnd } = getDateRange(
-      dayjs(today).subtract(7, "day")
+      dayjs(today).subtract(7, "day"),
     );
 
     // 1. Total Reservations Today vs Last Week
@@ -556,7 +647,10 @@ export const getReservationStats = async (req, res) => {
     res.status(200).json({
       success: true,
       data: {
-        totalReservations: { count: todayCount, change: totalReservationsChange },
+        totalReservations: {
+          count: todayCount,
+          change: totalReservationsChange,
+        },
         prepaidReservations: { count: todayPrepaid, change: prepaidChange },
         expectedGuests: { count: guestsToday, change: guestsChange },
         pendingPayments: { count: todayPending, change: pendingChange },

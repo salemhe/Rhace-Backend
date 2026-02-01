@@ -7,6 +7,7 @@ import {
 import {Menu, MenuItem} from "../models/menu.model.js";
 import BottleSet from "../models/bottleSet.model.js";
 import Drink from "../models/drink.model.js";
+import { filterVendorData } from "../utils/vendor.js";
 
 const selectFields = "_id businessName businessDescription";
 
@@ -144,10 +145,14 @@ export const getVendors = async (req, res) => {
       .skip(skip)
       .limit(parseInt(limit));
 
+    const count = await model.countDocuments(filter);
+
     res.status(200).json({
       success: true,
-      count: vendors.length,
-      data: vendors,
+      count: count,
+      page: parseInt(page),
+      totalPages: Math.ceil(count / limit),
+      data: filterVendorData(vendors),
     });
   } catch (error) {
     res
