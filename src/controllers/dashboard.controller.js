@@ -538,28 +538,19 @@ export const getTopVendors = async (req, res) => {
     const nextMonth = new Date(currentMonth);
     nextMonth.setMonth(nextMonth.getMonth() + 1);
 
-    // Aggregate vendor performance metrics based on reservations
-    const topVendors = await Reservation.aggregate([
+    // Aggregate vendor performance metrics based on paid payments
+    const topVendors = await Payment.aggregate([
       {
         $match: {
           createdAt: { $gte: currentMonth, $lt: nextMonth },
-          reservation_status: "Confirmed",
+          status: "Paid",
         },
       },
       {
         $group: {
           _id: "$vendor",
-          totalReservations: { $sum: 1 },
-          totalGuests: { $sum: "$partySize" },
-          totalRevenue: {
-            $sum: {
-              $cond: {
-                if: { $eq: ["$payment_status", "Paid"] },
-                then: "$deposit",
-                else: 0
-              }
-            }
-          },
+          totalRevenue: { $sum: "$amount" },
+          totalPayments: { $sum: 1 },
         },
       },
       {
@@ -572,6 +563,20 @@ export const getTopVendors = async (req, res) => {
       },
       {
         $unwind: "$vendor",
+      },
+      {
+        $lookup: {
+          from: "reservations",
+          localField: "_id",
+          foreignField: "vendor",
+          as: "reservations",
+        },
+      },
+      {
+        $addFields: {
+          totalReservations: { $size: "$reservations" },
+          totalGuests: { $sum: "$reservations.partySize" },
+        },
       },
       {
         $project: {
