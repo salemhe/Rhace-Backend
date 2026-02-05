@@ -325,6 +325,7 @@ export const createReservation = async (req, res) => {
     };
 
     let reservationData = {};
+    const vendorSocket = getVendorSocket(vendor);
 
     if (reservationType === "restaurant") {
       if (!image || !date || !time || !guests) {
@@ -347,7 +348,6 @@ export const createReservation = async (req, res) => {
 
       reservationData = restaurant;
 
-      const vendorSocket = getVendorSocket(vendor);
       if (vendorSocket && vendorSocket.readyState === 1) {
         vendorSocket.send(
           JSON.stringify({
@@ -378,7 +378,6 @@ export const createReservation = async (req, res) => {
 
       reservationData = hotel;
 
-      const vendorSocket = getVendorSocket(vendor);
       if (vendorSocket && vendorSocket.readyState === 1) {
         const hotelRes = await hotelReservation
           .findById(hotel._id)
@@ -417,7 +416,6 @@ export const createReservation = async (req, res) => {
 
       reservationData = club;
 
-      const vendorSocket = getVendorSocket(vendor);
       if (vendorSocket && vendorSocket.readyState === 1) {
         const clubRes = await clubReservation
           .findById(club._id)
