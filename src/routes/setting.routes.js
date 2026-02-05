@@ -12,9 +12,9 @@ const router = express.Router();
 
 router.use(protect);
 
-// System settings (Superadmin only)
-router.get("/", authorize(["superadmin"]), getSettings);
-router.put("/", authorize(["superadmin"]), updateSettings);
+// System settings (Superadmin and Admin only)
+router.get("/", authorize(["superadmin", "admin"]), getSettings);
+router.put("/", authorize(["superadmin", "admin"]), updateSettings);
 
 // User account settings
 router.get("/account", getAccountSettings);
