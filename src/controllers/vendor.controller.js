@@ -113,6 +113,7 @@ export const getVendors = async (req, res) => {
         });
         return {
           ...vendor.toObject(),
+          contactPerson: vendor.contactPerson || "Not specified",
           reservationCount,
         };
       })
