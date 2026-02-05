@@ -1,13 +1,8 @@
-// import Payout from "../models/payout.model.js";
 import { Vendor } from "../models/vendor.model.js";
-// import BankAccount from "../models/bankaccount.model.js";
-// import PaymentTransaction from "../models/paymenttransaction.model.js";
-// import { recordAuditLog } from "../utils/auditLogger.js";
-// import pkg from "json-2-csv";
-// import * as XLSX from "xlsx";
 import Payment from "../models/payment.model.js";
 import moment from "moment";
 import { Booking } from "../models/booking.model.js";
+import { getVendorSocket } from "../websockets/socketManager.js";
 
 // Emit real-time updates for payments
 const emitPaymentUpdate = (data) => {
@@ -276,7 +271,7 @@ export const getTrends = async (req, res) => {
             $dateTrunc: {
               date: "$createdAt",
               unit: unit,
-              timezone: "UTC", // IMPORTANT for consistency
+              timezone: "UTC",
             },
           },
           totalEarnings: { $sum: "$amount" },
@@ -285,14 +280,69 @@ export const getTrends = async (req, res) => {
       { $sort: { _id: 1 } },
     ]);
 
-    const formattedTrends = trends.map((item) => ({
-      label:
-        range === "weekly"
-          ? moment(item._id).format("[Week of] MMM DD")
-          : range === "monthly"
-            ? moment(item._id).format("MMM YYYY")
-            : `Q${moment(item._id).quarter()} ${moment(item._id).year()}`,
-      value: item.totalEarnings,
+    const buckets = [];
+    const now = moment.utc();
+
+    if (range === "weekly") {
+      for (let i = 7; i >= 0; i--) {
+        const d = now.clone().subtract(i, "weeks").startOf("isoWeek");
+        buckets.push({
+          key: d.format("YYYY-[W]WW"),
+          label: d.format("[Week of] MMM DD"),
+          value: 0,
+        });
+      }
+    }
+
+    if (range === "monthly") {
+      for (let i = 5; i >= 0; i--) {
+        const d = now.clone().subtract(i, "months").startOf("month");
+        buckets.push({
+          key: d.format("YYYY-MM"),
+          label: d.format("MMM YYYY"),
+          value: 0,
+        });
+      }
+    }
+
+    if (range === "quarterly") {
+      for (let i = 3; i >= 0; i--) {
+        const d = now.clone().subtract(i, "quarters").startOf("quarter");
+        buckets.push({
+          key: `${d.year()}-Q${d.quarter()}`,
+          label: `Q${d.quarter()} ${d.year()}`,
+          value: 0,
+        });
+      }
+    }
+
+    trends.forEach((item) => {
+      if (!item._id) return;
+
+      let key;
+
+      if (range === "weekly") {
+        key = moment.utc(item._id).format("YYYY-[W]WW");
+      }
+
+      if (range === "monthly") {
+        key = moment.utc(item._id).format("YYYY-MM");
+      }
+
+      if (range === "quarterly") {
+        const m = moment.utc(item._id);
+        key = `${m.year()}-Q${m.quarter()}`;
+      }
+
+      const bucket = buckets.find((b) => b.key === key);
+      if (bucket) {
+        bucket.value = item.totalEarnings;
+      }
+    });
+
+    const formattedTrends = buckets.map(({ label, value }) => ({
+      label,
+      value,
     }));
 
     const totalEarnings = await Payment.aggregate([
@@ -418,6 +468,7 @@ export const initializePayment = async (req, res) => {
         bookingId,
         customerName,
         userId: req.user._id,
+        payLater,
       },
     };
 
@@ -599,6 +650,7 @@ export const verifyPayment = async (req, res) => {
     }
 
     const vendorId = transaction.metadata?.vendorId;
+    const vendorSocket = getVendorSocket(vendorId);
     if (!vendorId) {
       return res
         .status(400)
@@ -621,6 +673,7 @@ export const verifyPayment = async (req, res) => {
         amount: amount,
         amountPaid: transaction.amount / 100,
         reference,
+        payLater: transaction.metadata.payLater,
         status: "Paid",
       });
 
@@ -631,6 +684,19 @@ export const verifyPayment = async (req, res) => {
       if (updatedVendor) {
         updatedVendor.balance += amount;
         await updatedVendor.save();
+      }
+
+      if (vendorSocket && vendorSocket.readyState === 1) {
+        vendorSocket.send(
+          JSON.stringify({
+            type: "new_payment",
+            data: {
+              ...newTransaction,
+              message: "You have a new payment",
+            },
+          }),
+        );
+        console.log("Payment sent to vendor via WebSocket.");
       }
 
       // Emit real-time update for new payment
