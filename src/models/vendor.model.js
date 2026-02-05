@@ -82,6 +82,7 @@ const VendorBaseSchema = new Schema(
     isVisible: { type: Boolean, default: false },
     vendorType: { type: String },
     specialCategory: { type: String },
+    contactPerson: { type: String, default: "Not specified" },
   },
   options
 );
