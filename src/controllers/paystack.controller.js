@@ -3,6 +3,7 @@ import { Booking } from "../models/booking.model.js";
 import Payment from "../models/payment.model.js";
 import { Vendor } from "../models/vendor.model.js";
 import { getVendorSocket } from "../websockets/socketManager.js";
+import { emitPaymentUpdate } from "./payment.controller.js";
 
 export const handlePaystack = async (req, res) => {
   res.sendStatus(200);
@@ -116,15 +117,7 @@ export const handlePaystack = async (req, res) => {
     }
 
     // ✅ Emit realtime update
-    emitPaymentUpdate({
-      type: "new_payment",
-      paymentId: payment._id,
-      vendorId: metadata.vendorId,
-      amount: amountPaid,
-      reference,
-      status: "PAID",
-      createdAt: payment.createdAt,
-    });
+    emitPaymentUpdate(metadata.bookingId, 'paid');
 
     console.log("✅ Paystack webhook processed:", reference);
   } catch (error) {

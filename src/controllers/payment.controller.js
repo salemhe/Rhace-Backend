@@ -5,8 +5,11 @@ import { Booking } from "../models/booking.model.js";
 import { getVendorSocket } from "../websockets/socketManager.js";
 
 // Emit real-time updates for payments
-const emitPaymentUpdate = (data) => {
+const emitPaymentUpdate = (reservationId, status) => {
   if (global.io) {
+    
+    console.log('Emitting payment_update event:', { reservationId, status });
+    global.io.emit('payment_update', { reservationId, status });
     console.log("Emitting payment_update event:", data);
     global.io.to("admin_payments").emit("payment_update", data);
   }
