@@ -116,7 +116,7 @@ export const updateRoomType = async (req, res) => {
       }
       roomType.totalUnits = numTotal;
     }
-    roomType.amenities = amenityIds;
+    roomType.amenities = amenities;
     roomType.images = images || roomType.images;
 
     const updatedRoomType = await roomType.save();

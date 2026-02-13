@@ -7,6 +7,7 @@ import { recordAuditLog } from "../utils/auditLogger.js";
 import pkg from "json-2-csv";
 import * as XLSX from "xlsx";
 import { Menu } from "../models/menu.model.js";
+import { filterVendorData } from "../utils/vendor.js";
 
 const { AsyncParser } = pkg;
 
@@ -49,7 +50,8 @@ export const getPublicVendors = async (req, res) => {
       page: parseInt(page, 10),
       limit: parseInt(limit, 10),
       sort,
-      select: "businessName vendorType email phone address profileImages rating reviews website priceRange vendorTypeCategory createdAt", // Only public fields
+      select:
+        "businessName vendorType email phone address profileImages rating reviews website priceRange vendorTypeCategory createdAt", // Only public fields
     };
 
     const vendors = await Vendor.paginate(query, options);
@@ -116,12 +118,12 @@ export const getVendors = async (req, res) => {
           contactPerson: vendor.contactPerson || "Not specified",
           reservationCount,
         };
-      })
+      }),
     );
 
     res.status(200).json({
       ...vendors,
-      docs: vendorsWithCounts,
+      docs: filterVendorData(vendorsWithCounts),
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -199,11 +201,17 @@ export const updateVendorApproval = async (req, res) => {
     }
     await vendor.save();
 
-    await recordAuditLog(req.user._id, "VENDOR_APPROVAL_CHANGE", "Vendor", vendor._id, {
-      changedBy: req.user._id,
-      newStatus: status,
-      rejectionReason,
-    });
+    await recordAuditLog(
+      req.user._id,
+      "VENDOR_APPROVAL_CHANGE",
+      "Vendor",
+      vendor._id,
+      {
+        changedBy: req.user._id,
+        newStatus: status,
+        rejectionReason,
+      },
+    );
 
     res.status(200).json(vendor);
   } catch (error) {
@@ -226,10 +234,16 @@ export const updateVendorStatus = async (req, res) => {
     vendor.status = status;
     await vendor.save();
 
-    await recordAuditLog(req.user._id, "VENDOR_STATUS_CHANGE", "Vendor", vendor._id, {
-      changedBy: req.user._id,
-      newStatus: status,
-    });
+    await recordAuditLog(
+      req.user._id,
+      "VENDOR_STATUS_CHANGE",
+      "Vendor",
+      vendor._id,
+      {
+        changedBy: req.user._id,
+        newStatus: status,
+      },
+    );
 
     res.status(200).json(vendor);
   } catch (error) {
@@ -252,10 +266,16 @@ export const updateVendorCommission = async (req, res) => {
     vendor.percentageCharge = percentageCharge;
     await vendor.save();
 
-    await recordAuditLog(req.user._id, "VENDOR_COMMISSION_CHANGE", "Vendor", vendor._id, {
-      changedBy: req.user._id,
-      newCommission: percentageCharge,
-    });
+    await recordAuditLog(
+      req.user._id,
+      "VENDOR_COMMISSION_CHANGE",
+      "Vendor",
+      vendor._id,
+      {
+        changedBy: req.user._id,
+        newCommission: percentageCharge,
+      },
+    );
 
     res.status(200).json(vendor);
   } catch (error) {
@@ -316,11 +336,17 @@ export const verifyKYC = async (req, res) => {
       await vendor.save();
     }
 
-    await recordAuditLog(req.user._id, "KYC_VERIFICATION", "Vendor", req.params.id, {
-      verifiedBy: req.user._id,
-      status,
-      rejectionReason,
-    });
+    await recordAuditLog(
+      req.user._id,
+      "KYC_VERIFICATION",
+      "Vendor",
+      req.params.id,
+      {
+        verifiedBy: req.user._id,
+        status,
+        rejectionReason,
+      },
+    );
 
     res.status(200).json(kyc);
   } catch (error) {
@@ -374,9 +400,15 @@ export const verifyBankAccount = async (req, res) => {
     bankAccount.verificationDate = new Date();
     await bankAccount.save();
 
-    await recordAuditLog(req.user._id, "BANK_ACCOUNT_VERIFICATION", "Vendor", req.params.id, {
-      verifiedBy: req.user._id,
-    });
+    await recordAuditLog(
+      req.user._id,
+      "BANK_ACCOUNT_VERIFICATION",
+      "Vendor",
+      req.params.id,
+      {
+        verifiedBy: req.user._id,
+      },
+    );
 
     res.status(200).json(bankAccount);
   } catch (error) {
@@ -393,7 +425,7 @@ export const bulkUpdateVendors = async (req, res) => {
 
     const result = await Vendor.updateMany(
       { _id: { $in: vendorIds } },
-      { $set: updates }
+      { $set: updates },
     );
 
     await recordAuditLog(req.user._id, "BULK_VENDOR_UPDATE", "Vendor", null, {
@@ -459,7 +491,7 @@ export const exportVendors = async (req, res) => {
           reservationCount,
           createdAt: vendor.createdAt,
         };
-      })
+      }),
     );
 
     const { format = "csv" } = req.query;
@@ -468,9 +500,15 @@ export const exportVendors = async (req, res) => {
       const worksheet = XLSX.utils.json_to_sheet(dataToExport);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Vendors");
-      const xlsxBuffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+      const xlsxBuffer = XLSX.write(workbook, {
+        type: "buffer",
+        bookType: "xlsx",
+      });
 
-      res.header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.header(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      );
       res.attachment("vendors.xlsx");
       return res.send(xlsxBuffer);
     } else {
@@ -486,31 +524,40 @@ export const exportVendors = async (req, res) => {
   }
 };
 
-
 export const getOffers = async (req, res) => {
- try {
-  const { id } = req.query;
-  let offers = [];
-  if (id) {
-    offers = await Menu.findById(id)
-      .populate({ path: "vendor"})
-      .populate({ path: "items"})
-      .sort({ createdAt: -1 });
-  } else {
-    offers = await Menu.find()
-      .populate({ path: "vendor"})
-      .populate({ path: "items"})
-      .sort({ createdAt: -1 });
-  }
+  try {
+    const { id, limit = 10, page = 1 } = req.query;
+    let offers = [];
+    let total = 0;
+    if (id) {
+      offers = await Menu.findById(id)
+        .populate({ path: "vendor" })
+        .populate({ path: "items" })
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(parseInt(limit));
+      total = await Menu.countDocuments(id);
+    } else {
+      offers = await Menu.find()
+        .populate({ path: "vendor" })
+        .populate({ path: "items" })
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(parseInt(limit));
+      total = await Menu.countDocuments();
+    }
 
-  return res.status(200).json({
-    message: "Fetched Offers Succesfully",
-    data: offers,
-  })
+    return res.status(200).json({
+      message: "Fetched Offers Succesfully",
+      data: offers,
+      total,
+      page: parseInt(page),
+      pages: Math.ceil(total / limit),
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
-}
+};
 
 // @desc    Update vendor details
 // @route   PUT /api/vendors/:id
@@ -584,7 +631,7 @@ export const deleteVendor = async (req, res) => {
 
 export const getNearest = async (req, res) => {
   try {
-    const { latitude, longitude, type } = req.query
+    const { latitude, longitude, type, limit = 10, page = 1 } = req.query;
     const nearbyQuery =
       latitude && longitude
         ? {
@@ -601,35 +648,49 @@ export const getNearest = async (req, res) => {
           }
         : { vendorType: type };
 
-    const vendors = await Vendor.find(nearbyQuery).sort({ createdAt: -1})
+    const vendors = await Vendor.find(nearbyQuery)
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(parseInt(limit));
+    const total = await Vendor.countDocuments(nearbyQuery);
 
     return res.json({
       message: "Fetched Nearest Vendors",
-      data: vendors
-    })
-   } catch (error) {
-    console.error(error)
-     res.status(500).json({ message: error.message });
-   }
-}
+      data: vendors,
+      total,
+      page: parseInt(page),
+      pages: Math.ceil(total / limit),
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: error.message });
+  }
+};
 
 export const getTopRated = async (req, res) => {
   try {
-    const { type, limit = 10 } = req.query;
+    const { type, limit = 10, page = 1 } = req.query;
     const query = { isVerified: true };
-    
+
     if (type) {
       query.vendorType = type;
     }
 
     const vendors = await Vendor.find(query)
       .sort({ rating: -1 })
-      .limit(parseInt(limit, 10))
-      .select("businessName vendorType email phone address profileImages rating reviews website priceRange vendorTypeCategory createdAt offers categories");
+      .select(
+        "businessName vendorType email phone address profileImages rating reviews website priceRange vendorTypeCategory createdAt offers categories",
+      )
+      .skip((page - 1) * limit)
+      .limit(parseInt(limit));
+    const total = await Vendor.countDocuments(query);
 
     return res.json({
       message: "Fetched Top Rated Vendors",
       data: vendors,
+      total,
+      page: parseInt(page),
+      pages: Math.ceil(total / limit),
     });
   } catch (error) {
     console.error(error);

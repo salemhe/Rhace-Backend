@@ -11,11 +11,12 @@ const options = {
 const bookingSchema = new Schema(
   {
     customerName: { type: String },
+    resId: { type: String },
     customerId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     customerEmail: { type: String },
     vendor: { type: mongoose.Schema.Types.ObjectId, ref: "Vendor" },
     paymentStatus: { type: String },
-    reservationStatus: { type: String }, // ✅ Fixed typo here: "typr" → "type"
+    reservationStatus: { type: String },
     reservationType: { type: String },
     image: { type: String },
     location: { type: String },

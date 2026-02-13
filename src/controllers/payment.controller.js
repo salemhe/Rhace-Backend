@@ -1,13 +1,8 @@
-import Payout from "../models/payout.model.js";
 import { Vendor } from "../models/vendor.model.js";
-import BankAccount from "../models/bankaccount.model.js";
-import PaymentTransaction from "../models/paymenttransaction.model.js";
-import { recordAuditLog } from "../utils/auditLogger.js";
-import pkg from "json-2-csv";
-import * as XLSX from "xlsx";
 import Payment from "../models/payment.model.js";
 import moment from "moment";
 import { Booking } from "../models/booking.model.js";
+import { getVendorSocket } from "../websockets/socketManager.js";
 
 // Emit real-time updates for payments
 const emitPaymentUpdate = (reservationId, status) => {
@@ -15,6 +10,8 @@ const emitPaymentUpdate = (reservationId, status) => {
     
     console.log('Emitting payment_update event:', { reservationId, status });
     global.io.emit('payment_update', { reservationId, status });
+    console.log("Emitting payment_update event:", data);
+    global.io.to("admin_payments").emit("payment_update", data);
   }
 };
 
@@ -56,7 +53,7 @@ export const verifyAccount = async (req, res) => {
           Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
           "Content-Type": "application/json",
         },
-      }
+      },
     );
 
     const data = await paystackRes.json();
@@ -79,7 +76,7 @@ export const verifyAccount = async (req, res) => {
 export const getPayments = async (req, res) => {
   try {
     let query = {};
-    console.log(req.user)
+    console.log(req.user);
     if (req.user.role !== "admin") {
       if (req.user.role === "vendor") {
         query.vendor = req.user._id;
@@ -87,7 +84,9 @@ export const getPayments = async (req, res) => {
         query.user = req.user._id;
       }
     }
-    const payments = await Payment.find(query).sort({ createdAt: -1 }).populate({path: "vendor"});
+    const payments = await Payment.find(query)
+      .sort({ createdAt: -1 })
+      .populate({ path: "vendor" });
 
     return res.json(payments);
   } catch (error) {
@@ -204,14 +203,14 @@ export const getPaymentStats = async (req, res) => {
         lastYear: lastYearEarnings[0]?.total || 0,
         yearChange: percentChange(
           thisYearEarnings[0]?.total || 0,
-          lastYearEarnings[0]?.total || 0
+          lastYearEarnings[0]?.total || 0,
         ),
 
         thisWeek: thisWeekEarnings[0]?.total || 0,
         lastWeek: lastWeekEarnings[0]?.total || 0,
         weekChange: percentChange(
           thisWeekEarnings[0]?.total || 0,
-          lastWeekEarnings[0]?.total || 0
+          lastWeekEarnings[0]?.total || 0,
         ),
       },
 
@@ -237,7 +236,25 @@ export const getPaymentStats = async (req, res) => {
 export const getTrends = async (req, res) => {
   const userId = req.user._id;
   const isAdmin = req.user.role === "admin";
-  const startDate = moment().subtract(7, "weeks").startOf("isoWeek").toDate();
+  const range = req.query.range || "weekly";
+
+  let unit;
+  let startDate;
+
+  switch (range) {
+    case "monthly":
+      unit = "month";
+      startDate = moment().subtract(6, "months").startOf("month").toDate();
+      break;
+    case "quarterly":
+      unit = "quarter";
+      startDate = moment().subtract(4, "quarters").startOf("quarter").toDate();
+      break;
+    default:
+      unit = "week";
+      startDate = moment().subtract(7, "weeks").startOf("isoWeek").toDate();
+  }
+
   const endOfLastWeek = moment().subtract(1, "weeks").endOf("isoWeek");
 
   try {
@@ -247,20 +264,89 @@ export const getTrends = async (req, res) => {
       {
         $match: {
           ...vendorFilter,
-          createdAt: { $gte: startDate },
           status: "Paid",
+          createdAt: { $gte: startDate },
         },
       },
       {
         $group: {
           _id: {
-            $dateToString: { format: "%Y-%m-%d", date: "$createdAt" },
+            $dateTrunc: {
+              date: "$createdAt",
+              unit: unit,
+              timezone: "UTC",
+            },
           },
           totalEarnings: { $sum: "$amount" },
         },
       },
-      { $sort: { "_id": 1 } },
+      { $sort: { _id: 1 } },
     ]);
+
+    const buckets = [];
+    const now = moment.utc();
+
+    if (range === "weekly") {
+      for (let i = 7; i >= 0; i--) {
+        const d = now.clone().subtract(i, "weeks").startOf("isoWeek");
+        buckets.push({
+          key: d.format("YYYY-[W]WW"),
+          label: d.format("[Week of] MMM DD"),
+          value: 0,
+        });
+      }
+    }
+
+    if (range === "monthly") {
+      for (let i = 5; i >= 0; i--) {
+        const d = now.clone().subtract(i, "months").startOf("month");
+        buckets.push({
+          key: d.format("YYYY-MM"),
+          label: d.format("MMM YYYY"),
+          value: 0,
+        });
+      }
+    }
+
+    if (range === "quarterly") {
+      for (let i = 3; i >= 0; i--) {
+        const d = now.clone().subtract(i, "quarters").startOf("quarter");
+        buckets.push({
+          key: `${d.year()}-Q${d.quarter()}`,
+          label: `Q${d.quarter()} ${d.year()}`,
+          value: 0,
+        });
+      }
+    }
+
+    trends.forEach((item) => {
+      if (!item._id) return;
+
+      let key;
+
+      if (range === "weekly") {
+        key = moment.utc(item._id).format("YYYY-[W]WW");
+      }
+
+      if (range === "monthly") {
+        key = moment.utc(item._id).format("YYYY-MM");
+      }
+
+      if (range === "quarterly") {
+        const m = moment.utc(item._id);
+        key = `${m.year()}-Q${m.quarter()}`;
+      }
+
+      const bucket = buckets.find((b) => b.key === key);
+      if (bucket) {
+        bucket.value = item.totalEarnings;
+      }
+    });
+
+    const formattedTrends = buckets.map(({ label, value }) => ({
+      label,
+      value,
+    }));
 
     const totalEarnings = await Payment.aggregate([
       { $match: { ...vendorFilter, status: "Paid" } },
@@ -282,11 +368,12 @@ export const getTrends = async (req, res) => {
     const totalUntilLastWeekValue = totalEarningsUntilLastWeek[0]?.total || 0;
     const percentChangeTotalToLastWeek = percentChange(
       totalEarningsValue,
-      totalUntilLastWeekValue
+      totalUntilLastWeekValue,
     );
 
     return res.json({
-      trends,
+      range,
+      trends: formattedTrends,
       totalEarnings: totalEarningsValue,
       percentChange: percentChangeTotalToLastWeek,
     });
@@ -301,7 +388,7 @@ export const getPaymentInfo = async (req, res) => {
 
   try {
     const user = await Vendor.findById(userId).select(
-      "paymentDetails bankName accountNumber balance"
+      "paymentDetails bankName accountNumber balance",
     );
 
     if (!user) {
@@ -311,7 +398,7 @@ export const getPaymentInfo = async (req, res) => {
     const { paymentDetails, balance } = user;
 
     const response = await fetch(
-      `https://nigerianbanks.xyz/?code=${paymentDetails?.bankCode}`
+      `https://nigerianbanks.xyz/?code=${paymentDetails?.bankCode}`,
     );
     if (!response.ok) {
       console.error("Error fetching bank info:", await response.text());
@@ -319,7 +406,7 @@ export const getPaymentInfo = async (req, res) => {
     }
 
     const data = await response.json();
-    
+
     const maskedAccountNumber = paymentDetails?.accountNumber
       ? paymentDetails.accountNumber
           .slice(-5)
@@ -350,7 +437,8 @@ export const initializePayment = async (req, res) => {
         .json({ message: "Unauthorized: No User ID found" });
     }
 
-    const { amount, email, vendorId, bookingId, type, customerName, payLater } = req.body;
+    const { amount, email, vendorId, bookingId, type, customerName, payLater } =
+      req.body;
 
     if (!amount || !email || !vendorId || !type) {
       return res
@@ -365,7 +453,11 @@ export const initializePayment = async (req, res) => {
     }
 
     const vendor = await Vendor.findById(vendorId);
-    if (!vendor || !vendor.paymentDetails || !vendor.paymentDetails.subaccountCode) {
+    if (
+      !vendor ||
+      !vendor.paymentDetails ||
+      !vendor.paymentDetails.subaccountCode
+    ) {
       return res.status(404).json({ message: "Vendor not found." });
     }
 
@@ -378,11 +470,13 @@ export const initializePayment = async (req, res) => {
         vendorId,
         bookingId,
         customerName,
-        userId: req.user._id
-      }
+        userId: req.user._id,
+        payLater,
+      },
     };
 
-    if(!payLater) paymentData.subaccount = vendor.paymentDetails.subaccountCode;
+    if (!payLater)
+      paymentData.subaccount = vendor.paymentDetails.subaccountCode;
 
     const createPaymentOnPaystack = async (data) => {
       const response = await fetch(
@@ -394,7 +488,7 @@ export const initializePayment = async (req, res) => {
             "Content-Type": "application/json",
           },
           body: JSON.stringify(data),
-        }
+        },
       );
 
       if (!response.ok) {
@@ -411,16 +505,14 @@ export const initializePayment = async (req, res) => {
       return res.status(500).json({ message: paystackResponse.message });
     }
 
-    res
-      .status(200)
-      .json({
-        message: "success",
-        data: {
-          authorization_url: paystackResponse.data.authorization_url,
-          access_code: paystackResponse.data.access_code,
-          ref: paystackResponse.data.reference,
-        },
-      });
+    res.status(200).json({
+      message: "success",
+      data: {
+        authorization_url: paystackResponse.data.authorization_url,
+        access_code: paystackResponse.data.access_code,
+        ref: paystackResponse.data.reference,
+      },
+    });
   } catch (error) {
     console.error("Error Initializing Payment:", error);
 
@@ -438,26 +530,26 @@ export const getVendorsEarnings = async (req, res) => {
 
     const earnings = await Payment.aggregate([
       {
-        $match: { status: "Paid" }
+        $match: { status: "Paid" },
       },
       {
         $group: {
           _id: "$vendor",
           totalEarnings: { $sum: "$amount" },
           totalPayments: { $sum: 1 },
-          lastPaymentDate: { $max: "$createdAt" }
-        }
+          lastPaymentDate: { $max: "$createdAt" },
+        },
       },
       {
         $lookup: {
           from: "vendors",
           localField: "_id",
           foreignField: "_id",
-          as: "vendor"
-        }
+          as: "vendor",
+        },
       },
       {
-        $unwind: "$vendor"
+        $unwind: "$vendor",
       },
       {
         $project: {
@@ -465,21 +557,23 @@ export const getVendorsEarnings = async (req, res) => {
           vendorName: "$vendor.businessName",
           totalEarnings: 1,
           totalPayments: 1,
-          lastPaymentDate: 1
-        }
+          lastPaymentDate: 1,
+        },
       },
       {
-        $sort: { totalEarnings: -1 }
+        $sort: { totalEarnings: -1 },
       },
       {
-        $skip: skip
+        $skip: skip,
       },
       {
-        $limit: parseInt(limit)
-      }
+        $limit: parseInt(limit),
+      },
     ]);
 
-    const totalVendors = await Payment.distinct("vendor", { status: "Paid" }).then(vendors => vendors.length);
+    const totalVendors = await Payment.distinct("vendor", {
+      status: "Paid",
+    }).then((vendors) => vendors.length);
 
     return res.json({
       earnings,
@@ -487,8 +581,8 @@ export const getVendorsEarnings = async (req, res) => {
         page: parseInt(page),
         limit: parseInt(limit),
         total: totalVendors,
-        pages: Math.ceil(totalVendors / limit)
-      }
+        pages: Math.ceil(totalVendors / limit),
+      },
     });
   } catch (error) {
     console.error("Error fetching vendors earnings:", error);
@@ -502,7 +596,9 @@ export const verifyPayment = async (req, res) => {
 
   try {
     if (!req.user || !userId) {
-      return res.status(403).json({ message: "Unauthorized: No User ID found" });
+      return res
+        .status(403)
+        .json({ message: "Unauthorized: No User ID found" });
     }
 
     const { reference } = req.body;
@@ -512,7 +608,9 @@ export const verifyPayment = async (req, res) => {
     }
 
     if (!PAYSTACK_SECRET_KEY) {
-      return res.status(500).json({ message: "Paystack secret key not configured." });
+      return res
+        .status(500)
+        .json({ message: "Paystack secret key not configured." });
     }
 
     const verifyPaymentOnPaystack = async (reference) => {
@@ -524,7 +622,7 @@ export const verifyPayment = async (req, res) => {
             Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
             "Content-Type": "application/json",
           },
-        }
+        },
       );
 
       if (!response.ok) {
@@ -537,7 +635,9 @@ export const verifyPayment = async (req, res) => {
     const paystackResponse = await verifyPaymentOnPaystack(reference);
 
     if (!paystackResponse.status) {
-      return res.status(500).json({ message: paystackResponse.message || "Verification failed" });
+      return res
+        .status(500)
+        .json({ message: paystackResponse.message || "Verification failed" });
     }
 
     const transaction = paystackResponse.data;
@@ -547,12 +647,17 @@ export const verifyPayment = async (req, res) => {
     }
 
     if (String(userId) !== transaction.metadata?.userId) {
-      return res.status(403).json({ message: "Unauthorized: Invalid User ID in metadata" });
+      return res
+        .status(403)
+        .json({ message: "Unauthorized: Invalid User ID in metadata" });
     }
 
     const vendorId = transaction.metadata?.vendorId;
+    const vendorSocket = getVendorSocket(vendorId);
     if (!vendorId) {
-      return res.status(400).json({ message: "Vendor ID is missing from metadata." });
+      return res
+        .status(400)
+        .json({ message: "Vendor ID is missing from metadata." });
     }
 
     const existingTransaction = await Payment.findOne({ reference });
@@ -571,6 +676,7 @@ export const verifyPayment = async (req, res) => {
         amount: amount,
         amountPaid: transaction.amount / 100,
         reference,
+        payLater: transaction.metadata.payLater,
         status: "Paid",
       });
 
@@ -583,17 +689,36 @@ export const verifyPayment = async (req, res) => {
         await updatedVendor.save();
       }
 
+      if (vendorSocket && vendorSocket.readyState === 1) {
+        vendorSocket.send(
+          JSON.stringify({
+            type: "new_payment",
+            data: {
+              ...newTransaction,
+              message: "You have a new payment",
+            },
+          }),
+        );
+        console.log("Payment sent to vendor via WebSocket.");
+      }
+
       // Emit real-time update for new payment
-      emitPaymentUpdate(transaction.metadata.bookingId, 'paid');
+      emitPaymentUpdate({
+        type: "new_payment",
+        paymentId: newTransaction._id,
+        vendorId: vendorId,
+        amount: amount,
+        reference: reference,
+        status: "Paid",
+        createdAt: newTransaction.createdAt,
+      });
     }
 
     // Update booking payment status
-    const booking = await Booking.findById(transaction.metadata.bookingId);
-    if (booking) {
-      booking.paymentStatus = !booking.payLater ? transaction.status : "Not Paid";
-      booking.paidFor = true;
-      await booking.save();
-    }
+    console.log("Booking ID from metadata:", transaction.metadata.bookingId);
+    const booking = await Booking.findOne({
+      resId: transaction.metadata.bookingId,
+    });
 
     return res.status(200).json({
       message: "Transaction verified",
@@ -612,7 +737,7 @@ export const verifyPayment = async (req, res) => {
         email: transaction.customer.email,
         customer_code: transaction.customer.customer_code,
       },
-      booking,
+      booked: !!booking,
     });
   } catch (error) {
     console.error("Error Verifying Payment:", error);
@@ -622,5 +747,3 @@ export const verifyPayment = async (req, res) => {
     });
   }
 };
-
-export { emitPaymentUpdate };
