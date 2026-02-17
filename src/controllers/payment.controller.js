@@ -5,7 +5,7 @@ import { Booking } from "../models/booking.model.js";
 import { getVendorSocket } from "../websockets/socketManager.js";
 
 // Emit real-time updates for payments
-const emitPaymentUpdate = (reservationId, status) => {
+export const emitPaymentUpdate = (reservationId, status) => {
   if (global.io) {
     
     console.log('Emitting payment_update event:', { reservationId, status });
@@ -14,6 +14,7 @@ const emitPaymentUpdate = (reservationId, status) => {
     global.io.to("admin_payments").emit("payment_update", data);
   }
 };
+
 
 const percentChange = (current, previous) => {
   if (previous === 0) return current === 0 ? 0 : 100;
