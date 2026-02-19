@@ -822,7 +822,7 @@ export async function completePayment(req, res) {
     if (!reservation) {
       reservation = await createReservationFromPayment(payment);
       const vendor = await Vendor.findOne({ _id: reservation.vendor._id });
-      if (payment.isSplitPayment) {vendor.balance += payment.amountPaid }
+      if (payment.isSplitPayment && !payment.booked) {vendor.balance += payment.amountPaid }
       await vendor.save();
       isNewBooking = true;
     }
