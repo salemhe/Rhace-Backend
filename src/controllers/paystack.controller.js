@@ -97,7 +97,7 @@ async function handleSuccessfulPayment(data) {
       payment.metadata.reservationType,
     ).catch((err) => console.error("Email failed:", err));
 
-    emitPaymentUpdate(metadata.bookingId, 'failed');
+    emitPaymentUpdate(metadata.bookingId, 'paid');
 
     const vendorSocket = getVendorSocket(reservation.vendor._id);
     if (vendorSocket && vendorSocket.readyState === 1) {
