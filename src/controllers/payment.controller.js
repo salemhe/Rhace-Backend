@@ -3,6 +3,12 @@ import Payment from "../models/payment.model.js";
 import moment from "moment";
 import { Booking } from "../models/booking.model.js";
 import { getVendorSocket } from "../websockets/socketManager.js";
+import { MenuItem } from "../models/menu.model.js";
+import RoomType from "../models/roomtype.model.js";
+import Drink from "../models/drink.model.js";
+import axios from "axios";
+import Table from "../models/table.model.js";
+import BottleSet from "../models/bottleSet.model.js";
 
 // Emit real-time updates for payments
 const emitPaymentUpdate = (data) => {
@@ -77,6 +83,7 @@ export const getPayments = async (req, res) => {
     if (req.user.role !== "admin") {
       if (req.user.role === "vendor") {
         query.vendor = req.user._id;
+        query.isSplitPayment = true;
       } else {
         query.user = req.user._id;
       }
@@ -261,7 +268,8 @@ export const getTrends = async (req, res) => {
       {
         $match: {
           ...vendorFilter,
-          status: "Paid",
+          status: "success",
+          isSplitPayment: true,
           createdAt: { $gte: startDate },
         },
       },
@@ -274,7 +282,7 @@ export const getTrends = async (req, res) => {
               timezone: "UTC",
             },
           },
-          totalEarnings: { $sum: "$amount" },
+          totalEarnings: { $sum: "$amountPaid" },
         },
       },
       { $sort: { _id: 1 } },
@@ -346,19 +354,20 @@ export const getTrends = async (req, res) => {
     }));
 
     const totalEarnings = await Payment.aggregate([
-      { $match: { ...vendorFilter, status: "Paid" } },
-      { $group: { _id: null, total: { $sum: "$amount" } } },
+      { $match: { ...vendorFilter, status: "success", isSplitPayment: true } },
+      { $group: { _id: null, total: { $sum: "$amountPaid" } } },
     ]);
 
     const totalEarningsUntilLastWeek = await Payment.aggregate([
       {
         $match: {
           ...vendorFilter,
-          status: "Paid",
+          status: "success",
+          isSplitPayment: true,
           createdAt: { $lte: endOfLastWeek.toDate() },
         },
       },
-      { $group: { _id: null, total: { $sum: "$amount" } } },
+      { $group: { _id: null, total: { $sum: "$amountPaid" } } },
     ]);
 
     const totalEarningsValue = totalEarnings[0]?.total || 0;
@@ -428,75 +437,210 @@ export const getPaymentInfo = async (req, res) => {
 export const initializePayment = async (req, res) => {
   const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
   try {
+    const {
+      vendorId,
+      reservationType,
+      location,
+      customerName,
+      customerEmail,
+      payLater,
+      date,
+      time,
+      guests,
+      mealPreselected,
+      menus,
+      specialOccasion,
+      seatingPreference,
+      specialRequest,
+      checkInDate,
+      checkOutDate,
+      roomId,
+      drinks,
+      combos,
+      partPaid,
+      table,
+    } = req.body;
+
     if (!req.user || !req.user._id) {
       return res
         .status(403)
         .json({ message: "Unauthorized: No User ID found" });
     }
 
-    const { amount, email, vendorId, bookingId, type, customerName, payLater } =
-      req.body;
-
-    if (!amount || !email || !vendorId || !type) {
-      return res
-        .status(400)
-        .json({ message: "Amount and email are required." });
+    if (!vendorId || !reservationType || !location || !customerEmail) {
+      return res.status(400).json({
+        message: "Missing required fields",
+      });
     }
 
-    if (!PAYSTACK_SECRET_KEY) {
-      return res
-        .status(500)
-        .json({ message: "Paystack secret key not configured." });
+    if (reservationType === "restaurant" && (!date || !time || !guests)) {
+      return res.status(400).json({
+        message: "Missing restaurant required fields",
+      });
     }
-
-    const vendor = await Vendor.findById(vendorId);
     if (
-      !vendor ||
-      !vendor.paymentDetails ||
-      !vendor.paymentDetails.subaccountCode
+      reservationType === "hotel" &&
+      (!checkInDate || !checkOutDate || !guests || !roomId)
     ) {
-      return res.status(404).json({ message: "Vendor not found." });
+      return res.status(400).json({
+        message: "Missing hotel required fields",
+      });
+    }
+    if (reservationType === "club" && (!date || !time || !guests || !drinks)) {
+      return res.status(400).json({
+        message: "Missing club required fields",
+      });
     }
 
-    const paymentData = {
-      email: email,
-      amount: amount * 100,
-      currency: "NGN",
-      callback_url: `https://www.rhace.co/${type.split("R")[0]}s/confirmation/${bookingId}`,
-      metadata: {
-        vendorId,
-        bookingId,
-        customerName,
-        userId: req.user._id,
-        payLater,
-      },
-    };
+    let totalAmount = 0;
 
-    if (!payLater)
-      paymentData.subaccount = vendor.paymentDetails.subaccountCode;
+    if (payLater) {
+      totalAmount = 1000;
+    } else {
+      if (reservationType === "restaurant" && menus) {
+        const menuIds = menus.map((m) => m.menuId);
+        const menuItems = await MenuItem.find({ _id: { $in: menuIds } });
 
-    const createPaymentOnPaystack = async (data) => {
-      const response = await fetch(
-        "https://api.paystack.co/transaction/initialize",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(data),
-        },
-      );
-
-      if (!response.ok) {
-        throw new Error(`Error: ${response.statusText}`);
+        totalAmount = menus.reduce((sum, item) => {
+          const menu = menuItems.find((m) => m._id.toString() === item.menuId);
+          if (!menu) throw new Error(`Menu item ${item.menuId} not found`);
+          return sum + menu.price * item.quantity;
+        }, 0);
       }
 
-      const responseData = await response.json();
-      return responseData;
+      if (reservationType === "hotel" && roomId) {
+        const room = await RoomType.findById(roomId);
+        if (!room) throw new Error("Room not found");
+
+        const nights = Math.ceil(
+          (new Date(checkOutDate) - new Date(checkInDate)) /
+            (1000 * 60 * 60 * 24),
+        );
+        totalAmount =
+          (room.pricePerNight - room.pricePerNight * (room.discount / 100)) *
+          nights;
+      }
+
+      if (reservationType === "club" && drinks && table) {
+        const drinkIds = drinks.map((d) => d.drink);
+        const drinkItems = await Drink.find({ _id: { $in: drinkIds } });
+
+        totalAmount = drinks.reduce((sum, item) => {
+          const drink = drinkItems.find((d) => d._id.toString() === item.drink);
+          if (!drink) throw new Error(`Drink ${item.drink} not found`);
+          return sum + drink.price * item.quantity;
+        }, 0);
+        const tableItem = await Table.findOne({ _id: table });
+        totalAmount += tableItem.price;
+
+        if (combos && combos.length > 0) {
+          const comboItems = await BottleSet.find({ _id: { $in: combos } });
+          totalAmount += comboItems.reduce(
+            (sum, combo) => sum + combo.setPrice,
+            0,
+          );
+        }
+      }
+      if (partPaid) {
+        totalAmount /= 2
+      }
+    }
+
+    const generateResId = () => {
+      return `RES${Date.now()}${Math.random().toString(36).substr(2, 9)}`.toUpperCase();
     };
 
-    const paystackResponse = await createPaymentOnPaystack(paymentData);
+    let resId = generateResId();
+
+    while (await Payment.findOne({ booking: resId })) {
+      resId = generateResId();
+    }
+
+    const payment = await Payment.create({
+      booking: resId,
+      user: req.user._id, // From auth middleware
+      vendor: vendorId,
+      email: customerEmail,
+      customerName,
+      amount: totalAmount,
+      amountPaid: totalAmount - totalAmount * 0.095,
+      status: "pending",
+      payLater,
+      partPaid,
+      booked: false,
+      ...(!payLater && {
+        isSplitPayment: true,
+      }),
+
+      metadata: {
+        vendorId,
+        reservationType,
+        location,
+        customerName,
+        customerEmail,
+
+        ...(reservationType === "restaurant" && {
+          date,
+          time,
+          guests,
+          mealPreselected,
+          menus,
+          specialOccasion,
+          seatingPreference,
+          specialRequest,
+        }),
+
+        ...(reservationType === "hotel" && {
+          checkInDate,
+          checkOutDate,
+          guests,
+          roomId,
+          specialRequest,
+        }),
+
+        ...(reservationType === "club" && {
+          date,
+          time,
+          guests,
+          drinks,
+          combos,
+          table,
+          specialRequest,
+        }),
+      },
+    });
+
+    const vendor = await Vendor.findById(vendorId);
+
+    const paystackResponse = await axios.post(
+      "https://api.paystack.co/transaction/initialize",
+      {
+        email: customerEmail,
+        amount: totalAmount * 100,
+        reference: payment._id.toString(),
+        callback_url: `${process.env.FRONTEND_URL}/${reservationType.split("R")[0]}s/confirmation/${payment._id}`,
+        metadata: {
+          paymentId: payment._id,
+          customerId: req.user._id,
+          reservationType,
+          payLater,
+        },
+        ...(!payLater && {
+          subaccount: vendor.paymentDetails.subaccountCode,
+        }),
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+          "Content-Type": "application/json",
+        },
+      },
+    );
+
+    await Payment.updateOne(
+      { _id: payment._id },
+      { paystackReference: paystackResponse.data.data.reference },
+    );
 
     if (paystackResponse.status === false) {
       return res.status(500).json({ message: paystackResponse.message });
@@ -505,17 +649,15 @@ export const initializePayment = async (req, res) => {
     res.status(200).json({
       message: "success",
       data: {
-        authorization_url: paystackResponse.data.authorization_url,
-        access_code: paystackResponse.data.access_code,
-        ref: paystackResponse.data.reference,
+        authorization_url: paystackResponse.data.data.authorization_url,
+        access_code: paystackResponse.data.data.access_code,
+        ref: paystackResponse.data.data.reference,
       },
     });
   } catch (error) {
-    console.error("Error Initializing Payment:", error);
-
     res.status(500).json({
-      message: "Error Verifying Payment",
-      error: error.message || "Unknown server error",
+      message: "Error Initializing Payment",
+      error: error.message || "Failed to initialize payment",
     });
   }
 };

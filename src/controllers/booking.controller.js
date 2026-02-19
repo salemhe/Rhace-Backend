@@ -1,12 +1,16 @@
+import mongoose from "mongoose";
 import {
   Booking,
   clubReservation,
   hotelReservation,
   restaurantReservation,
 } from "../models/booking.model.js";
+import Payment from "../models/payment.model.js";
 import { sendBookingConfirmationEmail } from "../services/mail.service.js";
 import { getVendorSocket } from "../websockets/socketManager.js";
 import dayjs from "dayjs";
+import axios from "axios";
+import { Vendor } from "../models/vendor.model.js";
 const getDateRange = (date) => ({
   start: dayjs(date).startOf("day").toDate(),
   end: dayjs(date).endOf("day").toDate(),
@@ -302,9 +306,13 @@ export const createReservation = async (req, res) => {
     } = req.body;
 
     console.log(req.body);
-    if (!vendor || !reservationType || !location || !totalAmount) {
+    if (!vendor || !reservationType || !location || !totalAmount || !resId) {
       return res.status(400).json({ message: "Fill required fields" });
     }
+
+    const payment = await Payment.findOne({ booking: resId });
+    if (!payment)
+      return res.status(400).json({ message: "Payment Before Booking!" });
 
     const bookingCode = generateBookingCode();
 
@@ -318,7 +326,7 @@ export const createReservation = async (req, res) => {
       reservationStatus: "Upcoming",
       location,
       totalAmount,
-      paymentStatus: partPaid ? "Part Paid" : !payLater ? "Paid" : "Not Paid",
+      paymentStatus: partPaid ? "Part Paid" : payLater ? "Pay Later" : "Paid",
       payLater,
       paidFor: true,
       bookingCode,
@@ -480,12 +488,11 @@ export const getReservations = async (req, res) => {
       });
     }
 
-    if (!bookingId) query.paidFor = true;
     if (bookingId) query._id = bookingId;
     if (vendorId) query.vendor = vendorId;
     if (userId) query.customerId = userId;
     if (resId) query.resId = resId;
-
+    console.log(query)
     const reservations = await Booking.find(query)
       .populate({ path: "menus.menu" })
       .populate({ path: "vendor" })
@@ -495,6 +502,7 @@ export const getReservations = async (req, res) => {
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(parseInt(limit));
+    console.log(reservations)
 
     const total = await Booking.countDocuments(query);
 
@@ -662,3 +670,219 @@ export const getReservationStats = async (req, res) => {
     });
   }
 };
+
+export async function createReservationFromPayment(payment) {
+  const metadata = payment.metadata;
+  const bookingCode = generateBookingCode();
+
+  const baseData = {
+    resId: payment.booking,
+    bookingCode,
+    paymentRef: payment._id,
+    customerId: payment.user,
+    customerName: metadata.customerName,
+    customerEmail: metadata.customerEmail,
+    customerPhone: metadata.customerPhone,
+    vendor: metadata.vendorId,
+    location: metadata.location,
+    totalAmount: payment.amount,
+    paymentStatus: payment.payLater ? "not_paid" : payment.partPaid ? "partly_paid" : "paid",
+    reservationStatus: "upcoming",
+    payLater: payment.payLater,
+    partPaid: payment.partPaid,
+    reservationType: metadata.reservationType + "Reservation",
+  };
+
+  let reservation;
+  if (metadata.reservationType === "restaurant") {
+    reservation = await restaurantReservation.create(
+      [
+        {
+          ...baseData,
+          date: metadata.date,
+          time: metadata.time,
+          guests: metadata.guests,
+          mealPreselected: metadata.mealPreselected,
+          menus:
+            metadata.menus?.map((m) => ({
+              menu: m.menuId,
+              quantity: m.quantity,
+              specialRequest: m.specialRequest,
+            })) || [],
+          specialOccasion: metadata.specialOccasion,
+          seatingPreference: metadata.seatingPreference,
+          specialRequest: metadata.specialRequest,
+        },
+      ],
+    );
+
+    reservation = reservation[0];
+  }
+
+  if (metadata.reservationType === "hotel") {
+    reservation = await hotelReservation.create(
+      [
+        {
+          ...baseData,
+          checkInDate: metadata.checkInDate,
+          checkOutDate: metadata.checkOutDate,
+          guests: metadata.guests,
+          room: metadata.roomId,
+          specialRequest: metadata.specialRequest,
+        },
+      ],
+    );
+
+    reservation = reservation[0];
+  }
+
+  if (metadata.reservationType === "club") {
+    reservation = await clubReservation.create(
+      [
+        {
+          ...baseData,
+          date: metadata.date,
+          time: metadata.time,
+          guests: metadata.guests,
+          table: metadata.table,
+          drinks:
+            metadata.drinks?.map((d) => ({
+              drink: d.drinkId,
+              quantity: d.quantity,
+            })) || [],
+          combos: metadata.combos || [],
+          specialRequest: metadata.specialRequest,
+        },
+      ],
+    );
+
+    reservation = reservation[0];
+  }
+
+  return reservation;
+}
+
+export async function completePayment(req, res) {
+  const { trxref } = req.body;
+
+  try {
+    const payment = await Payment.findById(trxref);
+
+    if (!payment) {
+      return res.status(404).json({
+        message: "Payment not found",
+      });
+    }
+
+    if (payment.webhookProcessed && payment.booked) {
+
+      const reservation = await Booking.findById(payment.reservationId)
+        .populate("vendor")
+        .populate("menus.menu")
+        .populate("room")
+        .populate("drinks.drink")
+        .populate("combos");
+
+      return res.json({
+        success: true,
+        payment: {
+          status: payment.status,
+          paid_at: payment.paidAt,
+          amount: payment.amount,
+        },
+        reservation,
+        isNewBooking: false,
+        source: "webhook",
+      });
+    }
+
+    const paystackVerification = await axios.get(
+      `https://api.paystack.co/transaction/verify/${payment._id}`,
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+        },
+      },
+    );
+
+    const paystackData = paystackVerification.data.data;
+
+    if (paystackData.status !== "success") {
+      return res.status(400).json({
+        message: "Payment not successful",
+      });
+    }
+
+    let reservation = await Booking.findOne({
+      resId: payment.booking,
+    })
+
+    let isNewBooking = false;
+
+    if (!reservation) {
+      reservation = await createReservationFromPayment(payment);
+      const vendor = await Vendor.findOne({ _id: reservation.vendor._id });
+      if (payment.isSplitPayment) {vendor.balance += payment.amountPaid }
+      await vendor.save();
+      isNewBooking = true;
+    }
+
+    await Payment.updateOne(
+      { _id: trxref },
+      {
+        status: "success",
+        booked: true,
+        paidAt: paystackData.paid_at,
+        reservationId: reservation._id,
+        paystackData,
+        paymentMethod: paystackData.channel,
+      },
+    );
+
+    const populate = reservation.reservationType === "restaurantReservation" ?
+     "menus.menu" : reservation.reservationType === "hotelReservation" ?
+     "room" : "drinks.drink combos"
+
+    
+    await reservation.populate(`vendor ${populate}`);
+    
+    if (isNewBooking) {
+      sendBookingConfirmationEmail(
+        reservation.customerEmail,
+        reservation,
+        payment.metadata.reservationType,
+      ).catch((err) => console.error("Email failed:", err));
+
+      const vendorSocket = getVendorSocket(reservation.vendor._id);
+      if (vendorSocket && vendorSocket.readyState === 1) {
+        vendorSocket.send(
+          JSON.stringify({
+            type: "new_reservation",
+            data: {
+              ...reservation.toObject(),
+              message: "You have a new reservation",
+            },
+          }),
+        );
+      }
+    }
+    
+    res.json({
+      success: true,
+      payment: {
+        status: "success",
+        paid_at: paystackData.paid_at,
+        amount: payment.amount,
+      },
+      reservation,
+      isNewBooking,
+      source: "redirect",
+    });
+  } catch (error) {
+    console.error("Complete payment error:", error);
+
+    res.status(400).json({
+      message: error.message || "Failed to complete payment",
+    });
+  }
+}
