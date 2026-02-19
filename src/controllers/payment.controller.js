@@ -11,12 +11,16 @@ import Table from "../models/table.model.js";
 import BottleSet from "../models/bottleSet.model.js";
 
 // Emit real-time updates for payments
-const emitPaymentUpdate = (data) => {
+export const emitPaymentUpdate = (reservationId, status) => {
   if (global.io) {
+    
+    console.log('Emitting payment_update event:', { reservationId, status });
+    global.io.emit('payment_update', { reservationId, status });
     console.log("Emitting payment_update event:", data);
     global.io.to("admin_payments").emit("payment_update", data);
   }
 };
+
 
 const percentChange = (current, previous) => {
   if (previous === 0) return current === 0 ? 0 : 100;

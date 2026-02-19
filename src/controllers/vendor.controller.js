@@ -115,6 +115,7 @@ export const getVendors = async (req, res) => {
         });
         return {
           ...vendor.toObject(),
+          contactPerson: vendor.contactPerson || "Not specified",
           reservationCount,
         };
       }),
@@ -162,6 +163,7 @@ export const getVendorById = async (req, res) => {
       ...vendorData,
       businessName: vendorData.businessName || "Unknown Vendor",
       vendorTypeCategory: vendorData.vendorTypeCategory || "No category",
+      contactPerson: vendorData.contactPerson || "Not specified",
       status: vendorData.status || "Inactive",
       email: vendorData.email || "Not specified",
       phone: vendorData.phone || "Not provided",
@@ -568,18 +570,9 @@ export const updateVendor = async (req, res) => {
     }
 
     const allowedFields = [
-      "businessName",
-      "businessDescription",
-      "email",
-      "phone",
-      "address",
-      "website",
-      "priceRange",
-      "vendorTypeCategory",
-      "profileImages",
-      "percentageCharge",
-      "status",
-      "isVisible",
+      'businessName', 'businessDescription', 'email', 'phone', 'address',
+      'website', 'priceRange', 'vendorTypeCategory', 'profileImages',
+      'percentageCharge', 'status', 'isVisible', 'contactPerson'
     ];
 
     allowedFields.forEach((field) => {

@@ -4,7 +4,8 @@ import Payment from "../models/payment.model.js";
 import { createReservationFromPayment } from "./booking.controller.js";
 import { sendBookingConfirmationEmail } from "../services/mail.service.js";
 import { getVendorSocket } from "../websockets/socketManager.js";
-import mongoose from "mongoose";
+import { emitPaymentUpdate } from "./payment.controller.js";
+import { Vendor } from "../models/vendor.model.js";
 
 export const handlePaystack = async (req, res) => {
   try {
@@ -68,7 +69,7 @@ async function handleSuccessfulPayment(data) {
     if (!reservation) {
       reservation = await createReservationFromPayment(payment);
       const vendor = await Vendor.findOne({ _id: reservation.vendor._id });
-      if (payment.isSplitPayment) {vendor.balance += payment.amountPaid }
+      if (payment.isSplitPayment && !payment.booked) {vendor.balance += payment.amountPaid }
       await vendor.save();
       isNewBooking = true;
     } else {
@@ -95,6 +96,8 @@ async function handleSuccessfulPayment(data) {
       reservation,
       payment.metadata.reservationType,
     ).catch((err) => console.error("Email failed:", err));
+
+    emitPaymentUpdate(metadata.bookingId, 'failed');
 
     const vendorSocket = getVendorSocket(reservation.vendor._id);
     if (vendorSocket && vendorSocket.readyState === 1) {
@@ -129,6 +132,11 @@ async function handleFailedPayment(data) {
     );
 
     console.log("❌ Payment failed:", paymentId, data.gateway_response);
+
+    // ✅ Emit realtime update
+    emitPaymentUpdate(metadata.bookingId, 'failed');
+
+    console.log("✅ Paystack webhook processed:", paymentId);
   } catch (error) {
     console.error("Error handling failed payment:", error);
   }

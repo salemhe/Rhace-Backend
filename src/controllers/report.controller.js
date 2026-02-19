@@ -4,11 +4,9 @@ import Reservation from "../models/reservation.model.js";
 import PaymentTransaction from "../models/paymenttransaction.model.js";
 import User from "../models/user.model.js";
 import { recordAuditLog } from "../utils/auditLogger.js";
-import pkg from "json-2-csv";
+import { json2csv } from "json-2-csv";
 import * as XLSX from "xlsx";
 import { uploadToCloudinary } from "../services/cloudinary.service.js";
-
-const { AsyncParser } = pkg;
 
 // @desc    List all available reports
 // @route   GET /api/reports
@@ -218,8 +216,7 @@ async function processVendorEarningsReport(jobId) {
       buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
       mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
     } else {
-      const parser = new AsyncParser();
-      const csv = await parser.parse(dataToExport);
+      const csv = json2csv(dataToExport);
       buffer = Buffer.from(csv, "utf8");
       mimeType = "text/csv";
     }
@@ -294,8 +291,7 @@ async function processReservationsReport(jobId) {
       XLSX.utils.book_append_sheet(workbook, worksheet, "Reservations");
       buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
     } else {
-      const parser = new AsyncParser();
-      const csv = await parser.parse(dataToExport);
+      const csv = json2csv(dataToExport);
       buffer = Buffer.from(csv, "utf8");
     }
 
@@ -360,8 +356,7 @@ async function processPaymentsReport(jobId) {
       XLSX.utils.book_append_sheet(workbook, worksheet, "Payments");
       buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
     } else {
-      const parser = new AsyncParser();
-      const csv = await parser.parse(dataToExport);
+      const csv = json2csv(dataToExport);
       buffer = Buffer.from(csv, "utf8");
     }
 
@@ -423,8 +418,7 @@ async function processUsersReport(jobId) {
       XLSX.utils.book_append_sheet(workbook, worksheet, "Users");
       buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
     } else {
-      const parser = new AsyncParser();
-      const csv = await parser.parse(dataToExport);
+      const csv = json2csv(dataToExport);
       buffer = Buffer.from(csv, "utf8");
     }
 

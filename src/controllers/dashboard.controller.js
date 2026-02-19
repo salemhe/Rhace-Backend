@@ -15,22 +15,50 @@ const emitDashboardUpdate = (userId, data) => {
 
 // @desc    Get dashboard KPIs
 // @route   GET /api/dashboard/kpis
-// @access  Private (Admin only)
+// @access  Private (Admin, Vendor)
 export const getKPIs = async (req, res) => {
   try {
-    if (req.user.role !== "admin") {
-      return res.status(403).json({ message: "Access denied. Admin only." });
+    const isAdmin = req.user.role === "admin" || req.user.role === "superadmin";
+    const isVendor = req.user.role === "vendor";
+    
+    if (!isAdmin && !isVendor) {
+      return res.status(403).json({ message: "Access denied. Admin or Vendor only." });
     }
 
-    // For admin, get all hotels, clubs, restaurants
-    const hotels = await Hotel.find();
-    const hotelIds = hotels.map(h => h._id);
+    let hotelIds = [];
+    let clubIds = [];
+    let restaurantIds = [];
+    let vendorIds = [];
+    
+    // For vendors, get only their hotel/vendor data
+    if (isVendor) {
+      const vendorId = req.user._id;
+      vendorIds = [vendorId];
+      
+      // Get vendor details
+      const vendor = await Vendor.findById(vendorId);
+      if (vendor) {
+        if (vendor.vendorType === "hotel") {
+          hotelIds = [vendor._id];
+        } else if (vendor.vendorType === "club") {
+          clubIds = [vendor._id];
+        } else if (vendor.vendorType === "restaurant") {
+          restaurantIds = [vendor._id];
+        }
+      }
+    } else {
+      // For admin, get all hotels, clubs, restaurants
+      const hotels = await Hotel.find();
+      hotelIds = hotels.map(h => h._id);
 
-    const clubs = await Vendor.find({ vendorType: "club" });
-    const clubIds = clubs.map(c => c._id);
+      const clubs = await Vendor.find({ vendorType: "club" });
+      clubIds = clubs.map(c => c._id);
 
-    const restaurants = await Vendor.find({ vendorType: "restaurant" });
-    const restaurantIds = restaurants.map(r => r._id);
+      const restaurants = await Vendor.find({ vendorType: "restaurant" });
+      restaurantIds = restaurants.map(r => r._id);
+      
+      vendorIds = [...clubIds, ...restaurantIds];
+    }
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -236,19 +264,37 @@ export const getUpcomingReservations = async (req, res) => {
 
 // @desc    Get today's reservations with countdown
 // @route   GET /api/dashboard/todays-reservations
-// @access  Private (Admin only)
+// @access  Private (Admin, Vendor)
 export const getTodaysReservations = async (req, res) => {
   try {
-    if (req.user.role !== "admin") {
-      return res.status(403).json({ message: "Access denied. Admin only." });
+    const isAdmin = req.user.role === "admin" || req.user.role === "superadmin";
+    const isVendor = req.user.role === "vendor";
+
+    if (!isAdmin && !isVendor) {
+      return res.status(403).json({ message: "Access denied. Admin or Vendor only." });
     }
 
-    // For admin, get all hotels and vendors
-    const hotels = await Hotel.find();
-    const hotelIds = hotels.map(h => h._id);
+    let hotelIds = [];
+    let vendorIds = [];
 
-    const vendors = await Vendor.find({ vendorType: { $in: ["club", "restaurant"] } });
-    const vendorIds = vendors.map(v => v._id);
+    if (isVendor) {
+      // Vendor: get only their own data
+      const vendor = await Vendor.findById(req.user._id);
+      if (vendor) {
+        if (vendor.vendorType === "hotel") {
+          hotelIds = [vendor._id];
+        } else {
+          vendorIds = [vendor._id];
+        }
+      }
+    } else {
+      // Admin: get all data
+      const hotels = await Hotel.find();
+      hotelIds = hotels.map(h => h._id);
+
+      const vendors = await Vendor.find({ vendorType: { $in: ["club", "restaurant"] } });
+      vendorIds = vendors.map(v => v._id);
+    }
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -266,7 +312,7 @@ export const getTodaysReservations = async (req, res) => {
     const todaysReservations = await Reservation.find({
       vendor: { $in: vendorIds },
       checkInDate: { $gte: today, $lt: tomorrow },
-      status: "confirmed"
+      reservation_status: "Confirmed"
     }).populate("vendor", "businessName");
 
     // Combine and add countdown
@@ -311,31 +357,83 @@ export const getTodaysReservations = async (req, res) => {
 
 // @desc    Get booking trends chart data
 // @route   GET /api/dashboard/booking-trends
-// @access  Private (Admin only)
+// @access  Private (Admin, Vendor)
 export const getBookingTrends = async (req, res) => {
   try {
-    if (req.user.role !== "admin") {
-      return res.status(403).json({ message: "Access denied. Admin only." });
+    const isAdmin = req.user.role === "admin" || req.user.role === "superadmin";
+    const isVendor = req.user.role === "vendor";
+
+    if (!isAdmin && !isVendor) {
+      return res.status(403).json({ message: "Access denied. Admin or Vendor only." });
     }
 
-    // For admin, get all hotels
-    const hotels = await Hotel.find();
-    const hotelIds = hotels.map(h => h._id);
+    let hotelIds = [];
+    let vendorIds = [];
 
-    // Group bookings by month
-    const trends = await Booking.aggregate([
+    if (isVendor) {
+      // Vendor: get only their own data
+      const vendor = await Vendor.findById(req.user._id);
+      if (vendor) {
+        if (vendor.vendorType === "hotel") {
+          hotelIds = [vendor._id];
+        } else {
+          vendorIds = [vendor._id];
+        }
+      }
+    } else {
+      // Admin: get all data
+      const hotels = await Hotel.find();
+      hotelIds = hotels.map(h => h._id);
+
+      const vendors = await Vendor.find({ vendorType: { $in: ["club", "restaurant"] } });
+      vendorIds = vendors.map(v => v._id);
+    }
+
+    // Group hotel bookings by month
+    const hotelTrends = await Booking.aggregate([
       { $match: { hotel: { $in: hotelIds } } },
       {
         $group: {
-          _id: {
-            year: { $year: "$createdAt" },
-            month: { $month: "$createdAt" }
-          },
+          _id: { year: { $year: "$createdAt" }, month: { $month: "$createdAt" } },
           count: { $sum: 1 }
         }
       },
       { $sort: { "_id.year": 1, "_id.month": 1 } }
     ]);
+
+    // Group vendor reservations by month
+    const vendorTrends = await Reservation.aggregate([
+      { $match: { vendor: { $in: vendorIds } } },
+      {
+        $group: {
+          _id: { year: { $year: "$createdAt" }, month: { $month: "$createdAt" } },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { "_id.year": 1, "_id.month": 1 } }
+    ]);
+
+    // Combine and merge trends
+    const trendsMap = new Map();
+
+    hotelTrends.forEach(trend => {
+      const key = `${trend._id.year}-${trend._id.month}`;
+      trendsMap.set(key, { _id: trend._id, count: trend.count });
+    });
+
+    vendorTrends.forEach(trend => {
+      const key = `${trend._id.year}-${trend._id.month}`;
+      if (trendsMap.has(key)) {
+        trendsMap.get(key).count += trend.count;
+      } else {
+        trendsMap.set(key, { _id: trend._id, count: trend.count });
+      }
+    });
+
+    const trends = Array.from(trendsMap.values()).sort((a, b) => {
+      if (a._id.year !== b._id.year) return a._id.year - b._id.year;
+      return a._id.month - b._id.month;
+    });
 
     res.status(200).json(trends);
   } catch (error) {
@@ -538,28 +636,19 @@ export const getTopVendors = async (req, res) => {
     const nextMonth = new Date(currentMonth);
     nextMonth.setMonth(nextMonth.getMonth() + 1);
 
-    // Aggregate vendor performance metrics based on reservations
-    const topVendors = await Reservation.aggregate([
+    // Aggregate vendor performance metrics based on paid payments
+    const topVendors = await Payment.aggregate([
       {
         $match: {
           createdAt: { $gte: currentMonth, $lt: nextMonth },
-          reservation_status: "Confirmed",
+          status: "Paid",
         },
       },
       {
         $group: {
           _id: "$vendor",
-          totalReservations: { $sum: 1 },
-          totalGuests: { $sum: "$partySize" },
-          totalRevenue: {
-            $sum: {
-              $cond: {
-                if: { $eq: ["$payment_status", "Paid"] },
-                then: "$deposit",
-                else: 0
-              }
-            }
-          },
+          totalRevenue: { $sum: "$amount" },
+          totalPayments: { $sum: 1 },
         },
       },
       {
@@ -572,6 +661,20 @@ export const getTopVendors = async (req, res) => {
       },
       {
         $unwind: "$vendor",
+      },
+      {
+        $lookup: {
+          from: "reservations",
+          localField: "_id",
+          foreignField: "vendor",
+          as: "reservations",
+        },
+      },
+      {
+        $addFields: {
+          totalReservations: { $size: "$reservations" },
+          totalGuests: { $sum: "$reservations.partySize" },
+        },
       },
       {
         $project: {

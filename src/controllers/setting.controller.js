@@ -75,41 +75,53 @@ export const getSettings = async (req, res) => {
 // @access  Private (Superadmin)
 export const updateSettings = async (req, res) => {
   try {
-    const { category, settings } = req.body;
+    const settingsData = req.body;
 
-    // Validation based on category
-    switch (category) {
-      case "general":
-        if (settings.bookingWindowLimit < 1 || settings.bookingWindowLimit > 365) {
-          return res.status(400).json({ message: "Invalid booking window limit" });
-        }
-        break;
-      case "vendor":
-        if (settings.defaultCommissionRate < 0 || settings.defaultCommissionRate > 50) {
-          return res.status(400).json({ message: "Invalid commission rate" });
-        }
-        break;
-      case "payment":
-        if (settings.payoutMinAmount < 100 || settings.payoutMaxAmount > 10000000) {
-          return res.status(400).json({ message: "Invalid payout amount range" });
-        }
-        break;
+    // Validate the entire settings object
+    for (const [category, settings] of Object.entries(settingsData)) {
+      switch (category) {
+        case "general":
+          if (settings.bookingWindowLimit < 1 || settings.bookingWindowLimit > 365) {
+            return res.status(400).json({ message: "Invalid booking window limit" });
+          }
+          break;
+        case "vendor":
+          if (settings.defaultCommissionRate < 0 || settings.defaultCommissionRate > 50) {
+            return res.status(400).json({ message: "Invalid commission rate" });
+          }
+          break;
+        case "payment":
+          if (settings.payoutMinAmount < 100 || settings.payoutMaxAmount > 10000000) {
+            return res.status(400).json({ message: "Invalid payout amount range" });
+          }
+          break;
+      }
     }
 
-    // Save to database
-    await SystemSettings.findOneAndUpdate(
-      { category },
-      { settings },
-      { upsert: true, new: true }
-    );
+    // Save each category to database
+    const updatePromises = Object.entries(settingsData).map(async ([category, settings]) => {
+      await SystemSettings.findOneAndUpdate(
+        { category },
+        { settings },
+        { upsert: true, new: true }
+      );
+    });
+
+    await Promise.all(updatePromises);
 
     await recordAuditLog(req.user._id, "SETTINGS_UPDATE", "Settings", null, {
       updatedBy: req.user._id,
-      category,
-      changes: settings,
+      changes: settingsData,
     });
 
-    res.status(200).json({ message: "Settings updated successfully" });
+    // Return the updated settings
+    const updatedSettings = await SystemSettings.find({});
+    const settingsMap = {};
+    updatedSettings.forEach(setting => {
+      settingsMap[setting.category] = setting.settings;
+    });
+
+    res.status(200).json(settingsMap);
   } catch (error) {
     res.status(400).json({ message: error.message });
   }
