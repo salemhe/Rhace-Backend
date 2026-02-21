@@ -32,7 +32,7 @@ export const getTables = async (req, res) => {
   try {
     let { clubId, search, page = 1, limit = 1000, sortBy = "createdAt", sortOrder = "desc" } = req.query;
 
-    if (req.user.role && req.user.role === "vendor") {
+    if (req.user && req.user.role === "vendor") {
       clubId = req.user._id.toString();
     }
 

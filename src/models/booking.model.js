@@ -147,7 +147,10 @@ const clubReservation = Booking.discriminator(
         date: { type: Date, required: true },
         time: { type: String, required: true },
         guests: { type: Number, required: true, min: 1 },
-        table: String,
+        table: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Table",
+        },
         combos: [{
             type: mongoose.Schema.Types.ObjectId,
             ref: "BottleSet"

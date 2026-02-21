@@ -109,11 +109,11 @@ const paymentSchema = new mongoose.Schema({
         roomId: mongoose.Schema.Types.ObjectId,
         
         drinks: [{
-            drinkId: mongoose.Schema.Types.ObjectId,
+            drink: {type: mongoose.Schema.Types.ObjectId, ref: "Drink"},
             quantity: Number
         }],
         combos: [mongoose.Schema.Types.ObjectId],
-        table: String
+        table: {type: mongoose.Schema.Types.ObjectId, ref: "Table"}
     },
     webhookProcessed: {
         type: Boolean,

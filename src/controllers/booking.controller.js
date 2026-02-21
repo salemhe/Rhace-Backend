@@ -499,6 +499,7 @@ export const getReservations = async (req, res) => {
       .populate({ path: "room" })
       .populate({ path: "drinks.drink" })
       .populate({ path: "combos" })
+      .populate({ path: "table" })
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(parseInt(limit));
@@ -747,7 +748,7 @@ export async function createReservationFromPayment(payment) {
           table: metadata.table,
           drinks:
             metadata.drinks?.map((d) => ({
-              drink: d.drinkId,
+              drink: d.drink,
               quantity: d.quantity,
             })) || [],
           combos: metadata.combos || [],
@@ -781,6 +782,7 @@ export async function completePayment(req, res) {
         .populate("menus.menu")
         .populate("room")
         .populate("drinks.drink")
+        .populate("table")
         .populate("combos");
 
       return res.json({
@@ -841,7 +843,7 @@ export async function completePayment(req, res) {
 
     const populate = reservation.reservationType === "restaurantReservation" ?
      "menus.menu" : reservation.reservationType === "hotelReservation" ?
-     "room" : "drinks.drink combos"
+     "room" : "drinks.drink combos table";
 
     
     await reservation.populate(`vendor ${populate}`);

@@ -244,7 +244,7 @@ export const sendBookingConfirmationEmail = async (to, bookingDetails, type) => 
       <p><strong>Time:</strong> ${time}</p>
       <p><strong>Guests:</strong> ${guests}</p>
       <p><strong>Payment Status:</strong> ${partPaid ? "Part Paid" : "Paid"}</p>
-      ${table ? `<p><strong>Table:</strong> ${table}</p>` : ""}
+      ${table ? `<p><strong>Table:</strong> ${table.name}</p>` : ""}
       ${drinks?.length ? `<p><strong>Drinks:</strong> ${drinks.map(d => `${d.drink?.name || "N/A"} (x${d.quantity})`).join(", ")}</p>` : ""}
       ${combos?.length ? `<p><strong>Combos:</strong> ${combos.map(c => c?.name || "N/A").join(", ")}</p>` : ""}
       ${specialRequest ? `<p><strong>Special Request:</strong> ${specialRequest}</p>` : ""}
