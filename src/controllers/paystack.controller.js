@@ -11,7 +11,7 @@ export const handlePaystack = async (req, res) => {
   try {
     const hash = crypto
       .createHmac("sha512", process.env.PAYSTACK_SECRET_KEY)
-      .update(req.body)
+      .update(JSON.stringify(req.body))
       .digest("hex");
 
     if (hash !== req.headers["x-paystack-signature"]) {
@@ -19,7 +19,7 @@ export const handlePaystack = async (req, res) => {
       return res.status(401).send("Invalid signature");
     }
 
-    const event = JSON.parse(req.body);
+    const event = req.body;
     console.log("✅ Webhook received:", event.event);
 
     if (event.event === "charge.success") {
@@ -64,14 +64,18 @@ async function handleSuccessfulPayment(data) {
 
     let reservation = await Booking.findOne({
       resId: payment.booking,
-    })
+    });
+
+    let isNewReservation = false;
 
     if (!reservation) {
       reservation = await createReservationFromPayment(payment);
       const vendor = await Vendor.findOne({ _id: reservation.vendor._id });
-      if (payment.isSplitPayment && !payment.booked) {vendor.balance += payment.amountPaid }
+      if (payment.isSplitPayment && !payment.booked) {
+        vendor.balance += payment.amountPaid;
+      }
       await vendor.save();
-      isNewBooking = true;
+      isNewReservation = true;
     } else {
       console.log("⏭️  Reservation already exists:", reservation.resId);
     }
@@ -91,25 +95,34 @@ async function handleSuccessfulPayment(data) {
       },
     );
 
-    sendBookingConfirmationEmail(
-      reservation.customerEmail,
-      reservation,
-      payment.metadata.reservationType,
-    ).catch((err) => console.error("Email failed:", err));
+    const populate = reservation.reservationType === "restaurantReservation" ?
+     "menus.menu" : reservation.reservationType === "hotelReservation" ?
+     "room" : "drinks.drink combos table";
 
-    emitPaymentUpdate(metadata.bookingId, 'paid');
+    
+    await reservation.populate(`vendor ${populate}`);
 
-    const vendorSocket = getVendorSocket(reservation.vendor._id);
-    if (vendorSocket && vendorSocket.readyState === 1) {
-      vendorSocket.send(
-        JSON.stringify({
-          type: "new_reservation",
-          data: {
-            ...reservation.toObject(),
-            message: "You have a new reservation",
-          },
-        }),
-      );
+    if (isNewReservation) {
+      sendBookingConfirmationEmail(
+        reservation.customerEmail,
+        reservation,
+        payment.metadata.reservationType,
+      ).catch((err) => console.error("Email failed:", err));
+
+      // emitPaymentUpdate(payment.metadata.bookingId, "paid");
+
+      const vendorSocket = getVendorSocket(reservation.vendor._id);
+      if (vendorSocket && vendorSocket.readyState === 1) {
+        vendorSocket.send(
+          JSON.stringify({
+            type: "new_reservation",
+            data: {
+              ...reservation.toObject(),
+              message: "You have a new reservation",
+            },
+          }),
+        );
+      }
     }
   } catch (error) {
     console.error("Error processing webhook:", error);
@@ -134,7 +147,7 @@ async function handleFailedPayment(data) {
     console.log("❌ Payment failed:", paymentId, data.gateway_response);
 
     // ✅ Emit realtime update
-    emitPaymentUpdate(metadata.bookingId, 'failed');
+    emitPaymentUpdate(metadata.bookingId, "failed");
 
     console.log("✅ Paystack webhook processed:", paymentId);
   } catch (error) {
