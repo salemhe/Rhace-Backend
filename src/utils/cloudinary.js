@@ -1,4 +1,10 @@
 
+import { v2 as cloudinaryModule } from 'cloudinary';
+import { fileURLToPath } from 'url';
+import path from 'path';
+import fs from 'fs';
+import { nanoid } from 'nanoid';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -10,7 +16,7 @@ cloudinary.config({
 });
 
 export const uploadToCloudinary = async (fileBuffer, filename) => {
-  const tempFilePath = path.join(__dirname, `${uuidv4()}-${filename}`);
+  const tempFilePath = path.join(__dirname, `${nanoid()}-${filename}`);
   fs.writeFileSync(tempFilePath, fileBuffer);
 
   try {
