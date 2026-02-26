@@ -73,7 +73,15 @@ const hotelReservation =
       checkOutDate: { type: Date },
       guests: { type: Number },
       room: { type: mongoose.Schema.Types.ObjectId, ref: "RoomType" },
+      // Support for multiple rooms booking
+      rooms: [{
+        roomType: { type: mongoose.Schema.Types.ObjectId, ref: "RoomType", required: true },
+        quantity: { type: Number, default: 1, min: 1 },
+        pricePerNight: { type: Number, required: true },
+      }],
       specialRequest: { type: String },
+      // Store total number of rooms booked
+      totalRooms: { type: Number, default: 0 },
     })
   );
 
