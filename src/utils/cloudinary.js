@@ -1,5 +1,5 @@
 
-import { v2 as cloudinaryModule } from 'cloudinary';
+import { v2 as cloudinary } from 'cloudinary';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import fs from 'fs';
@@ -8,7 +8,6 @@ import { nanoid } from 'nanoid';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const cloudinary = cloudinaryModule.v2;
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,

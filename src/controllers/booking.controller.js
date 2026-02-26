@@ -569,6 +569,150 @@ export const getReservations = async (req, res) => {
   }
 };
 
+// @desc    Create a multi-room hotel reservation
+// @route   POST /api/bookings/create-multi-room
+// @access  Private
+export const createMultiRoomReservation = async (req, res) => {
+  try {
+    const {
+      vendor,
+      customerName,
+      customerId,
+      customerEmail,
+      location,
+      checkInDate,
+      checkOutDate,
+      guests,
+      rooms,
+      specialRequest,
+      partPaid,
+      payLater,
+    } = req.body;
+
+    // Validate required fields
+    if (!vendor || !location || !checkInDate || !checkOutDate || !rooms || rooms.length === 0) {
+      return res.status(400).json({ 
+        message: "Fill required fields: vendor, location, checkInDate, checkOutDate, and at least one room" 
+      });
+    }
+
+    // Validate each room in the array
+    for (const roomItem of rooms) {
+      if (!roomItem.roomType || !roomItem.quantity || !roomItem.pricePerNight) {
+        return res.status(400).json({ 
+          message: "Each room must have roomType, quantity, and pricePerNight" 
+        });
+      }
+    }
+
+    // Calculate number of nights
+    const checkIn = new Date(checkInDate);
+    const checkOut = new Date(checkOutDate);
+    const nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
+
+    if (nights < 1) {
+      return res.status(400).json({ 
+        message: "Check-out date must be after check-in date" 
+      });
+    }
+
+    // Calculate total amount
+    let totalAmount = 0;
+    let totalRooms = 0;
+    for (const roomItem of rooms) {
+      totalAmount += roomItem.pricePerNight * roomItem.quantity * nights;
+      totalRooms += roomItem.quantity;
+    }
+
+    const bookingCode = generateBookingCode();
+
+    const initialData = {
+      customerName,
+      customerId,
+      customerEmail,
+      vendor,
+      reservationType: "hotelReservation",
+      reservationStatus: "Upcoming",
+      location,
+      totalAmount,
+      paymentStatus: partPaid ? "Part Paid" : !payLater ? "Paid" : "Not Paid",
+      payLater,
+      paidFor: true,
+      bookingCode,
+    };
+
+    // Create multi-room hotel reservation
+    const hotel = await hotelReservation.create({
+      ...initialData,
+      checkInDate,
+      checkOutDate,
+      guests,
+      rooms,
+      specialRequest,
+      totalRooms,
+    });
+
+    // Send notification via WebSocket
+    const vendorSocket = getVendorSocket(vendor);
+    if (vendorSocket && vendorSocket.readyState === 1) {
+      const hotelRes = await hotelReservation
+        .findById(hotel._id)
+        .populate({
+          path: "vendor",
+        })
+        .populate({
+          path: "rooms.roomType",
+        });
+      
+      vendorSocket.send(
+        JSON.stringify({
+          type: "new_multi_room_reservation",
+          data: {
+            ...hotelRes.toObject(),
+            message: `You have a new multi-room booking for ${totalRooms} rooms`,
+          },
+        }),
+      );
+    }
+
+    // Populate the result
+    const reservation = await hotelReservation.findById(hotel._id)
+      .populate("vendor", "businessName vendorType")
+      .populate("rooms.roomType", "name pricePerNight");
+
+    // Send confirmation email
+    await sendBookingConfirmationEmail(
+      customerEmail,
+      reservation,
+      "hotel",
+    );
+
+    return res.status(201).json({
+      message: "Created Multi-Room Reservation successfully",
+      data: reservation,
+      bookingDetails: {
+        bookingCode,
+        checkInDate,
+        checkOutDate,
+        nights,
+        totalRooms,
+        totalAmount,
+        rooms: rooms.map(r => ({
+          roomType: r.roomType,
+          quantity: r.quantity,
+          pricePerNight: r.pricePerNight,
+          subtotal: r.pricePerNight * r.quantity * nights
+        }))
+      }
+    });
+  } catch (error) {
+    console.error("Error creating multi-room reservation:", error);
+    return res.status(500).json({
+      message: error.message,
+    });
+  }
+};
+
 export const getReservationStats = async (req, res) => {
   try {
     const vendorId = req.user._id || null; // optional filter
