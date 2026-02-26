@@ -7,6 +7,7 @@ import crypto from "crypto";
 import bcrypt from "bcrypt";
 import pkg from "json-2-csv";
 import * as XLSX from "xlsx";
+import { uploadToCloudinary } from "../utils/cloudinary.js";
 
 const { AsyncParser } = pkg;
 
@@ -70,6 +71,96 @@ export const getUsers = async (req, res) => {
     res.status(200).json(users);
   } catch (error) {
     res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Change user password
+// @route   PUT /api/users/profile/password
+// @access  Private (Authenticated User)
+export const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: "Current password and new password are required" });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: "New password must be at least 6 characters long" });
+    }
+
+    // Get user from database (not from req.user which may have limited fields)
+    const user = await User.findById(req.user._id);
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Check if user has a password (social login users may not have password)
+    if (!user.password) {
+      return res.status(400).json({ message: "Password not set for this account. Please use social login or contact support." });
+    }
+
+    // Verify current password
+    const isMatch = await user.comparePassword(currentPassword);
+    if (!isMatch) {
+      return res.status(400).json({ message: "Current password is incorrect" });
+    }
+
+    // Update password (the pre-save hook will hash it)
+    user.password = newPassword;
+    await user.save();
+
+    // Record audit log
+    if (req.user && req.user._id) {
+      await recordAuditLog(req.user._id, "CHANGE_PASSWORD", "User", user._id, {
+        changedBy: req.user._id,
+      });
+    }
+
+    res.status(200).json({ message: "Password changed successfully" });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Update user profile picture
+// @route   PUT /api/users/profile/picture
+// @access  Private (Authenticated User)
+export const updateProfilePicture = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "No image file provided" });
+    }
+
+    // Get user from database
+    const user = await User.findById(req.user._id);
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Upload image to Cloudinary
+    const imageUrl = await uploadToCloudinary(req.file.buffer, req.file.originalname);
+
+    // Update user's profilePic
+    user.profilePic = imageUrl;
+    await user.save();
+
+    // Record audit log
+    if (req.user && req.user._id) {
+      await recordAuditLog(req.user._id, "UPDATE_PROFILE_PICTURE", "User", user._id, {
+        changedBy: req.user._id,
+      });
+    }
+
+    res.status(200).json({ 
+      message: "Profile picture updated successfully",
+      profilePic: user.profilePic 
+    });
+  } catch (error) {
+    console.error("Profile picture update error:", error);
+    res.status(500).json({ message: "Failed to update profile picture" });
   }
 };
 
