@@ -8,14 +8,6 @@ const router = express.Router();
 
 router.post("/auth/register", registerVendor);
 
-router.get("/", getVendor)
-
-router.put("/", protect, updateVendor);
-
-router.get("/stats", protect, getVendorStats)
-router.get("/:id", protect, getVendorById)
-router.put("/:id", protect, updateVendor)
-router.delete("/:id", protect, deleteVendor)
 
 router.get("/offers", getOffers);
 
@@ -49,4 +41,12 @@ router.get("/auth/me", protect, (req, res) => {
   });
 });
 
+router.get("/", getVendor)
+
+router.put("/", protect, updateVendor);
+
+router.get("/stats", protect, getVendorStats)
+router.get("/:id", protect, getVendorById)
+router.put("/:id", protect, updateVendor)
+router.delete("/:id", protect, deleteVendor)
 export default router;

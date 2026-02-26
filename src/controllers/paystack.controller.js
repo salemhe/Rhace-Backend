@@ -1,126 +1,156 @@
 import crypto from "crypto";
 import { Booking } from "../models/booking.model.js";
 import Payment from "../models/payment.model.js";
-import { Vendor } from "../models/vendor.model.js";
+import { createReservationFromPayment } from "./booking.controller.js";
+import { sendBookingConfirmationEmail } from "../services/mail.service.js";
 import { getVendorSocket } from "../websockets/socketManager.js";
 import { emitPaymentUpdate } from "./payment.controller.js";
+import { Vendor } from "../models/vendor.model.js";
 
 export const handlePaystack = async (req, res) => {
-  res.sendStatus(200);
-
   try {
-    const signature = crypto
+    const hash = crypto
       .createHmac("sha512", process.env.PAYSTACK_SECRET_KEY)
-      .update(req.body)
+      .update(JSON.stringify(req.body))
       .digest("hex");
 
-    if (signature !== req.headers["x-paystack-signature"]) {
-      console.error("❌ Invalid Paystack signature");
+    if (hash !== req.headers["x-paystack-signature"]) {
+      console.error("Invalid webhook signature");
+      return res.status(401).send("Invalid signature");
+    }
+
+    const event = req.body;
+    console.log("✅ Webhook received:", event.event);
+
+    if (event.event === "charge.success") {
+      await handleSuccessfulPayment(event.data);
+    }
+
+    if (event.event === "charge.failed") {
+      await handleFailedPayment(event.data);
+    }
+
+    res.sendStatus(200);
+  } catch (error) {
+    console.error("Webhook error:", error);
+    res.sendStatus(500);
+  }
+};
+
+async function handleSuccessfulPayment(data) {
+  const paymentId = data.reference;
+
+  try {
+    const payment = await Payment.findById(paymentId);
+
+    if (!payment) {
+      console.error("❌ Payment not found:", paymentId);
       return;
     }
 
-    const event = JSON.parse(req.body.toString());
-    console.log(event);
+    if (payment.webhookProcessed) {
+      console.log("⏭️  Webhook already processed:", paymentId);
+      return;
+    }
 
-    if (event.event !== "charge.success") return;
-
-    const data = event.data;
-    const reference = data.reference;
-    const metadata = data.metadata || {};
-
-    const existingTransaction = await Payment.findOne({
-      reference,
-      status: { $in: ["Paid", "Part-paid"] },
-    });
-    if (existingTransaction) return;
-
-    const amountPaid = data.amount / 100;
-    const amount = data.amount * 0.0092;
-    const isSplitPayment = !!data.split;
-
-    const payment = new Payment({
-      reference,
-      email: metadata.email,
-      customerName: metadata.customerName,
-
-      user: metadata.userId,
-      vendor: metadata.vendorId,
-      booking: metadata.bookingId,
-
-      paymentMethod: data.channel,
-      currency: data.currency,
-
-      amount,
-      amountPaid,
-
-      status: "Paid",
-      paidAt: data.paid_at,
-
-      isSplitPayment,
-      splitData: data.split || null,
-
-      gatewayResponse: data,
-    });
-
-    const booking = await Booking.findById(metadata.bookingId)
-      .populate({
-        path: "vendor",
-      })
-      .populate({
-        path: "room",
-      })
-      .populate({
-        path: "drinks.drink",
+    const paidAmount = data.amount / 100;
+    if (paidAmount !== payment.amount) {
+      console.error("❌ Amount mismatch:", {
+        expected: payment.amount,
+        received: paidAmount,
       });
-    if (booking) {
-      if (booking.paymentStatus === "Part Paid") {
-        payment.status = "Part-paid";
+      return;
+    }
+
+    let reservation = await Booking.findOne({
+      resId: payment.booking,
+    });
+
+    let isNewReservation = false;
+
+    if (!reservation) {
+      reservation = await createReservationFromPayment(payment);
+      const vendor = await Vendor.findOne({ _id: reservation.vendor._id });
+      if (payment.isSplitPayment && !payment.booked) {
+        vendor.balance += payment.amountPaid;
       }
-      booking.paymentStatus = !booking.payLater ? data.status : "Not Paid";
-      booking.paidFor = true;
-      await booking.save();
+      await vendor.save();
+      isNewReservation = true;
+    } else {
+      console.log("⏭️  Reservation already exists:", reservation.resId);
     }
 
-    await payment.save();
-
-    const vendorSocket = getVendorSocket(metadata.vendorId);
-    if (vendorSocket && vendorSocket.readyState === 1) {
-      vendorSocket.send(
-        JSON.stringify({
-          type: "new_reservation",
-          data: {
-            ...booking,
-            message: "You have a new reservation",
-          },
-        })
-      );
-      console.log("Reservation sent to vendor via WebSocket.");
-    }
-
-    const reservation = await Booking.findOne({ bookingCode: booking.bookingCode })
-      .populate({ path: "menus.menu" })
-      .populate({ path: "vendor" })
-      .populate({ path: "room" })
-      .populate({ path: "drinks.drink" })
-      .populate({ path: "combos" });
-
-    await sendBookingConfirmationEmail(
-      reservation.customerEmail,
-      reservation,
-      reservation.reservationType
+    await Payment.updateOne(
+      { _id: paymentId },
+      {
+        status: "success",
+        booked: true,
+        webhookProcessed: true,
+        webhookProcessedAt: new Date(),
+        webhookAttempts: payment.webhookAttempts + 1,
+        paystackData: data,
+        paidAt: data.paid_at,
+        reservationId: reservation._id,
+        paymentMethod: data.channel,
+      },
     );
 
-    if (!isSplitPayment && metadata.vendorId) {
-      await Vendor.findByIdAndUpdate(metadata.vendorId, {
-        $inc: { balance: amountPaid },
-      });
+    const populate = reservation.reservationType === "restaurantReservation" ?
+     "menus.menu" : reservation.reservationType === "hotelReservation" ?
+     "room" : "drinks.drink combos table";
+
+    
+    await reservation.populate(`vendor ${populate}`);
+
+    if (isNewReservation) {
+      sendBookingConfirmationEmail(
+        reservation.customerEmail,
+        reservation,
+        payment.metadata.reservationType,
+      ).catch((err) => console.error("Email failed:", err));
+
+      // emitPaymentUpdate(payment.metadata.bookingId, "paid");
+
+      const vendorSocket = getVendorSocket(reservation.vendor._id);
+      if (vendorSocket && vendorSocket.readyState === 1) {
+        vendorSocket.send(
+          JSON.stringify({
+            type: "new_reservation",
+            data: {
+              ...reservation.toObject(),
+              message: "You have a new reservation",
+            },
+          }),
+        );
+      }
     }
+  } catch (error) {
+    console.error("Error processing webhook:", error);
+    throw error;
+  }
+}
+
+async function handleFailedPayment(data) {
+  const paymentId = data.reference;
+
+  try {
+    await Payment.updateOne(
+      { _id: paymentId },
+      {
+        status: "failed",
+        failureReason: data.gateway_response,
+        webhookProcessed: true,
+        webhookProcessedAt: new Date(),
+      },
+    );
+
+    console.log("❌ Payment failed:", paymentId, data.gateway_response);
 
     // ✅ Emit realtime update
-    emitPaymentUpdate(metadata.bookingId, 'paid');
+    emitPaymentUpdate(metadata.bookingId, "failed");
 
-    console.log("✅ Paystack webhook processed:", reference);
+    console.log("✅ Paystack webhook processed:", paymentId);
   } catch (error) {
-    console.error("❌ Webhook processing error:", error);
+    console.error("Error handling failed payment:", error);
   }
-};
+}

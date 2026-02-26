@@ -122,7 +122,7 @@ export const loginVendor = async (req, res) => {
       user._id,
       user.role,
       user.isOnboarded,
-      isVendor ? user.vendorType : null
+      isVendor ? user.vendorType : null,
     );
 
     return res.status(200).json({
@@ -242,7 +242,7 @@ export const onboardVendor = async (req, res) => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(recipientPayload),
-      }
+      },
     );
 
     const recipientData = await recipientResponse.json();
@@ -379,7 +379,9 @@ export const updateVendor = async (req, res) => {
     if (accountName && accountNumber && bankName && bankCode) {
       const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
       if (!PAYSTACK_SECRET_KEY) {
-        return res.status(500).json({ message: "Paystack key not configured." });
+        return res
+          .status(500)
+          .json({ message: "Paystack key not configured." });
       }
 
       const recipientPayload = {
@@ -400,7 +402,7 @@ export const updateVendor = async (req, res) => {
             "Content-Type": "application/json",
           },
           body: JSON.stringify(recipientPayload),
-        }
+        },
       );
 
       const recipientData = await recipientResponse.json();
@@ -457,7 +459,7 @@ export const updateVendor = async (req, res) => {
     if (website) vendor.website = website;
     if (priceRange) vendor.priceRange = priceRange;
 
-    console.log(vendor, businessName)
+    console.log(vendor, businessName);
     await vendor.save();
     return res.status(200).json({
       message: "Update completed successfully.",
@@ -507,14 +509,14 @@ export const register = async (req, res) => {
 };
 
 export const registerGoogle = async (req, res) => {
-  const { code } = req.body
+  const { code } = req.body;
   const client = new OAuth2Client(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
-    'postmessage'
+    "postmessage",
   );
   try {
-    const { tokens } = await client.getToken(code)
+    const { tokens } = await client.getToken(code);
 
     const ticket = await client.verifyIdToken({
       idToken: tokens.id_token,
@@ -522,7 +524,13 @@ export const registerGoogle = async (req, res) => {
     });
 
     const payload = ticket.getPayload();
-    const { email, sub: googleId, given_name: firstName, family_name: lastName, picture: profilePic } = payload;
+    const {
+      email,
+      sub: googleId,
+      given_name: firstName,
+      family_name: lastName,
+      picture: profilePic,
+    } = payload;
     const userExists = await User.findOne({ email });
 
     if (userExists) {
@@ -562,11 +570,13 @@ export const login = async (req, res) => {
     const user = await User.findOne({ email });
 
     if (!user) {
-      return res.status(401).json({ message: "Invalid email or password" });
+      return res.status(400).json({ message: "Invalid email or password" });
     }
 
     if (!user.password) {
-      return res.status(401).json({ message: "Click Forgot Password to generate a passowrd"})
+      return res
+        .status(401)
+        .json({ message: "Click Forgot Password to generate a password" });
     }
 
     if (!(await user.comparePassword(password))) {
@@ -578,7 +588,7 @@ export const login = async (req, res) => {
         message: "Please verify your email with the OTP sent to your inbox.",
       });
     }
-    
+
     return res.json({
       message: "Login Succesfully!",
       user,
@@ -590,14 +600,14 @@ export const login = async (req, res) => {
 };
 
 export const loginGoogle = async (req, res) => {
-  const { code } = req.body
+  const { code } = req.body;
   const client = new OAuth2Client(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
-    'postmessage'
+    "postmessage",
   );
   try {
-    const { tokens } = await client.getToken(code)
+    const { tokens } = await client.getToken(code);
 
     const ticket = await client.verifyIdToken({
       idToken: tokens.id_token,
@@ -605,23 +615,23 @@ export const loginGoogle = async (req, res) => {
     });
 
     const payload = ticket.getPayload();
-    const { email, sub: googleId } = payload;
+    const {
+      email,
+      sub: googleId,
+      picture: profilePic,
+    } = payload;
 
     const user = await User.findOne({ email });
 
     if (!user) {
-      return res.status(401).json({ message: "Invalid email or password" });
-    }
-
-    if (!user.isVerified) {
-      return res.status(401).json({
-        message: "Please verify your email with the OTP sent to your inbox.",
-      });
+      return res.status(401).json({ message: "User not Found, Sign up" });
     }
 
     if (!user.googleId) {
-        user.googleId = googleId;
-        await user.save();
+      user.googleId = googleId;
+      user.profilePic = profilePic;
+      user.isVerified = true;
+      await user.save();
     }
 
     return res.json({
@@ -630,12 +640,12 @@ export const loginGoogle = async (req, res) => {
       token: generateToken(user._id, "user"),
     });
   } catch (error) {
-    console.error(error)
+    console.error(error);
     return res.status(500).json({
-      message: "Error Logging in with Google"
-    })
+      message: "Error Logging in with Google",
+    });
   }
-}
+};
 
 export const verifyOTP = async (req, res) => {
   const { email, otp } = req.body;
@@ -665,7 +675,7 @@ export const verifyOTP = async (req, res) => {
         user._id,
         user.role,
         user.isOnboarded,
-        user.vendorType
+        user.vendorType,
       ),
     });
   } catch (error) {
@@ -753,7 +763,7 @@ export const verifyVendorOTP = async (req, res) => {
         user._id,
         user.role,
         user.isOnboarded,
-        user.vendorType
+        user.vendorType,
       ),
     });
   } catch (error) {
@@ -818,12 +828,11 @@ export const resetPassword = async (req, res) => {
   const { token, password } = req.body;
 
   try {
-    console.log("Token: ", token)
+    console.log("Token: ", token);
     const resetPasswordToken = crypto
       .createHash("sha256")
       .update(token)
       .digest("hex");
-
 
     const guest = await User.findOne({
       resetPasswordToken,
@@ -858,7 +867,12 @@ export const loginAdmin = async (req, res) => {
   try {
     // Check if it's an admin user
     const user = await User.findOne({ email });
-    if (!user || !["admin", "superadmin", "finance", "ops", "support", "manager"].includes(user.role)) {
+    if (
+      !user ||
+      !["admin", "superadmin", "finance", "ops", "support", "manager"].includes(
+        user.role,
+      )
+    ) {
       return res.status(404).json({ message: "Admin user not found" });
     }
 
@@ -877,7 +891,7 @@ export const loginAdmin = async (req, res) => {
       user._id,
       user.role,
       user.isOnboarded,
-      null // No vendorType for admins
+      null, // No vendorType for admins
     );
 
     return res

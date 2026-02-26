@@ -175,6 +175,7 @@ export const sendPasswordResetEmail = async (to, token, role) => {
 //  BOOKING CONFIRMATION EMAIL
 export const sendBookingConfirmationEmail = async (to, bookingDetails, type) => {
   const {
+    _id,
     bookingCode,
     location,
     date,
@@ -194,12 +195,14 @@ export const sendBookingConfirmationEmail = async (to, bookingDetails, type) => 
     seatingPreference,
     vendor,
     specialRequest,
+    partPaid,
+    payLater, 
     customerName,
   } = bookingDetails;
 
   // Generate QR code URL
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(
-    `https://www.rhace.co/booking/${bookingCode}`
+    `https://www.rhace.co/bookings/${_id}`
   )}&size=150x150`;
 
   // Build details dynamically
@@ -214,8 +217,9 @@ export const sendBookingConfirmationEmail = async (to, bookingDetails, type) => 
       <p><strong>Check-in:</strong> ${new Date(checkInDate).toDateString()}</p>
       <p><strong>Check-out:</strong> ${new Date(checkOutDate).toDateString()}</p>
       <p><strong>Guests:</strong> ${guests}</p>
+      <p><strong>Payment Status:</strong> ${partPaid ? "Part Paid" : "Paid"}</p>
       ${specialRequest ? `<p><strong>Special Request:</strong> ${specialRequest}</p>` : ""}
-      <p><strong>Total Amount:</strong> ${totalAmount} ${currency}</p>
+      <p><strong>Total Amount:</strong> ${totalAmount.toLocaleString()} ${currency}</p>
     `;
   } else if (type === "restaurant") {
     detailsHtml += `
@@ -225,11 +229,12 @@ export const sendBookingConfirmationEmail = async (to, bookingDetails, type) => 
       <p><strong>Time:</strong> ${time}</p>
       <p><strong>Guests:</strong> ${guests}</p>
       <p><strong>Meal Preselected:</strong> ${mealPreselected ? "Yes" : "No"}</p>
+      <p><strong>Payment Status:</strong> ${payLater ? "Pay at Restaurant" : "Paid"}</p>
       ${menus?.length ? `<p><strong>Menus:</strong> ${menus.map(m => m.menu?.name || "N/A").join(", ")}</p>` : ""}
       ${specialOccasion ? `<p><strong>Special Occasion:</strong> ${specialOccasion}</p>` : ""}
       ${seatingPreference ? `<p><strong>Seating Preference:</strong> ${seatingPreference}</p>` : ""}
       ${specialRequest ? `<p><strong>Special Request:</strong> ${specialRequest}</p>` : ""}
-      <p><strong>Total Amount:</strong> ${totalAmount} ${currency}</p>
+      <p><strong>Total Amount:</strong> ${totalAmount.toLocaleString()} ${currency}</p>
     `;
   } else if (type === "club") {
     detailsHtml += `
@@ -238,11 +243,12 @@ export const sendBookingConfirmationEmail = async (to, bookingDetails, type) => 
       <p><strong>Date:</strong> ${new Date(date).toDateString()}</p>
       <p><strong>Time:</strong> ${time}</p>
       <p><strong>Guests:</strong> ${guests}</p>
-      ${table ? `<p><strong>Table:</strong> ${table}</p>` : ""}
+      <p><strong>Payment Status:</strong> ${partPaid ? "Part Paid" : "Paid"}</p>
+      ${table ? `<p><strong>Table:</strong> ${table.name}</p>` : ""}
       ${drinks?.length ? `<p><strong>Drinks:</strong> ${drinks.map(d => `${d.drink?.name || "N/A"} (x${d.quantity})`).join(", ")}</p>` : ""}
       ${combos?.length ? `<p><strong>Combos:</strong> ${combos.map(c => c?.name || "N/A").join(", ")}</p>` : ""}
       ${specialRequest ? `<p><strong>Special Request:</strong> ${specialRequest}</p>` : ""}
-      <p><strong>Total Amount:</strong> ${totalAmount} ${currency}</p>
+      <p><strong>Total Amount:</strong> ${totalAmount.toLocaleString()} ${currency}</p>
     `;
   }
 
