@@ -1,6 +1,7 @@
 import express from "express";
 import {
   createReservation,
+  createMultiRoomReservation,
   getBookingSummary,
   getReservations,
   getReservationStats,
@@ -11,6 +12,8 @@ import { protect } from "../middlewares/auth.middleware.js";
 const router = express.Router();
 
 router.post("/create", protect, createReservation)
+
+router.post("/create-multi-room", protect, createMultiRoomReservation)
 
 router.post("/complete-payment", protect, completePayment)
 
