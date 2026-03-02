@@ -43,6 +43,269 @@ export const getBanks = async (req, res) => {
   }
 };
 
+// @desc    Get admin's total earnings (vendor percentage minus Paystack commission)
+// @route   GET /api/payments/admin-earnings
+// @access  Private (Admin only)
+export const getAdminTotalEarnings = async (req, res) => {
+  try {
+    if (req.user.role !== "admin" && req.user.role !== "superadmin") {
+      return res.status(403).json({ message: "Access denied. Admin only." });
+    }
+
+    const { period = "all", startDate, endDate } = req.query;
+    
+    // Build date filter
+    let dateFilter = {};
+    const now = new Date();
+    
+    if (startDate && endDate) {
+      dateFilter = {
+        createdAt: {
+          $gte: new Date(startDate),
+          $lte: new Date(endDate)
+        }
+      };
+    } else if (period === "week") {
+      const lastWeek = new Date(now.setDate(now.getDate() - 7));
+      dateFilter = { createdAt: { $gte: lastWeek } };
+    } else if (period === "month") {
+      const lastMonth = new Date(now.setMonth(now.getMonth() - 1));
+      dateFilter = { createdAt: { $gte: lastMonth } };
+    } else if (period === "year") {
+      const lastYear = new Date(now.setFullYear(now.getFullYear() - 1));
+      dateFilter = { createdAt: { $gte: lastYear } };
+    }
+    // "all" period - no date filter needed
+
+    // Get all successful payments with vendor info
+    const payments = await Payment.find({
+      ...dateFilter,
+      status: "Paid",
+      isSplitPayment: true
+    }).populate({
+      path: "vendor",
+      select: "percentageCharge businessName"
+    });
+
+    // Calculate admin earnings for each payment
+    // Admin earnings = (payment amount × vendor percentage) - (payment amount × Paystack commission)
+    // Paystack commission is 9.5% (0.095)
+    const PAYSTACK_COMMISSION = 0.095;
+
+    let totalGrossAmount = 0;
+    let totalVendorCommission = 0;
+    let totalPaystackCommission = 0;
+    let totalAdminEarnings = 0;
+    let totalPayments = 0;
+
+    const vendorBreakdown = {};
+
+    payments.forEach(payment => {
+      const grossAmount = payment.amount || 0;
+      const vendorPercentage = payment.vendor?.percentageCharge || 0;
+      
+      // Calculate commissions
+      const vendorCommission = grossAmount * (vendorPercentage / 100);
+      const paystackCommission = grossAmount * PAYSTACK_COMMISSION;
+      const adminEarning = vendorCommission - paystackCommission;
+
+      totalGrossAmount += grossAmount;
+      totalVendorCommission += vendorCommission;
+      totalPaystackCommission += paystackCommission;
+      totalAdminEarnings += adminEarning;
+      totalPayments += 1;
+
+      // Track by vendor
+      const vendorId = payment.vendor?._id?.toString();
+      if (vendorId) {
+        if (!vendorBreakdown[vendorId]) {
+          vendorBreakdown[vendorId] = {
+            vendorId,
+            vendorName: payment.vendor?.businessName || "Unknown",
+            vendorPercentage,
+            grossAmount: 0,
+            vendorCommission: 0,
+            paystackCommission: 0,
+            adminEarnings: 0,
+            paymentCount: 0
+          };
+        }
+        vendorBreakdown[vendorId].grossAmount += grossAmount;
+        vendorBreakdown[vendorId].vendorCommission += vendorCommission;
+        vendorBreakdown[vendorId].paystackCommission += paystackCommission;
+        vendorBreakdown[vendorId].adminEarnings += adminEarning;
+        vendorBreakdown[vendorId].paymentCount += 1;
+      }
+    });
+
+    return res.json({
+      period,
+      dateRange: startDate && endDate ? { startDate, endDate } : null,
+      summary: {
+        totalGrossAmount: Math.round(totalGrossAmount * 100) / 100,
+        totalVendorCommission: Math.round(totalVendorCommission * 100) / 100,
+        totalPaystackCommission: Math.round(totalPaystackCommission * 100) / 100,
+        totalAdminEarnings: Math.round(totalAdminEarnings * 100) / 100,
+        totalPayments,
+        averagePaymentAmount: totalPayments > 0 
+          ? Math.round((totalGrossAmount / totalPayments) * 100) / 100 
+          : 0
+      },
+      vendorBreakdown: Object.values(vendorBreakdown),
+      calculations: {
+        paystackCommissionRate: `${PAYSTACK_COMMISSION * 100}%`,
+        formula: "Admin Earnings = (Gross Amount × Vendor %) - (Gross Amount × 9.5%)"
+      }
+    });
+  } catch (error) {
+    console.error("Error fetching admin earnings:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+// @desc    Get total successful payments count
+// @route   GET /api/payments/successful-count
+// @access  Private (Admin only)
+export const getTotalSuccessfulPayments = async (req, res) => {
+  try {
+    if (req.user.role !== "admin" && req.user.role !== "superadmin") {
+      return res.status(403).json({ message: "Access denied. Admin only." });
+    }
+
+    const { period = "all", startDate, endDate } = req.query;
+    
+    // Build date filter
+    let dateFilter = {};
+    const now = new Date();
+    
+    if (startDate && endDate) {
+      dateFilter = {
+        createdAt: {
+          $gte: new Date(startDate),
+          $lte: new Date(endDate)
+        }
+      };
+    } else if (period === "week") {
+      const lastWeek = new Date(now.setDate(now.getDate() - 7));
+      dateFilter = { createdAt: { $gte: lastWeek } };
+    } else if (period === "month") {
+      const lastMonth = new Date(now.setMonth(now.getMonth() - 1));
+      dateFilter = { createdAt: { $gte: lastMonth } };
+    } else if (period === "year") {
+      const lastYear = new Date(now.setFullYear(now.getFullYear() - 1));
+      dateFilter = { createdAt: { $gte: lastYear } };
+    } else if (period === "today") {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      dateFilter = { createdAt: { $gte: today } };
+    }
+    // "all" period - no date filter needed
+
+    // Get total successful payments count
+    const totalSuccessful = await Payment.countDocuments({
+      ...dateFilter,
+      status: "Paid"
+    });
+
+    // Get total failed payments count
+    const totalFailed = await Payment.countDocuments({
+      ...dateFilter,
+      status: "failed"
+    });
+
+    // Get total pending payments count
+    const totalPending = await Payment.countDocuments({
+      ...dateFilter,
+      status: "Pending"
+    });
+
+    // Get total cancelled payments count
+    const totalCancelled = await Payment.countDocuments({
+      ...dateFilter,
+      status: "cancelled"
+    });
+
+    // Get all payments for additional stats
+    const allPayments = await Payment.find(dateFilter);
+    const totalAllPayments = allPayments.length;
+
+    // Calculate success rate
+    const successRate = totalAllPayments > 0 
+      ? Math.round((totalSuccessful / totalAllPayments) * 10000) / 100 
+      : 0;
+
+    // Get by payment method
+    const byPaymentMethod = await Payment.aggregate([
+      { $match: { ...dateFilter, status: "Paid" } },
+      { $group: { _id: "$paymentMethod", count: { $sum: 1 }, total: { $sum: "$amount" } } }
+    ]);
+
+    // Get by vendor type (through vendor lookup)
+    const byVendorType = await Payment.aggregate([
+      { $match: { ...dateFilter, status: "Paid" } },
+      {
+        $lookup: {
+          from: "vendors",
+          localField: "vendor",
+          foreignField: "_id",
+          as: "vendorInfo"
+        }
+      },
+      { $unwind: "$vendorInfo" },
+      { $group: { _id: "$vendorInfo.vendorType", count: { $sum: 1 }, total: { $sum: "$amount" } } }
+    ]);
+
+    // Get daily/weekly/monthly breakdown
+    const timeBreakdown = await Payment.aggregate([
+      { $match: { ...dateFilter, status: "Paid" } },
+      {
+        $group: {
+          _id: {
+            year: { $year: "$createdAt" },
+            month: { $month: "$createdAt" },
+            day: { $dayOfMonth: "$createdAt" }
+          },
+          count: { $sum: 1 },
+          total: { $sum: "$amount" }
+        }
+      },
+      { $sort: { "_id.year": -1, "_id.month": -1, "_id.day": -1 } },
+      { $limit: 30 }
+    ]);
+
+    return res.json({
+      period,
+      dateRange: startDate && endDate ? { startDate, endDate } : null,
+      summary: {
+        totalSuccessful,
+        totalFailed,
+        totalPending,
+        totalCancelled,
+        totalAllPayments,
+        successRate: `${successRate}%`
+      },
+      byPaymentMethod: byPaymentMethod.map(item => ({
+        method: item._id || "unknown",
+        count: item.count,
+        total: item.total || 0
+      })),
+      byVendorType: byVendorType.map(item => ({
+        vendorType: item._id || "unknown",
+        count: item.count,
+        total: item.total || 0
+      })),
+      timeBreakdown: timeBreakdown.map(item => ({
+        date: `${item._id.year}-${String(item._id.month).padStart(2, '0')}-${String(item._id.day).padStart(2, '0')}`,
+        count: item.count,
+        total: item.total || 0
+      }))
+    });
+  } catch (error) {
+    console.error("Error fetching successful payments count:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
 export const verifyAccount = async (req, res) => {
   const { account_number, bank_code } = req.query;
 
