@@ -74,6 +74,10 @@ export const getAdminTotalEarnings = async (req, res) => {
     } else if (period === "year") {
       const lastYear = new Date(now.setFullYear(now.getFullYear() - 1));
       dateFilter = { createdAt: { $gte: lastYear } };
+    } else if (period === "today") {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      dateFilter = { createdAt: { $gte: today } };
     }
     // "all" period - no date filter needed
 
