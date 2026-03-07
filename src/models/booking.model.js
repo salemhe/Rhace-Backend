@@ -88,6 +88,22 @@ const bookingSchema = new mongoose.Schema({
     reservationType: { 
         type: String,
         required: true
+    },
+    // Confirmation fields
+    confirmedAt: Date,
+    confirmedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Vendor"
+    },
+    confirmationMethod: {
+        type: String,
+        enum: ['manual', 'qr_code'],
+        default: null
+    },
+    qrConfirmationToken: {
+        type: String,
+        unique: true,
+        sparse: true
     }
     
 }, options);
@@ -155,6 +171,14 @@ const clubReservation = Booking.discriminator(
             type: mongoose.Schema.Types.ObjectId,
             ref: "Table",
         },
+        // Support for multiple tables booking
+        tables: [{
+            tableType: { type: mongoose.Schema.Types.ObjectId, ref: "TableType", required: true },
+            quantity: { type: Number, default: 1, min: 1 },
+            pricePerTable: { type: Number, required: true },
+        }],
+        // Store total number of tables booked
+        totalTables: { type: Number, default: 0 },
         combos: [{
             type: mongoose.Schema.Types.ObjectId,
             ref: "BottleSet"

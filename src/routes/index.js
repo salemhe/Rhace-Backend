@@ -23,7 +23,8 @@ import payoutRoutes from "./payout.routes.js";
 import reportRoutes from "./report.routes.js";
 import searchRoutes from "./search.routes.js";
 import staffRoutes from "./staff.routes.js";
-import paystackRoutes from "./paystack.routes.js"
+import paystackRoutes from "./paystack.routes.js";
+import availabilityRoutes from "./availability.routes.js";
 
 export { 
 authRoutes,
@@ -53,4 +54,5 @@ reportRoutes,
 searchRoutes,
 staffRoutes,
 paystackRoutes,
-}
+availabilityRoutes,
+};
