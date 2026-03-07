@@ -127,6 +127,8 @@ const getTableAvailabilityWithLock = async (session, tableTypeId, date, time, re
     };
   }
 
+  
+
   return { available: true, bookedTables, availableTables, totalTables };
 };
 
