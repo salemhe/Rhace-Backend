@@ -9,7 +9,7 @@ import {
   getTableAvailabilityForDate as getTableAvailabilityForDateController,
   checkMultipleRoomsAvailability as checkMultipleRoomsAvailabilityController,
   checkMultipleTablesAvailability as checkMultipleTablesAvailabilityController,
-  calculateMultiRoomPrice as calculateMultiRoomPriceController,
+  calculateMultiRoomPriceController,
   calculateMultiTablePrice as calculateMultiTablePriceController
 } from "../controllers/availability.controller.js";
 

@@ -1,3 +1,4 @@
+
 import { Booking, hotelReservation, restaurantReservation, clubReservation } from "../models/booking.model.js";
 import RoomType from "../models/roomtype.model.js";
 import TableType from "../models/tableType.model.js";
@@ -5,11 +6,6 @@ import dayjs from "dayjs";
 
 /**
  * Check room availability for hotels (supports multi-room booking)
- * @param {string} roomTypeId - Room type ID
- * @param {Date|string} checkInDate - Check-in date
- * @param {Date|string} checkOutDate - Check-out date
- * @param {number} requestedQuantity - Number of rooms requested (default: 1)
- * @param {string} excludeBookingId - Optional booking ID to exclude (for updates)
  */
 export const checkRoomAvailability = async (roomTypeId, checkInDate, checkOutDate, requestedQuantity = 1, excludeBookingId = null) => {
   const roomType = await RoomType.findById(roomTypeId);
@@ -21,40 +17,30 @@ export const checkRoomAvailability = async (roomTypeId, checkInDate, checkOutDat
   const checkIn = new Date(checkInDate);
   const checkOut = new Date(checkOutDate);
 
-  // Build query for overlapping bookings
   const bookingQuery = {
     room: roomTypeId,
     reservationStatus: { $nin: ["cancelled", "no_show"] },
     $or: [
-      // New booking starts during existing booking
-      {
-        checkInDate: { $lt: checkOut },
-        checkOutDate: { $gt: checkIn }
-      }
+      { checkInDate: { $lt: checkOut }, checkOutDate: { $gt: checkIn } }
     ]
   };
 
-  // Exclude current booking if updating
   if (excludeBookingId) {
     bookingQuery._id = { $ne: excludeBookingId };
   }
 
-  // Find all bookings that overlap with the requested dates
   const existingBookings = await hotelReservation.find(bookingQuery);
   
-  // Calculate booked units for each date
   const bookedUnitsByDate = {};
   
   for (const booking of existingBookings) {
     const bookingCheckIn = new Date(booking.checkInDate);
     const bookingCheckOut = new Date(booking.checkOutDate);
     
-    // Get quantity from booking (handle both single and multi-room bookings)
     const bookedQuantity = booking.rooms ? 
       booking.rooms.reduce((sum, r) => sum + (r.quantity || 1), 0) : 
       (booking.quantity || 1);
     
-    // Iterate through each date in the range
     let currentDate = new Date(bookingCheckIn);
     while (currentDate < bookingCheckOut) {
       const dateKey = dayjs(currentDate).format("YYYY-MM-DD");
@@ -63,7 +49,6 @@ export const checkRoomAvailability = async (roomTypeId, checkInDate, checkOutDat
     }
   }
 
-  // Check each date in the requested range
   let currentDate = new Date(checkIn);
   const unavailableDates = [];
   
@@ -108,10 +93,6 @@ export const checkRoomAvailability = async (roomTypeId, checkInDate, checkOutDat
 
 /**
  * Check multiple rooms availability for hotels
- * @param {Array} rooms - Array of { roomTypeId, quantity }
- * @param {Date|string} checkInDate - Check-in date
- * @param {Date|string} checkOutDate - Check-out date
- * @param {string} excludeBookingId - Optional booking ID to exclude
  */
 export const checkMultipleRoomsAvailability = async (rooms, checkInDate, checkOutDate, excludeBookingId = null) => {
   if (!rooms || rooms.length === 0) {
@@ -157,31 +138,37 @@ export const checkMultipleRoomsAvailability = async (rooms, checkInDate, checkOu
     };
   }
 
-  // Calculate totals
   const totalAvailable = Math.min(...results.map(r => r.availableUnits));
   const totalRequested = rooms.reduce((sum, r) => sum + r.quantity, 0);
+
+  const roomTypeIds = rooms.map(r => r.roomType);
+  const roomTypes = await RoomType.find({ _id: { $in: roomTypeIds } });
+  const roomTypeMap = {};
+  roomTypes.forEach(rt => { roomTypeMap[rt._id.toString()] = rt; });
+
+  const breakdown = rooms.map(r => {
+    const rt = roomTypeMap[r.roomType];
+    const result = results.find(res => res.roomTypeId === r.roomType);
+    return {
+      roomTypeId: r.roomType,
+      quantity: r.quantity,
+      pricePerNight: rt?.pricePerNight || 0,
+      available: result?.available || false,
+      availableUnits: result?.availableUnits || 0
+    };
+  });
 
   return {
     available: true,
     totalRooms: totalRequested,
     availableUnits: totalAvailable,
     results,
-    breakdown: results.map(r => ({
-      roomTypeId: r.roomTypeId,
-      quantity: r.quantity,
-      pricePerNight: r.pricePerNight,
-      available: r.available
-    }))
+    breakdown
   };
 };
 
 /**
- * Check table availability for clubs (supports multi-table booking)
- * @param {string} tableTypeId - Table type ID
- * @param {Date|string} date - Booking date
- * @param {string} time - Booking time
- * @param {number} requestedQuantity - Number of tables requested (default: 1)
- * @param {string} excludeBookingId - Optional booking ID to exclude
+ * Check table availability for clubs
  */
 export const checkTableAvailability = async (tableTypeId, date, time, requestedQuantity = 1, excludeBookingId = null) => {
   const tableType = await TableType.findById(tableTypeId);
@@ -192,7 +179,6 @@ export const checkTableAvailability = async (tableTypeId, date, time, requestedQ
   const totalTables = tableType.quantityAvailable;
   const bookingDate = new Date(date);
 
-  // Build query for same date and time
   const bookingQuery = {
     table: tableTypeId,
     date: {
@@ -209,13 +195,12 @@ export const checkTableAvailability = async (tableTypeId, date, time, requestedQ
 
   const existingBookings = await clubReservation.find(bookingQuery);
   
-  // Calculate total booked tables (handle both single and multi-table bookings)
   let bookedTables = 0;
   for (const booking of existingBookings) {
     if (booking.tables && booking.tables.length > 0) {
       bookedTables += booking.tables.reduce((sum, t) => sum + (t.quantity || 1), 0);
     } else {
-      bookedTables += 1; // Single table booking
+      bookedTables += 1;
     }
   }
   
@@ -248,10 +233,6 @@ export const checkTableAvailability = async (tableTypeId, date, time, requestedQ
 
 /**
  * Check multiple tables availability for clubs
- * @param {Array} tables - Array of { tableTypeId, quantity }
- * @param {Date|string} date - Booking date
- * @param {string} time - Booking time
- * @param {string} excludeBookingId - Optional booking ID to exclude
  */
 export const checkMultipleTablesAvailability = async (tables, date, time, excludeBookingId = null) => {
   if (!tables || tables.length === 0) {
@@ -297,36 +278,39 @@ export const checkMultipleTablesAvailability = async (tables, date, time, exclud
     };
   }
 
-  // Calculate totals
   const totalAvailable = Math.min(...results.map(r => r.availableTables));
   const totalRequested = tables.reduce((sum, t) => sum + t.quantity, 0);
+
+  const tableTypeIds = tables.map(t => t.tableType);
+  const tableTypes = await TableType.find({ _id: { $in: tableTypeIds } });
+  const tableTypeMap = {};
+  tableTypes.forEach(tt => { tableTypeMap[tt._id.toString()] = tt; });
+
+  const breakdown = tables.map(t => {
+    const tt = tableTypeMap[t.tableType];
+    const result = results.find(res => res.tableTypeId === t.tableType);
+    return {
+      tableTypeId: t.tableType,
+      quantity: t.quantity,
+      pricePerTable: tt?.price || 0,
+      available: result?.available || false,
+      availableTables: result?.availableTables || 0
+    };
+  });
 
   return {
     available: true,
     totalTables: totalRequested,
     availableTables: totalAvailable,
     results,
-    breakdown: results.map(r => ({
-      tableTypeId: r.tableTypeId,
-      quantity: r.quantity,
-      pricePerTable: r.pricePerTable,
-      available: r.available
-    }))
+    breakdown
   };
 };
 
 /**
  * Check restaurant capacity
- * @param {string} vendorId - Restaurant/Vendor ID
- * @param {Date|string} date - Booking date
- * @param {string} time - Booking time
- * @param {number} partySize - Number of guests
- * @param {string} excludeBookingId - Optional booking ID to exclude
  */
 export const checkRestaurantCapacity = async (vendorId, date, time, partySize, excludeBookingId = null) => {
-  // For restaurants, we check if the total guests for that time slot doesn't exceed capacity
-  // This is a simplified version - you might want to add a capacity field to vendor or settings
-  
   const bookingDate = new Date(date);
   
   const bookingQuery = {
@@ -348,8 +332,7 @@ export const checkRestaurantCapacity = async (vendorId, date, time, partySize, e
   const totalGuests = existingBookings.reduce((sum, booking) => sum + (booking.guests || 0), 0);
   const newTotalGuests = totalGuests + partySize;
 
-  // Default max capacity (can be customized via settings)
-  const MAX_CAPACITY = 100; // This should come from settings in production
+  const MAX_CAPACITY = 100;
 
   if (newTotalGuests > MAX_CAPACITY) {
     return {
@@ -376,10 +359,7 @@ export const checkRestaurantCapacity = async (vendorId, date, time, partySize, e
 };
 
 /**
- * Get availability calendar for a room type (for date range)
- * @param {string} roomTypeId - Room type ID
- * @param {Date|string} startDate - Start date
- * @param {Date|string} endDate - End date
+ * Get availability calendar for a room type
  */
 export const getRoomAvailabilityCalendar = async (roomTypeId, startDate, endDate) => {
   const roomType = await RoomType.findById(roomTypeId);
@@ -391,32 +371,22 @@ export const getRoomAvailabilityCalendar = async (roomTypeId, startDate, endDate
   const start = new Date(startDate);
   const end = new Date(endDate);
 
-  // Find all bookings in the date range
   const bookings = await hotelReservation.find({
     room: roomTypeId,
     reservationStatus: { $nin: ["cancelled", "no_show"] },
     $or: [
-      {
-        checkInDate: { $gte: start, $lte: end }
-      },
-      {
-        checkOutDate: { $gte: start, $lte: end }
-      },
-      {
-        checkInDate: { $lt: start },
-        checkOutDate: { $gt: end }
-      }
+      { checkInDate: { $gte: start, $lte: end } },
+      { checkOutDate: { $gte: start, $lte: end } },
+      { checkInDate: { $lt: start }, checkOutDate: { $gt: end } }
     ]
   });
 
-  // Calculate availability for each date
   const availability = [];
   let currentDate = new Date(start);
   
   while (currentDate <= end) {
     const dateKey = dayjs(currentDate).format("YYYY-MM-DD");
     
-    // Count bookings that include this date
     const bookedUnits = bookings.filter(booking => {
       const checkIn = new Date(booking.checkInDate);
       const checkOut = new Date(booking.checkOutDate);
@@ -446,9 +416,7 @@ export const getRoomAvailabilityCalendar = async (roomTypeId, startDate, endDate
 };
 
 /**
- * Get table availability calendar for clubs
- * @param {string} tableTypeId - Table type ID
- * @param {Date|string} date - Date
+ * Get table availability for date
  */
 export const getTableAvailabilityForDate = async (tableTypeId, date) => {
   const tableType = await TableType.findById(tableTypeId);
@@ -459,7 +427,6 @@ export const getTableAvailabilityForDate = async (tableTypeId, date) => {
   const totalTables = tableType.quantityAvailable;
   const bookingDate = new Date(date);
 
-  // Get all bookings for this date
   const bookings = await clubReservation.find({
     table: tableTypeId,
     date: {
@@ -469,7 +436,6 @@ export const getTableAvailabilityForDate = async (tableTypeId, date) => {
     reservationStatus: { $nin: ["cancelled", "no_show"] }
   });
 
-  // Group by time slot
   const timeSlots = {};
   const allTimes = [
     "18:00", "18:30", "19:00", "19:30", "20:00", "20:30", 
@@ -496,32 +462,25 @@ export const getTableAvailabilityForDate = async (tableTypeId, date) => {
 };
 
 /**
- * Validate availability before booking (supports multi-room/table)
- * @param {Object} bookingData - Booking data
+ * Validate availability before booking
  */
 export const validateBookingAvailability = async (bookingData) => {
   const { reservationType, room, table, date, time, checkInDate, checkOutDate, guests, vendor, rooms, tables, _id: excludeBookingId } = bookingData;
 
-  // Handle multi-room hotel bookings
   if (reservationType === "hotelReservation" || reservationType === "hotel") {
     if (rooms && rooms.length > 0) {
-      // Multiple rooms booking
       return await checkMultipleRoomsAvailability(rooms, checkInDate, checkOutDate, excludeBookingId);
     }
-    // Single room booking (legacy support)
     if (!room || !checkInDate || !checkOutDate) {
       return { valid: false, reason: "Missing required fields for hotel booking" };
     }
     return await checkRoomAvailability(room, checkInDate, checkOutDate, 1, excludeBookingId);
   }
 
-  // Handle multi-table club bookings
   if (reservationType === "clubReservation" || reservationType === "club") {
     if (tables && tables.length > 0) {
-      // Multiple tables booking
       return await checkMultipleTablesAvailability(tables, date, time, excludeBookingId);
     }
-    // Single table booking (legacy support)
     if (!table || !date || !time) {
       return { valid: false, reason: "Missing required fields for club booking" };
     }
@@ -540,9 +499,6 @@ export const validateBookingAvailability = async (bookingData) => {
 
 /**
  * Calculate total price for multi-room booking
- * @param {Array} rooms - Array of { roomTypeId, quantity }
- * @param {Date|string} checkInDate - Check-in date
- * @param {Date|string} checkOutDate - Check-out date
  */
 export const calculateMultiRoomPrice = async (rooms, checkInDate, checkOutDate) => {
   if (!rooms || rooms.length === 0) {
@@ -584,7 +540,6 @@ export const calculateMultiRoomPrice = async (rooms, checkInDate, checkOutDate) 
 
 /**
  * Calculate total price for multi-table booking
- * @param {Array} tables - Array of { tableTypeId, quantity }
  */
 export const calculateMultiTablePrice = async (tables) => {
   if (!tables || tables.length === 0) {
