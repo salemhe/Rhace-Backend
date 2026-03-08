@@ -10,7 +10,7 @@ import {
   checkMultipleRoomsAvailability as checkMultipleRoomsAvailabilityController,
   checkMultipleTablesAvailability as checkMultipleTablesAvailabilityController,
   calculateMultiRoomPriceController,
-  calculateMultiTablePrice as calculateMultiTablePriceController
+  calculateMultiTablePriceController
 } from "../controllers/availability.controller.js";
 
 const router = express.Router();
