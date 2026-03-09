@@ -7,8 +7,8 @@ import {
   checkRestaurantCapacity as checkRestaurantCapacityController,
   getRoomAvailabilityCalendar as getRoomAvailabilityCalendarController,
   getTableAvailabilityForDate as getTableAvailabilityForDateController,
-  checkMultipleRoomsAvailability as checkMultipleRoomsAvailabilityController,
-  checkMultipleTablesAvailability as checkMultipleTablesAvailabilityController,
+  checkMultipleRoomsAvailabilityController,
+  checkMultipleTablesAvailabilityController,
   calculateMultiRoomPriceController,
   calculateMultiTablePriceController
 } from "../controllers/availability.controller.js";
