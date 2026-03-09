@@ -2,8 +2,8 @@ import express from "express";
 import { protect } from "../middlewares/auth.middleware.js";
 import {
   checkUniversalAvailability,
-  checkRoomAvailability as checkRoomAvailabilityController,
-  checkTableAvailability as checkTableAvailabilityController,
+  checkRoomAvailabilityController,
+  checkTableAvailabilityController,
   checkRestaurantCapacityController,
   getRoomAvailabilityCalendar as getRoomAvailabilityCalendarController,
   getTableAvailabilityForDate as getTableAvailabilityForDateController,
