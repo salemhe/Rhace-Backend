@@ -4,7 +4,7 @@ import {
   checkUniversalAvailability,
   checkRoomAvailability as checkRoomAvailabilityController,
   checkTableAvailability as checkTableAvailabilityController,
-  checkRestaurantCapacity as checkRestaurantCapacityController,
+  checkRestaurantCapacityController,
   getRoomAvailabilityCalendar as getRoomAvailabilityCalendarController,
   getTableAvailabilityForDate as getTableAvailabilityForDateController,
   checkMultipleRoomsAvailabilityController,
