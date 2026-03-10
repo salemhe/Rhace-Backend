@@ -794,15 +794,20 @@ export const initializePayment = async (req, res) => {
 
       if (reservationType === "club" && drinks && table) {
         const drinkIds = drinks.map((d) => d.drink);
+        const tableIds = table.map((t) => t._id);
         const drinkItems = await Drink.find({ _id: { $in: drinkIds } });
+        const tableItem = await Table.find({ _id: { $in: tableIds } });
 
         totalAmount = drinks.reduce((sum, item) => {
           const drink = drinkItems.find((d) => d._id.toString() === item.drink);
           if (!drink) throw new Error(`Drink ${item.drink} not found`);
           return sum + drink.price * item.quantity;
         }, 0);
-        const tableItem = await Table.findOne({ _id: table });
-        totalAmount += tableItem.price;
+        totalAmount += table.reduce((sum, item) => {
+          const tables = tableItem.find((t) => t._id.toString() === item._id);
+          if (!tables) throw new Error(`Table ${item._id} not found`);
+          return sum + tables.price * item.quantity;
+        }, 0);
 
         if (combos && combos.length > 0) {
           const comboItems = await BottleSet.find({ _id: { $in: combos } });

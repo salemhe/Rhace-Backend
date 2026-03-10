@@ -1,162 +1,462 @@
-import {
-  Vendor,
-  HotelVendor,
-  RestaurantVendor,
-  ClubVendor,
-} from "../models/vendor.model.js";
-import {Menu, MenuItem} from "../models/menu.model.js";
+import { Vendor, HotelVendor, RestaurantVendor, ClubVendor } from "../models/vendor.model.js";
+import { Menu, MenuItem } from "../models/menu.model.js";
 import BottleSet from "../models/bottleSet.model.js";
 import Drink from "../models/drink.model.js";
 import { filterVendorData } from "../utils/vendor.js";
 
-const selectFields = "_id businessName businessDescription";
-
-export const getVendorSuggestions = async (req, res) => {
-  try {
-    const { latitude, longitude } = req.query;
-
-    console.log("Searching near:", latitude, longitude);
-    const sample = await Vendor.findOne({}).select("location businessName");
-    console.log("Sample vendor location:", sample.location);
-
-    const nearbyQuery =
-      latitude && longitude
-        ? {
-            location: {
-              $near: {
-                $geometry: {
-                  type: "Point",
-                  coordinates: [parseFloat(longitude), parseFloat(latitude)],
-                },
-                $maxDistance: 5000,
-              },
-            },
-          }
-        : { isVisible: true };
-
-    const [nearby, popular, topRated, trending, recentlyViewed] =
-      await Promise.all([
-        Vendor.find(nearbyQuery).limit(5).select(selectFields),
-        Vendor.find().sort({ reviews: -1 }).limit(5).select(selectFields),
-        Vendor.find().sort({ rating: -1 }).limit(5).select(selectFields),
-        Vendor.find({ isVisible: true })
-          .sort({ updatedAt: -1 })
-          .limit(5)
-          .select(selectFields),
-        Vendor.find().sort({ createdAt: -1 }).limit(5).select(selectFields),
-      ]);
-
-    res.status(200).json({
-      success: true,
-      data: { nearby, popular, topRated, trending, recentlyViewed },
-    });
-  } catch (error) {
-    console.error(error)
-    res
-      .status(500)
-      .json({ success: false, message: "Unable to fetch vendor suggestions." });
+const getModel = (type) => {
+  if (!type) return Vendor;
+  switch (type.toLowerCase()) {
+    case "hotel":
+    case "hotels":
+      return HotelVendor;
+    case "restaurant":
+    case "restaurants":
+      return RestaurantVendor;
+    case "club":
+    case "clubs":
+      return ClubVendor;
+    default:
+      return Vendor;
   }
 };
 
-export const getVendors = async (req, res) => {
-  try {
-    const {
-      type,
-      search,
-      latitude,
-      longitude,
-      page = 1,
-      limit = 20,
-    } = req.query;
-    const skip = (page - 1) * limit;
+const toInt = (val, fallback) => {
+  const n = parseInt(val, 10);
+  return isNaN(n) ? fallback : n;
+};
 
-    let model = Vendor;
-    if (type) {
-      switch (type.toLowerCase()) {
-        case "hotels":
-          model = HotelVendor;
-          break;
-        case "restaurants":
-          model = RestaurantVendor;
-          break;
-        case "clubs":
-          model = ClubVendor;
-          break;
-        default:
-          return res
-            .status(400)
-            .json({ success: false, message: "Invalid vendor type." });
-      }
+const toFloat = (val, fallback) => {
+  const n = parseFloat(val);
+  return isNaN(n) ? fallback : n;
+};
+
+// Comma-separated param → trimmed lowercase array
+const toArr = (val) =>
+  val ? val.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean) : [];
+
+// "Open Now" helper — checks openingHours array on the vendor
+const buildOpenNowFilter = () => {
+  const now = new Date();
+  const days = ["sunday","monday","tuesday","wednesday","thursday","friday","saturday"];
+  const day = days[now.getDay()];
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+  return {
+    openingHours: {
+      $elemMatch: {
+        day,
+        isClosed: { $ne: true },
+        $expr: {
+          $and: [
+            {
+              $lte: [
+                {
+                  $add: [
+                    { $multiply: [{ $toInt: { $substr: ["$open", 0, 2] } }, 60] },
+                    { $toInt: { $substr: ["$open", 3, 2] } },
+                  ],
+                },
+                currentMinutes,
+              ],
+            },
+            {
+              $gte: [
+                {
+                  $add: [
+                    { $multiply: [{ $toInt: { $substr: ["$close", 0, 2] } }, 60] },
+                    { $toInt: { $substr: ["$close", 3, 2] } },
+                  ],
+                },
+                currentMinutes,
+              ],
+            },
+          ],
+        },
+      },
+    },
+  };
+};
+
+// ─────────────────────────────────────────────────────────────────
+// SELECT fields per vendor type — only fetch what the card needs
+// ─────────────────────────────────────────────────────────────────
+const BASE_SELECT =
+  "businessName vendorType vendorTypeCategory address profileImages rating reviews priceRange isVerified acceptsOnlineBooking businessDescription specialCategory branch";
+
+const TYPE_SELECT = {
+  restaurant:
+    "cuisines diningStyles dietaryOptions seatOptions occasionTags mealTimes reservationPolicy hasParking hasOutdoorSeating openingTime closingTime openingHours",
+  hotel:
+    "totalBooked offer policies starRating propertyType amenities mealPlan cancellationPolicy instantBook petFriendly payAtProperty accessibilityFeatures checkInTime checkOutTime openingHours",
+  club:
+    "venueType musicGenres livePerformanceTypes dressCode agePolicy entryFee bottleServiceMin hasVIPTables hasGuestlist hasOutdoorArea hasSmokingArea hasParking happyHour openingTime closingTime openingHours slots categories offer",
+};
+
+const buildSelect = (type) =>
+  type && TYPE_SELECT[type.toLowerCase()]
+    ? `${BASE_SELECT} ${TYPE_SELECT[type.toLowerCase()]}`
+    : BASE_SELECT;
+
+// ─────────────────────────────────────────────────────────────────
+// 1. SUGGESTIONS
+//    GET /api/search/suggestions?q=eko&type=hotel
+// ─────────────────────────────────────────────────────────────────
+export const getSearchSuggestions = async (req, res) => {
+  try {
+    const { q, type } = req.query;
+
+    if (!q || q.trim().length < 2) {
+      return res.status(200).json({ success: true, suggestions: [] });
     }
 
-    const filter = {};
+    const regex = new RegExp(q.trim(), "i");
 
-    if (search) {
-      const regex = new RegExp(search, "i");
+    const filter = {
+      isVerified: true,
+      $or: [
+        { businessName: regex },
+        { vendorTypeCategory: regex },
+        { address: regex },
+      ],
+    };
 
-      // look up vendors that own matching menus / items / bottle sets / drinks
-      const [
-        menuVendorIds,
-        menuItemVendorIds,
-        bottleSetVendorIds,
-        drinkVendorIds,
-      ] = await Promise.all([
+    if (type && ["hotel", "restaurant", "club"].includes(type.toLowerCase())) {
+      filter.vendorType = type.toLowerCase();
+    }
+
+    const suggestions = await Vendor.find(filter)
+      .select("businessName vendorType vendorTypeCategory address profileImages rating")
+      .limit(8)
+      .lean();
+
+    return res.status(200).json({ success: true, suggestions });
+  } catch (error) {
+    console.error("[getSearchSuggestions]", error);
+    return res.status(500).json({ success: false, message: "Suggestions failed" });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────
+// 2. MAIN SEARCH
+//    GET /api/search?q=...&type=...&city=...
+//    Shared filters: minRating, minPrice, maxPrice, sort, page, limit, latitude, longitude, openNow
+//    Restaurant: cuisines, dietaryOptions, diningStyle, seatOptions, occasionTags, mealTimes, reservationPolicy, hasParking, hasOutdoorSeating
+//    Hotel:      starRating, propertyType, amenities, mealPlan, cancellationPolicy, instantBook, petFriendly, accessibilityFeatures
+//    Club:       venueType, musicGenres, livePerformanceTypes, dressCode, agePolicy, entryFee, hasVIPTables, hasGuestlist, hasOutdoorArea
+// ─────────────────────────────────────────────────────────────────
+export const search = async (req, res) => {
+  try {
+    const {
+      q, type, city,
+      minRating, minPrice, maxPrice,
+      sort = "rating", page = 1, limit = 12,
+      latitude, longitude, openNow,
+
+      // Restaurant
+      cuisines, dietaryOptions, diningStyle,
+      seatOptions, occasionTags, mealTimes,
+      reservationPolicy, hasParking, hasOutdoorSeating,
+
+      // Hotel
+      starRating, propertyType, amenities, mealPlan,
+      cancellationPolicy, instantBook, petFriendly,
+      accessibilityFeatures,
+
+      // Club
+      venueType, musicGenres, livePerformanceTypes,
+      dressCode, agePolicy, entryFee,
+      hasVIPTables, hasGuestlist, hasOutdoorArea,
+    } = req.query;
+
+    const pageNum  = Math.max(1, toInt(page, 1));
+    const limitNum = Math.min(50, Math.max(1, toInt(limit, 12)));
+    const skip     = (pageNum - 1) * limitNum;
+    const model    = getModel(type);
+
+    // ── Base filter ───────────────────────────────────────────────
+    const filter = { isVerified: true };
+
+    // ── Text search + menu item matching ─────────────────────────
+    if (q && q.trim()) {
+      const regex = new RegExp(q.trim(), "i");
+
+      const [menuVendorIds, menuItemVendorIds, bottleSetVendorIds, drinkVendorIds] = await Promise.all([
         Menu.find({ name: regex }).distinct("vendor").catch(() => []),
         MenuItem.find({ name: regex }).distinct("vendor").catch(() => []),
-        BottleSet.find({ name: regex }).distinct("clubId").catch(() => []),
-        Drink.find({ name: regex }).distinct("clubId").catch(() => []),
+        BottleSet.find({ name: regex }).distinct("vendor").catch(() => []),
+        Drink.find({ name: regex }).distinct("vendor").catch(() => []),
       ]);
 
-      const relatedVendorIds = Array.from(
-        new Set([
-          ...menuVendorIds,
-          ...menuItemVendorIds,
-          ...bottleSetVendorIds,
-          ...drinkVendorIds,
-        ])
-      ).filter(Boolean);
+      const relatedIds = [
+        ...new Set([...menuVendorIds, ...menuItemVendorIds, ...bottleSetVendorIds, ...drinkVendorIds]),
+      ].filter(Boolean);
 
-      // include vendor-id matches alongside the regular text fields
-      const vendorIdClause = relatedVendorIds.length ? { _id: { $in: relatedVendorIds } } : null;
+      const orClauses = [
+        { businessName: regex },
+        { vendorTypeCategory: regex },
+        { businessDescription: regex },
+        { address: regex },
+      ];
 
-      // build the $or so vendors matching by name/cuisine/category OR owning a matching item are returned
-      filter.$or = [
-        { businessName: { $regex: search, $options: "i" } },
-        { cuisines: { $regex: search, $options: "i" } },
-        { vendorTypeCategory: { $regex: search, $options: "i" } },
-        ...(vendorIdClause ? [vendorIdClause] : []),
-      ]
+      if (!type || type.toLowerCase() === "restaurant") {
+        orClauses.push({ cuisines: regex });
+      }
+      if (!type || type.toLowerCase() === "club") {
+        orClauses.push({ categories: regex });
+        orClauses.push({ musicGenres: regex });
+      }
+
+      if (relatedIds.length) {
+        orClauses.push({ _id: { $in: relatedIds } });
+      }
+
+      filter.$or = orClauses;
+    }
+
+    // ── Shared filters ────────────────────────────────────────────
+    if (city && city.trim()) {
+      filter.address = { $regex: city.trim(), $options: "i" };
+    }
+
+    if (minRating) {
+      filter.rating = { $gte: toFloat(minRating, 0) };
+    }
+
+    if (minPrice || maxPrice) {
+      filter.priceRange = {};
+      if (minPrice) filter.priceRange.$gte = toInt(minPrice, 1);
+      if (maxPrice) filter.priceRange.$lte = toInt(maxPrice, 4);
     }
 
     if (latitude && longitude) {
       filter.location = {
         $near: {
-          $geometry: {
-            type: "Point",
-            coordinates: [parseFloat(longitude), parseFloat(latitude)],
-          },
-          $maxDistance: 5000,
+          $geometry: { type: "Point", coordinates: [toFloat(longitude), toFloat(latitude)] },
+          $maxDistance: 10000,
         },
       };
     }
-    const vendors = await model
-      .find(filter)
-      .sort({ rating: -1, reviews: -1 })
-      .skip(skip)
-      .limit(parseInt(limit));
 
-    const count = await model.countDocuments(filter);
+    if (openNow === "true") {
+      Object.assign(filter, buildOpenNowFilter());
+    }
 
-    res.status(200).json({
+    // ── Restaurant-specific filters ───────────────────────────────
+    const resolvedType = type?.toLowerCase();
+
+    if (!resolvedType || resolvedType === "restaurant") {
+      const cuisinesArr = toArr(cuisines);
+      if (cuisinesArr.length) filter.cuisines = { $in: cuisinesArr };
+
+      const dietaryArr = toArr(dietaryOptions);
+      if (dietaryArr.length) filter.dietaryOptions = { $all: dietaryArr };
+
+      if (diningStyle) filter.diningStyles = diningStyle.toLowerCase();
+
+      const seatArr = toArr(seatOptions);
+      if (seatArr.length) filter.seatOptions = { $in: seatArr };
+
+      const occasionArr = toArr(occasionTags);
+      if (occasionArr.length) filter.occasionTags = { $in: occasionArr };
+
+      const mealTimesArr = toArr(mealTimes);
+      if (mealTimesArr.length) filter.mealTimes = { $in: mealTimesArr };
+
+      if (reservationPolicy) filter.reservationPolicy = reservationPolicy.toLowerCase();
+      if (hasParking === "true") filter.hasParking = true;
+      if (hasOutdoorSeating === "true") filter.hasOutdoorSeating = true;
+    }
+
+    // ── Hotel-specific filters ────────────────────────────────────
+    if (!resolvedType || resolvedType === "hotel") {
+      if (starRating) filter.starRating = toInt(starRating, undefined);
+
+      if (propertyType) filter.propertyType = propertyType.toLowerCase();
+
+      const amenitiesArr = toArr(amenities);
+      if (amenitiesArr.length) filter.amenities = { $all: amenitiesArr };
+
+      if (mealPlan) filter.mealPlan = mealPlan.toLowerCase();
+      if (cancellationPolicy) filter.cancellationPolicy = cancellationPolicy.toLowerCase();
+      if (instantBook === "true") filter.instantBook = true;
+      if (petFriendly === "true") filter.petFriendly = true;
+
+      const accessibilityArr = toArr(accessibilityFeatures);
+      if (accessibilityArr.length) filter.accessibilityFeatures = { $all: accessibilityArr };
+    }
+
+    // ── Club-specific filters ─────────────────────────────────────
+    if (!resolvedType || resolvedType === "club") {
+      if (venueType) filter.venueType = venueType.toLowerCase();
+
+      const genresArr = toArr(musicGenres);
+      if (genresArr.length) filter.musicGenres = { $in: genresArr };
+
+      const performancesArr = toArr(livePerformanceTypes);
+      if (performancesArr.length) filter.livePerformanceTypes = { $in: performancesArr };
+
+      if (dressCode) filter.dressCode = dressCode.toLowerCase();
+      if (agePolicy) filter.agePolicy = agePolicy;
+
+      if (entryFee === "0") filter.entryFee = 0;
+      else if (entryFee === "paid") filter.entryFee = { $gt: 0 };
+
+      if (hasVIPTables === "true") filter.hasVIPTables = true;
+      if (hasGuestlist === "true") filter.hasGuestlist = true;
+      if (hasOutdoorArea === "true") filter.hasOutdoorArea = true;
+    }
+
+    // ── Sort ──────────────────────────────────────────────────────
+    let sortObj = {};
+    if (!latitude || !longitude) {
+      switch (sort) {
+        case "rating":     sortObj = { rating: -1, reviews: -1 }; break;
+        case "price_asc":  sortObj = { priceRange: 1 };           break;
+        case "price_desc": sortObj = { priceRange: -1 };          break;
+        case "newest":     sortObj = { createdAt: -1 };           break;
+        default:           sortObj = { rating: -1, reviews: -1 };
+      }
+    }
+
+    // ── Query + count in parallel ─────────────────────────────────
+    const [vendors, totalCount] = await Promise.all([
+      model
+        .find(filter)
+        .select(buildSelect(resolvedType))
+        .sort(sortObj)
+        .skip(skip)
+        .limit(limitNum)
+        .lean(),
+      model.countDocuments(filter),
+    ]);
+
+    const totalPages = Math.ceil(totalCount / limitNum);
+
+    // ── Facets ────────────────────────────────────────────────────
+    const facetMatch = {
+      isVerified: true,
+      isVisible: true,
+      ...(q && filter.$or ? { $or: filter.$or } : {}),
+    };
+
+    const facets = await Vendor.aggregate([
+      { $match: facetMatch },
+      {
+        $facet: {
+          byType: [
+            { $group: { _id: "$vendorType", count: { $sum: 1 } } },
+            { $sort: { count: -1 } },
+          ],
+          byPriceRange: [
+            { $group: { _id: "$priceRange", count: { $sum: 1 } } },
+            { $sort: { _id: 1 } },
+          ],
+          ratingBuckets: [
+            {
+              $bucket: {
+                groupBy: "$rating",
+                boundaries: [0, 3, 4, 4.5, 5.1],
+                default: "unrated",
+                output: { count: { $sum: 1 } },
+              },
+            },
+          ],
+        },
+      },
+    ]);
+
+    return res.status(200).json({
       success: true,
-      count: count,
-      page: parseInt(page),
-      totalPages: Math.ceil(count / limit),
-      data: filterVendorData(vendors),
+      data: vendors,
+      pagination: {
+        currentPage: pageNum,
+        totalPages,
+        totalCount,
+        limit: limitNum,
+        hasNextPage: pageNum < totalPages,
+        hasPrevPage: pageNum > 1,
+      },
+      facets: facets[0] || {},
+      meta: { q, type: resolvedType, sort, city },
     });
   } catch (error) {
-    res
-      .status(500)
-      .json({ success: false, message: "Unable to fetch vendors." });
+    console.error("[search]", error);
+    return res.status(500).json({ success: false, message: "Search failed" });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────
+// 3. TRENDING
+//    GET /api/search/trending?type=restaurant
+// ─────────────────────────────────────────────────────────────────
+export const getTrending = async (req, res) => {
+  try {
+    const { type, limit = 6 } = req.query;
+
+    const filter = { isVerified: true };
+    if (type && ["hotel", "restaurant", "club"].includes(type.toLowerCase())) {
+      filter.vendorType = type.toLowerCase();
+    }
+
+    const trending = await Vendor.find(filter)
+      .select("businessName vendorType address profileImages rating reviews priceRange")
+      .sort({ rating: -1, reviews: -1 })
+      .limit(toInt(limit, 6))
+      .lean();
+
+    return res.status(200).json({ success: true, trending });
+  } catch (error) {
+    console.error("[getTrending]", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch trending" });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────
+// 4. DISCOVER (home page sections)
+//    GET /api/search/discover?latitude=6.5&longitude=3.3
+// ─────────────────────────────────────────────────────────────────
+export const discover = async (req, res) => {
+  try {
+    const { latitude, longitude } = req.query;
+
+    const baseFilter = { isVerified: true, isVisible: true };
+    const selectFields =
+      "businessName vendorType address profileImages rating reviews priceRange vendorTypeCategory isVerified";
+
+    const nearbyFilter =
+      latitude && longitude
+        ? {
+            ...baseFilter,
+            location: {
+              $near: {
+                $geometry: { type: "Point", coordinates: [toFloat(longitude), toFloat(latitude)] },
+                $maxDistance: 5000,
+              },
+            },
+          }
+        : baseFilter;
+
+    const [nearby, topRated, hotels, restaurants, clubs] = await Promise.all([
+      Vendor.find(nearbyFilter).select(selectFields).limit(6).lean(),
+      Vendor.find(baseFilter).select(selectFields).sort({ rating: -1, reviews: -1 }).limit(6).lean(),
+      HotelVendor.find(baseFilter).select(`${selectFields} starRating amenities mealPlan`).sort({ rating: -1 }).limit(6).lean(),
+      RestaurantVendor.find(baseFilter).select(`${selectFields} cuisines diningStyles dietaryOptions`).sort({ rating: -1 }).limit(6).lean(),
+      ClubVendor.find(baseFilter).select(`${selectFields} musicGenres venueType entryFee dressCode`).sort({ rating: -1 }).limit(6).lean(),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        nearby: filterVendorData(nearby),
+        topRated: filterVendorData(topRated),
+        hotels: filterVendorData(hotels),
+        restaurants: filterVendorData(restaurants),
+        clubs: filterVendorData(clubs),
+      },
+    });
+  } catch (error) {
+    console.error("[discover]", error);
+    return res.status(500).json({ success: false, message: "Discover failed" });
   }
 };

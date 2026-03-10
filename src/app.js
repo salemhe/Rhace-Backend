@@ -1,9 +1,10 @@
 import express from "express";
 import cors from "cors";
 import morgan from "morgan";
+import cookieParser from 'cookie-parser';
 import { authRoutes,
-adminRoutes,
-branchRoutes,
+  adminRoutes,
+  branchRoutes,
 menuRoutes,
 bookingRoutes,
 hotelRoutes,
@@ -33,6 +34,7 @@ availabilityRoutes } from "./routes/index.js"
 
 const app = express();
 
+app.use(cookieParser());
 app.use(express.json());
 app.use(cors({
   origin: ["http://localhost:5173", "https://rhace-frontend.vercel.app", "https://www.rhace.co", "52.31.139.75", "52.49.173.169", "52.214.14.220"],
