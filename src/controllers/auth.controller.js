@@ -3,6 +3,7 @@ import {
   generateAccessToken,
   generateRefreshToken,
   generateToken,
+  verifyRefreshToken,
 } from "../utils/jwt.js";
 import crypto from "crypto";
 import bcrypt from "bcrypt";
@@ -1042,6 +1043,7 @@ export const refreshAccessToken = async (req, res) => {
 
     return res.status(200).json({ accessToken });
   } catch (err) {
+    console.error(err);
     return res.status(403).json({ message: 'Invalid or expired refresh token' });
   }
 };

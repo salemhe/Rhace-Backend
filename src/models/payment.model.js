@@ -113,7 +113,12 @@ const paymentSchema = new mongoose.Schema({
             quantity: Number
         }],
         combos: [mongoose.Schema.Types.ObjectId],
-        table: {type: mongoose.Schema.Types.ObjectId, ref: "Table"}
+        table: [
+            {
+                _id: { type: mongoose.Schema.Types.ObjectId, ref: "Table" },
+                quantity: Number
+            }
+        ]
     },
     webhookProcessed: {
         type: Boolean,

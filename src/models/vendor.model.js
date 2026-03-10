@@ -224,10 +224,7 @@ const ClubVendor = Vendor.discriminator(
       type: String,
       enum: ["dj", "live-band", "standup", "karaoke", "spoken-word"],
     }],
-    dressCode: {
-      type: String,
-      enum: ["smart-casual", "formal", "casual", "none"],
-    },
+    dressCode: [{ type: String }],
     agePolicy: {
       type: String,
       enum: ["18+", "21+", "all-ages"],
