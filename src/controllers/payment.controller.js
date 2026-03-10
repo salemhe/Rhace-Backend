@@ -1071,7 +1071,7 @@ export const verifyPayment = async (req, res) => {
     }
 
     const existingTransaction = await Payment.findOne({ reference });
-    const amount = transaction.amount * 0.0092;
+    const amount = transaction.amount / 100;
 
     if (!existingTransaction) {
       // Save the payment
