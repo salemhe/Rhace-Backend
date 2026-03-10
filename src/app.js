@@ -28,7 +28,8 @@ payoutRoutes,
 reportRoutes,
 searchRoutes,
 staffRoutes,
-paystackRoutes } from "./routes/index.js"
+paystackRoutes,
+availabilityRoutes } from "./routes/index.js"
 
 
 const app = express();
@@ -72,6 +73,8 @@ app.use("/api/staff", staffRoutes)
 app.use("/api/reports", reportRoutes);
 
 app.use("/api/paystack/webhook", paystackRoutes);
+
+app.use("/api/availability", availabilityRoutes);
 
 app.use("/", (_req, res) => {
   res.send("Welcome to Rhace Backend API");

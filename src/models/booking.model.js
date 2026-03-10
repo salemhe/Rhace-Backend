@@ -88,6 +88,22 @@ const bookingSchema = new mongoose.Schema({
     reservationType: { 
         type: String,
         required: true
+    },
+    // Confirmation fields
+    confirmedAt: Date,
+    confirmedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Vendor"
+    },
+    confirmationMethod: {
+        type: String,
+        enum: ['manual', 'qr_code'],
+        default: null
+    },
+    qrConfirmationToken: {
+        type: String,
+        unique: true,
+        sparse: true
     }
     
 }, options);
@@ -129,15 +145,19 @@ const restaurantReservation = Booking.discriminator(
 const hotelReservation = Booking.discriminator(
     "hotelReservation",
     new mongoose.Schema({
-        checkInDate: { type: Date, required: true },
-        checkOutDate: { type: Date, required: true },
-        guests: { type: Number, required: true, min: 1 },
-        room: { 
-            type: mongoose.Schema.Types.ObjectId, 
-            ref: "RoomType",
-            required: true
-        },
-        specialRequest: String
+      checkInDate: { type: Date },
+      checkOutDate: { type: Date },
+      guests: { type: Number },
+      room: { type: mongoose.Schema.Types.ObjectId, ref: "RoomType" },
+      // Support for multiple rooms booking
+      rooms: [{
+        roomType: { type: mongoose.Schema.Types.ObjectId, ref: "RoomType", required: true },
+        quantity: { type: Number, default: 1, min: 1 },
+        pricePerNight: { type: Number, required: true },
+      }],
+      specialRequest: { type: String },
+      // Store total number of rooms booked
+      totalRooms: { type: Number, default: 0 },
     })
 );
 
@@ -151,6 +171,14 @@ const clubReservation = Booking.discriminator(
             type: mongoose.Schema.Types.ObjectId,
             ref: "Table",
         },
+        // Support for multiple tables booking
+        tables: [{
+            tableType: { type: mongoose.Schema.Types.ObjectId, ref: "TableType", required: true },
+            quantity: { type: Number, default: 1, min: 1 },
+            pricePerTable: { type: Number, required: true },
+        }],
+        // Store total number of tables booked
+        totalTables: { type: Number, default: 0 },
         combos: [{
             type: mongoose.Schema.Types.ObjectId,
             ref: "BottleSet"
