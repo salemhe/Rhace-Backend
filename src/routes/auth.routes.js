@@ -8,6 +8,8 @@ import {
   verifyOTP, // New import
   resendOTP, // New import
   registerAdmin,
+  refreshAccessToken,
+  logout,
 } from "../controllers/auth.controller.js";
 
 const router = express.Router();
@@ -20,5 +22,7 @@ router.post("/verify-otp", verifyOTP); // New route
 router.post("/resend-otp", resendOTP); // New route
 router.post("/forgot-password", forgotPassword);
 router.post("/reset-password", resetPassword);
+router.post("/refresh", refreshAccessToken);
+router.post("/logout", logout);
 
 export default router;
