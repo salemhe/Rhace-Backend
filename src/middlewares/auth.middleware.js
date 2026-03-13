@@ -31,12 +31,12 @@ export const protect = async (req, res, next) => {
       req.user.role = decoded.role;
 
             // Check if vendor is onboarded
-      // if (decoded.role === "vendor" && !req.user.isOnboarded) {
-      //   return res.status(403).json({ 
-      //     message: "Forbidden: Please complete vendor onboarding before accessing this resource.",
-      //     isOnboarded: false 
-      //   });
-      // }
+      if (decoded.role === "vendor" && !req.user.isOnboarded) {
+        return res.status(403).json({ 
+          message: "Forbidden: Please complete vendor onboarding before accessing this resource.",
+          isOnboarded: false 
+        });
+      }
 
       next();
     } catch (error) {
