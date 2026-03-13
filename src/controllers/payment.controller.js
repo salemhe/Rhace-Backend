@@ -749,12 +749,12 @@ export const initializePayment = async (req, res) => {
         message: "Missing restaurant required fields",
       });
     }
-    if (
-      reservationType === "hotel" &&
-      (!checkInDate || !checkOutDate || !guests || !roomId)
-    ) {
+    // Hotel fields optional for partPaid/deposits
+    if (reservationType === "hotel" && !partPaid && (!checkInDate || !checkOutDate || !guests || !roomId)) {
       return res.status(400).json({
-        message: "Missing hotel required fields",
+        message: "Hotel full payment requires: checkInDate, checkOutDate, guests, roomId",
+        missing: ["checkInDate", "checkOutDate", "guests", "roomId"],
+        fix: "Use partPaid: true for deposits"
       });
     }
     if (reservationType === "club" && (!date || !time || !guests || !drinks)) {
@@ -779,17 +779,23 @@ export const initializePayment = async (req, res) => {
         }, 0);
       }
 
-      if (reservationType === "hotel" && roomId) {
-        const room = await RoomType.findById(roomId);
-        if (!room) throw new Error("Room not found");
+      if (reservationType === "hotel") {
+        if (!roomId) {
+          // Default deposit amount for hotel without room details
+          totalAmount = 25000; // NGN 25k default deposit
+          console.log("Using default hotel deposit amount: 25000");
+        } else {
+          const room = await RoomType.findById(roomId);
+          if (!room) throw new Error("Room not found");
 
-        const nights = Math.ceil(
-          (new Date(checkOutDate) - new Date(checkInDate)) /
-            (1000 * 60 * 60 * 24),
-        );
-        totalAmount =
-          (room.pricePerNight - room.pricePerNight * (room.discount / 100)) *
-          nights;
+          const nights = Math.ceil(
+            (new Date(checkOutDate) - new Date(checkInDate)) /
+              (1000 * 60 * 60 * 24),
+          );
+          totalAmount =
+            (room.pricePerNight - room.pricePerNight * (room.discount / 100)) *
+            nights;
+        }
       }
 
       if (reservationType === "club" && drinks && table) {
