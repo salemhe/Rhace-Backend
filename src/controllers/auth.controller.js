@@ -967,6 +967,15 @@ export const resetPassword = async (req, res) => {
   }
 };
 
+export const logout = async (req, res) => {
+  res.clearCookie("refreshToken", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+  });
+  res.json({ message: "Logged out successfully" });
+};
+
 export const loginAdmin = async (req, res) => {
   const { email, password } = req.body;
 
