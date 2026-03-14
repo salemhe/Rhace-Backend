@@ -1,5 +1,10 @@
 import User from "../models/user.model.js";
-import { generateToken } from "../utils/jwt.js";
+import {
+  generateAccessToken,
+  generateRefreshToken,
+  generateToken,
+  verifyRefreshToken,
+} from "../utils/jwt.js";
 import crypto from "crypto";
 import bcrypt from "bcrypt";
 import * as otpService from "../services/otp.service.js"; // New import
@@ -118,17 +123,25 @@ export const loginVendor = async (req, res) => {
       });
     }
 
-    const token = generateToken(
+    const accessToken = generateAccessToken(
       user._id,
       user.role,
       user.isOnboarded,
       isVendor ? user.vendorType : null,
     );
+    const refreshToken = generateRefreshToken(user._id, user.role);
+
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
 
     return res.status(200).json({
       message: "Login successful.",
       vendor: user,
-      token,
+      accessToken,
       isOnboarded: user.isOnboarded,
     });
   } catch (err) {
@@ -535,29 +548,56 @@ export const registerGoogle = async (req, res) => {
     const userExists = await User.findOne({ email });
 
     if (userExists) {
-      return res.status(400).json({ message: "User already exists" });
-    }
+      if (!userExists.googleId) {
+        userExists.googleId = googleId;
+        userExists.profilePic = profilePic;
+        userExists.isVerified = true;
+        await userExists.save();
+      }
+      
+      const accessToken = generateAccessToken(userExists._id, userExists.role);
+      const refreshToken = generateRefreshToken(
+        userExists._id,
+        userExists.role,
+      );
 
-    const user = await User.create({
-      firstName,
-      lastName,
-      email,
-      googleId,
-      profilePic,
-      role: "user",
-      isVerified: true,
-    });
+      res.cookie("refreshToken", refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "strict",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      });
 
-    if (user) {
-      await otpService.sendAndSaveOTP(user.email); // Send OTP
-      return res.status(201).json({
-        message:
-          "User registered. Please verify your email with the OTP sent to your inbox.",
-        userId: user._id,
-        email: user.email,
+      return res.status(200).json({
+        message: "Registered successfully.",
+        user: userExists,
+        accessToken,
       });
     } else {
-      return res.status(400).json({ message: "Invalid user data" });
+      const user = await User.create({
+        firstName,
+        lastName,
+        email,
+        googleId,
+        profilePic,
+        role: "user",
+        isVerified: true,
+      });
+      const accessToken = generateAccessToken(user._id, user.role);
+      const refreshToken = generateRefreshToken(user._id, user.role);
+
+      res.cookie("refreshToken", refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "strict",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      });
+
+      return res.status(200).json({
+        message: "Registered successfully.",
+        user,
+        accessToken,
+      });
     }
   } catch (error) {
     return res.status(500).json({ message: error.message });
@@ -590,10 +630,23 @@ export const login = async (req, res) => {
       });
     }
 
-    return res.json({
-      message: "Login Succesfully!",
+    const accessToken = generateAccessToken(
+      user._id,
+      user.role,
+    );
+    const refreshToken = generateRefreshToken(user._id, user.role);
+
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    return res.status(200).json({
+      message: "Login successful.",
       user,
-      token: generateToken(user._id, "user"),
+      accessToken,
     });
   } catch (error) {
     return res.status(500).json({ message: error.message });
@@ -616,30 +669,62 @@ export const loginGoogle = async (req, res) => {
     });
 
     const payload = ticket.getPayload();
-    const {
-      email,
-      sub: googleId,
-      picture: profilePic,
-    } = payload;
+    const { email, sub: googleId, picture: profilePic } = payload;
 
-    const user = await User.findOne({ email });
+    const userExists = await User.findOne({ email });
 
-    if (!user) {
-      return res.status(401).json({ message: "User not Found, Sign up" });
+    if (userExists) {
+      if (!userExists.googleId) {
+        userExists.googleId = googleId;
+        userExists.profilePic = profilePic;
+        userExists.isVerified = true;
+        await userExists.save();
+      }
+
+      const accessToken = generateAccessToken(userExists._id, userExists.role);
+      const refreshToken = generateRefreshToken(
+        userExists._id,
+        userExists.role,
+      );
+
+      res.cookie("refreshToken", refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "strict",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      });
+
+      return res.status(200).json({
+        message: "Registered successfully.",
+        user: userExists,
+        accessToken,
+      });
+    } else {
+      const user = await User.create({
+        firstName,
+        lastName,
+        email,
+        googleId,
+        profilePic,
+        role: "user",
+        isVerified: true,
+      });
+      const accessToken = generateAccessToken(user._id, user.role);
+      const refreshToken = generateRefreshToken(user._id, user.role);
+
+      res.cookie("refreshToken", refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "strict",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      });
+
+      return res.status(200).json({
+        message: "Registered successfully.",
+        user,
+        accessToken,
+      });
     }
-
-    if (!user.googleId) {
-      user.googleId = googleId;
-      user.profilePic = profilePic;
-      user.isVerified = true;
-      await user.save();
-    }
-
-    return res.json({
-      message: "Login Succesfully!",
-      user,
-      token: generateToken(user._id, "user"),
-    });
   } catch (error) {
     console.error(error);
     return res.status(500).json({
@@ -667,17 +752,27 @@ export const verifyOTP = async (req, res) => {
     user.isVerified = true;
     await user.save();
 
+    const accessToken = generateAccessToken(
+      user._id,
+      user.role,
+      user.isOnboarded,
+      user.vendorType,
+    );
+    const refreshToken = generateRefreshToken(user._id, user.role);
+
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
     return res.status(200).json({
       message: "Email verified successfully.",
       _id: user._id,
       email: user.email,
       vendorType: user.vendorType,
-      token: generateToken(
-        user._id,
-        user.role,
-        user.isOnboarded,
-        user.vendorType,
-      ),
+      accessToken,
     });
   } catch (error) {
     return res.status(500).json({ message: error.message });
@@ -755,17 +850,27 @@ export const verifyVendorOTP = async (req, res) => {
     user.isVerified = true;
     await user.save();
 
+    const accessToken = generateAccessToken(
+      user._id,
+      user.role,
+      user.isOnboarded,
+      user.vendorType,
+    );
+    const refreshToken = generateRefreshToken(user._id, user.role);
+
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
     return res.status(200).json({
       message: "Email verified successfully.",
       _id: user._id,
       email: user.email,
       vendorType: user.vendorType,
-      token: generateToken(
-        user._id,
-        user.role,
-        user.isOnboarded,
-        user.vendorType,
-      ),
+      accessToken,
     });
   } catch (error) {
     return res.status(500).json({ message: error.message });

@@ -1,4 +1,4 @@
-import { verifyToken } from "../utils/jwt.js";
+import { verifyAccessToken, verifyToken } from "../utils/jwt.js";
 import User from "../models/user.model.js";
 import { Vendor } from "../models/vendor.model.js";
 
@@ -14,7 +14,7 @@ export const protect = async (req, res, next) => {
       token = req.headers.authorization.split(" ")[1];
 
             // Verify token
-      const decoded = verifyToken(token);
+      const decoded = verifyAccessToken(token);
 
       if (decoded.role === "vendor") {
         req.user = await Vendor.findById(decoded.id).select("_id role vendorType isOnboarded");

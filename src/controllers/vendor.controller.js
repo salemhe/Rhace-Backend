@@ -107,19 +107,22 @@ export const getVendors = async (req, res) => {
     const vendors = await Vendor.paginate(query, options);
 
     // Add derived reservation counts
-    const vendorsWithCounts = await Promise.all(
-      vendors.docs.map(async (vendor) => {
-        const reservationCount = await Reservation.countDocuments({
-          vendor: vendor._id,
-          status: { $nin: ["cancelled"] }, // Count all reservations except cancelled ones
-        });
-        return {
-          ...vendor.toObject(),
-          contactPerson: vendor.contactPerson || "Not specified",
-          reservationCount,
-        };
-      }),
+    const vendorIds = vendors.docs.map((v) => v._id);
+    const reservationCounts = await Reservation.aggregate([
+      {
+        $match: { vendor: { $in: vendorIds }, status: { $nin: ["cancelled"] } },
+      },
+      { $group: { _id: "$vendor", count: { $sum: 1 } } },
+    ]);
+
+    // Map counts to vendors
+    const countMap = Object.fromEntries(
+      reservationCounts.map((r) => [r._id.toString(), r.count]),
     );
+    const vendorsWithCounts = vendors.docs.map((vendor) => ({
+      ...vendor.toObject(),
+      reservationCount: countMap[vendor._id.toString()] || 0,
+    }));
 
     res.status(200).json({
       ...vendors,
@@ -570,9 +573,19 @@ export const updateVendor = async (req, res) => {
     }
 
     const allowedFields = [
-      'businessName', 'businessDescription', 'email', 'phone', 'address',
-      'website', 'priceRange', 'vendorTypeCategory', 'profileImages',
-      'percentageCharge', 'status', 'isVisible', 'contactPerson'
+      "businessName",
+      "businessDescription",
+      "email",
+      "phone",
+      "address",
+      "website",
+      "priceRange",
+      "vendorTypeCategory",
+      "profileImages",
+      "percentageCharge",
+      "status",
+      "isVisible",
+      "contactPerson",
     ];
 
     allowedFields.forEach((field) => {
