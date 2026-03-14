@@ -129,6 +129,7 @@ export const loginVendor = async (req, res) => {
       message: "Login successful.",
       vendor: user,
       token,
+      isOnboarded: user.isOnboarded,
     });
   } catch (err) {
     console.error(err);
