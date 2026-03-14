@@ -142,6 +142,7 @@ export const loginVendor = async (req, res) => {
       message: "Login successful.",
       vendor: user,
       accessToken,
+      isOnboarded: user.isOnboarded,
     });
   } catch (err) {
     console.error(err);
@@ -1009,50 +1010,4 @@ export const loginAdmin = async (req, res) => {
       error: err.message,
     });
   }
-};
-
-
-export const refreshAccessToken = async (req, res) => {
-  const token = req.cookies.refreshToken;
-
-  if (!token) {
-    return res.status(401).json({ message: 'No refresh token' });
-  }
-
-  try {
-    const decoded = verifyRefreshToken(token);
-
-    let user;
-    if (decoded.role === 'vendor') {
-      user = await Vendor.findById(decoded.id).select('_id role vendorType isOnboarded isVerified');
-    } else {
-      user = await User.findById(decoded.id).select('_id role status isVerified');
-    }
-
-    if (!user) {
-      return res.status(401).json({ message: 'User no longer exists' });
-    }
-
-    // Issue new access token
-    const accessToken = generateAccessToken(
-      user._id,
-      user.role,
-      user.isOnboarded || null,
-      user.vendorType || null,
-    );
-
-    return res.status(200).json({ accessToken });
-  } catch (err) {
-    console.error(err);
-    return res.status(403).json({ message: 'Invalid or expired refresh token' });
-  }
-};
-
-export const logout = async (req, res) => {
-  res.clearCookie('refreshToken', {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
-  });
-  return res.status(200).json({ message: 'Logged out successfully' });
 };

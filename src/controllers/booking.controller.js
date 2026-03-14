@@ -531,12 +531,57 @@ export const getReservations = async (req, res) => {
       .populate({ path: "drinks.drink" })
       .populate({ path: "combos" })
       .populate({ path: "table" })
+      .populate({ path: "rooms.roomType" })
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(parseInt(limit));
-    console.log(reservations)
 
     const total = await Booking.countDocuments(query);
+
+    // Transform single resId result to compact structure
+    if (resId && reservations.length === 1) {
+      const booking = reservations[0];
+      let rooms = [];
+
+      if (booking.reservationType === "hotelReservation") {
+        if (booking.rooms && booking.rooms.length > 0) {
+          // Multi-room: duplicate shared dates/guests
+          const numRooms = booking.rooms.length;
+          const guestsPerRoom = Math.floor((booking.guests || 1) / numRooms) || 1;
+          rooms = booking.rooms.map((room, index) => ({
+            roomId: room.roomType?._id?.toString() || room.roomType,
+            checkInDate: booking.checkInDate,
+            checkOutDate: booking.checkOutDate,
+            guests: guestsPerRoom
+          }));
+        } else if (booking.room) {
+          // Single room
+          rooms = [{
+            roomId: booking.room._id?.toString() || booking.room,
+            checkInDate: booking.checkInDate,
+            checkOutDate: booking.checkOutDate,
+            guests: booking.guests || 1
+          }];
+        }
+      }
+
+      const transformed = {
+        vendorId: booking.vendor?._id?.toString(),
+        reservationType: booking.reservationType.replace("Reservation", ""),
+        location: booking.location,
+        resId: booking.resId,
+        customerName: booking.customerName,
+        customerEmail: booking.customerEmail,
+        amount: booking.totalAmount || 0,
+        partPaid: booking.partPaid || false,
+        rooms
+      };
+
+      return res.status(200).json({
+        message: "Fetched Reservation Successfully",
+        data: transformed
+      });
+    }
 
     if (userId) {
       const now = new Date();
