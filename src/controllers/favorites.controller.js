@@ -4,6 +4,8 @@ import { Vendor } from "../models/vendor.model.js";
 
 export const getFavorites = async (req, res) => {
   try {
+    console.log('[FAVORITES] getFavorites called by user:', req.user?._id, 'role:', req.user?.role);
+
     const { page = 1, limit = 10, search, sortBy = "createdAt", sortOrder = "desc" } = req.query;
 
     const user = req.user._id;
@@ -23,6 +25,8 @@ export const getFavorites = async (req, res) => {
       .limit(parseInt(limit))
       .populate({ path: 'vendor', model: 'Vendor' });
 
+    console.log('[FAVORITES] Returning', favorites.length, 'favorites for user:', user);
+
     res.status(200).json({
       total: totalFavorites,
       page: parseInt(page),
@@ -30,6 +34,7 @@ export const getFavorites = async (req, res) => {
       favorites,
     });
   } catch (error) {
+    console.error('[FAVORITES] getFavorites error:', error.message);
     res.status(500).json({ message: error.message });
   }
 };
