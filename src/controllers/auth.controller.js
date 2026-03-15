@@ -654,53 +654,32 @@ export const login = async (req, res) => {
 };
 
 export const loginGoogle = async (req, res) => {
-  const { code } = req.body;
-  const client = new OAuth2Client(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET,
-    "postmessage",
-  );
   try {
+    const { code } = req.body;
+    if (!code) {
+      return res.status(400).json({ message: "Authorization code is missing." });
+    }
+    const client = new OAuth2Client(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      "postmessage"
+    );
     const { tokens } = await client.getToken(code);
-
     const ticket = await client.verifyIdToken({
       idToken: tokens.id_token,
       audience: process.env.GOOGLE_CLIENT_ID,
     });
-
     const payload = ticket.getPayload();
-    const { email, sub: googleId, picture: profilePic } = payload;
-
-    const userExists = await User.findOne({ email });
-
-    if (userExists) {
-      if (!userExists.googleId) {
-        userExists.googleId = googleId;
-        userExists.profilePic = profilePic;
-        userExists.isVerified = true;
-        await userExists.save();
-      }
-
-      const accessToken = generateAccessToken(userExists._id, userExists.role);
-      const refreshToken = generateRefreshToken(
-        userExists._id,
-        userExists.role,
-      );
-
-      res.cookie("refreshToken", refreshToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "strict",
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-      });
-
-      return res.status(200).json({
-        message: "Registered successfully.",
-        user: userExists,
-        accessToken,
-      });
-    } else {
-      const user = await User.create({
+    const {
+      email,
+      sub: googleId,
+      given_name: firstName,
+      family_name: lastName,
+      picture: profilePic,
+    } = payload;
+    let user = await User.findOne({ email });
+    if (!user) {
+      user = await User.create({
         firstName,
         lastName,
         email,
@@ -709,26 +688,36 @@ export const loginGoogle = async (req, res) => {
         role: "user",
         isVerified: true,
       });
-      const accessToken = generateAccessToken(user._id, user.role);
-      const refreshToken = generateRefreshToken(user._id, user.role);
-
-      res.cookie("refreshToken", refreshToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "strict",
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-      });
-
-      return res.status(200).json({
-        message: "Registered successfully.",
-        user,
-        accessToken,
-      });
+    } else {
+      if (!user.googleId) {
+        user.googleId = googleId;
+      }
+      if (!user.profilePic) {
+        user.profilePic = profilePic;
+      }
+      if (!user.isVerified) {
+        user.isVerified = true;
+      }
+      await user.save();
     }
+    const accessToken = generateAccessToken(user._id, user.role);
+    const refreshToken = generateRefreshToken(user._id, user.role);
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+    return res.status(200).json({
+      message: "Login successful.",
+      user,
+      accessToken,
+    });
   } catch (error) {
-    console.error(error);
+    console.error("Google login error:", error);
     return res.status(500).json({
-      message: "Error Logging in with Google",
+      message: "Error logging in with Google.",
+      error: error.message,
     });
   }
 };
