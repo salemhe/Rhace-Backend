@@ -654,6 +654,8 @@ export const login = async (req, res) => {
 };
 
 export const loginGoogle = async (req, res) => {
+  console.log("Headers:", req.headers);
+  console.log("Body:", req.body);
   try {
     const { code } = req.body;
     if (!code) {
