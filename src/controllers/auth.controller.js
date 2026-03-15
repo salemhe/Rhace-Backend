@@ -971,18 +971,40 @@ export const refreshAccessToken = async (req, res) => {
   try {
     const refreshToken = req.cookies.refreshToken;
     if (!refreshToken) {
+      console.error('[AUTH] No refresh token cookie found');
       return res.status(401).json({ message: "No refresh token provided" });
     }
 
-    const decoded = verifyRefreshToken(refreshToken);
-    const user = await User.findById(decoded.id);
+    let decoded;
+    try {
+      decoded = verifyRefreshToken(refreshToken);
+    } catch (jwtError) {
+      console.error('[AUTH] Refresh token verification failed:', jwtError.message);
+      return res.status(401).json({ message: "Invalid refresh token" });
+    }
+
+    // Try User first, then Vendor (vendors login via loginVendor)
+    let user = await User.findById(decoded.id).select('_id role isOnboarded vendorType');
+    if (!user) {
+      const Vendor = (await import('../models/vendor.model.js')).default;
+      user = await Vendor.findById(decoded.id).select('_id role isOnboarded vendorType');
+    }
 
     if (!user) {
+      console.error('[AUTH] User/Vendor not found for ID:', decoded.id);
       return res.status(404).json({ message: "User not found" });
     }
 
-    const newAccessToken = generateAccessToken(user._id, user.role);
-    const newRefreshToken = generateRefreshToken(user._id, user.role);
+    console.log('[AUTH] Refresh successful for user:', user._id, 'role:', decoded.role);
+
+    // Generate tokens (use decoded values + model data where needed)
+    const newAccessToken = generateAccessToken(
+      user._id, 
+      decoded.role, 
+      user.isOnboarded, 
+      user.vendorType
+    );
+    const newRefreshToken = generateRefreshToken(user._id, decoded.role);
 
     res.cookie("refreshToken", newRefreshToken, {
       httpOnly: true,
@@ -993,7 +1015,8 @@ export const refreshAccessToken = async (req, res) => {
 
     return res.status(200).json({ accessToken: newAccessToken });
   } catch (error) {
-    return res.status(401).json({ message: "Invalid refresh token" });
+    console.error('[AUTH] RefreshAccessToken error:', error);
+    return res.status(401).json({ message: "Refresh failed" });
   }
 };
 
