@@ -1,12 +1,13 @@
-
 import { v2 as cloudinary } from 'cloudinary';
 import { fileURLToPath } from 'url';
 import path from 'path';
-import fs from 'fs';
 import { nanoid } from 'nanoid';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// Validate Cloudinary config
+if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+  console.error('❌ Missing Cloudinary environment variables');
+  throw new Error('Cloudinary configuration is required');
+}
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -15,18 +16,33 @@ cloudinary.config({
 });
 
 export const uploadToCloudinary = async (fileBuffer, filename) => {
-  const tempFilePath = path.join(__dirname, `${nanoid()}-${filename}`);
-  fs.writeFileSync(tempFilePath, fileBuffer);
-
   try {
-    const result = await cloudinary.uploader.upload(tempFilePath, {
-      folder: "assets",
-      use_filename: true,
-      unique_filename: false,
+    const fileExtension = path.extname(filename).toLowerCase();
+    const publicId = `profile-pics/${nanoid()}-${path.basename(filename, fileExtension)}`;
+
+    const uploadOptions = {
+      public_id: publicId,
+      folder: 'profile-pics',
+      resource_type: 'image',
+      format: fileExtension.slice(1), // remove dot
       overwrite: true,
+    };
+
+    const result = await new Promise((resolve, reject) => {
+      cloudinary.uploader.upload_stream(uploadOptions, (error, result) => {
+        if (error) {
+          console.error('Cloudinary upload error:', error);
+          reject(error);
+        } else {
+          resolve(result);
+        }
+      }).end(fileBuffer);
     });
-    return result.secure_url
-  } finally {
-    fs.unlinkSync(tempFilePath);
+
+    return result.secure_url;
+  } catch (error) {
+    console.error('uploadToCloudinary failed:', error.message);
+    throw error;
   }
 };
+

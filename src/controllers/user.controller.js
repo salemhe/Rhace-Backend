@@ -128,6 +128,12 @@ export const changePassword = async (req, res) => {
 // @route   PUT /api/users/profile/picture
 // @access  Private (Authenticated User)
 export const updateProfilePicture = async (req, res) => {
+  // Validate Cloudinary config at runtime
+  if (!process.env.CLOUDINARY_CLOUD_NAME) {
+    console.error('Cloudinary not configured');
+    return res.status(500).json({ message: 'Image service temporarily unavailable' });
+  }
+
   try {
     if (!req.file) {
       return res.status(400).json({ message: "No image file provided" });
@@ -159,9 +165,18 @@ export const updateProfilePicture = async (req, res) => {
       profilePic: user.profilePic 
     });
   } catch (error) {
-    console.error("Profile picture update error:", error);
-    res.status(500).json({ message: "Failed to update profile picture" });
+    console.error("Profile picture update failed for user", req.user?._id, {
+      error: error.message,
+      stack: error.stack,
+      file: req.file ? {
+        originalname: req.file.originalname,
+        mimetype: req.file.mimetype,
+        size: req.file.size
+      } : null
+    });
+    res.status(500).json({ message: "Failed to update profile picture", error: process.env.NODE_ENV === 'development' ? error.message : undefined });
   }
+
 };
 
 // @desc    Get single user by ID
