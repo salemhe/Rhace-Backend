@@ -6,12 +6,7 @@ import RoomType from "../models/roomtype.model.js";
 import { Vendor } from "../models/vendor.model.js";
 import Reservation from "../models/reservation.model.js";
 
-// Emit real-time updates
-const emitDashboardUpdate = (userId, data) => {
-  if (global.io) {
-    global.io.to(`dashboard_${userId}`).emit('dashboard_update', data);
-  }
-};
+
 
 // @desc    Get dashboard KPIs
 // @route   GET /api/dashboard/kpis
@@ -224,8 +219,7 @@ export const getKPIs = async (req, res) => {
       revenueDelta,
     };
 
-    // Emit real-time update
-    emitDashboardUpdate(req.user._id, kpiData);
+
 
     res.status(200).json(kpiData);
   } catch (error) {
