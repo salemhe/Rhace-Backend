@@ -47,7 +47,8 @@ export const getTables = async (req, res) => {
     const sort = {};
     sort[sortBy] = sortOrder === "asc" ? 1 : -1;
 
-    const tables = await Table.find(query)
+const tables = await Table.find(query)
+      .populate('tableType', 'quantityAvailable seatingCapacity name')
       .sort(sort)
       .skip((page - 1) * limit)
       .limit(parseInt(limit));
@@ -66,7 +67,7 @@ export const getTables = async (req, res) => {
 export const getTableById = async (req, res) => {
   try {
     const { id } = req.params;
-    const table = await Table.findById(id)
+    const table = await Table.findById(id).populate('tableType', 'quantityAvailable seatingCapacity name');
     if (!table) {
       return res.status(404).json({ message: "Table not found" });
     }
@@ -74,7 +75,7 @@ export const getTableById = async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
-};
+  };
 
 
 export const updateTable = async (req, res) => {
@@ -91,7 +92,7 @@ export const updateTable = async (req, res) => {
       }
     }
 
-    const { clubId, name, price, addOns } = req.body;
+    const { clubId, tableType, name, price, addOns } = req.body;
 
     if (addOns.length < 4) {
       return res.status(401).json({
@@ -100,7 +101,7 @@ export const updateTable = async (req, res) => {
     }
 
 
-    const updatedTable = await Table.findByIdAndUpdate(id, { clubId, name, price, addOns }, { new: true });
+    const updatedTable = await Table.findByIdAndUpdate(id, { clubId, tableType, name, price, addOns }, { new: true }).populate('tableType', 'quantityAvailable seatingCapacity name');
     res.status(200).json(updatedTable);
   } catch (error) {
     res.status(400).json({ message: error.message });
