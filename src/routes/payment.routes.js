@@ -14,7 +14,7 @@ router.get("/vendors-earnings", protect, getVendorsEarnings)
 router.get("/paystack/transactions", protect, getPaystackTransactions);
 router.get("/paystack/balance", protect, getPaystackBalance);
 router.get("/admin-earnings", protect, getAdminTotalEarnings)
-router.get("/successful-count", protect, getPaystackSuccessfulCount)
+router.get("/successful-count", protect, getTotalSuccessfulPayments)
 router.post("/initialize", protect, initializePayment)
 router.post("/verify", protect, verifyPayment)
 
