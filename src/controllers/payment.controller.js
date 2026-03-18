@@ -1011,6 +1011,94 @@ export const getVendorsEarnings = async (req, res) => {
   }
 };
 
+export const getPaystackBalance = async (req, res) => {
+  try {
+    if (req.user.role !== "admin" && req.user.role !== "superadmin") {
+      return res.status(403).json({ message: "Access denied. Admin only." });
+    }
+
+    const response = await fetch("https://api.paystack.co/balance", {
+      headers: {
+        Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Paystack API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return res.json({
+      balance: data.data,
+      currency: data.data.currency || 'NGN'
+    });
+  } catch (error) {
+    console.error("Error fetching Paystack balance:", error);
+    return res.status(500).json({ error: "Failed to fetch balance" });
+  }
+};
+
+export const getPaystackTransactions = async (req, res) => {
+  try {
+    if (req.user.role !== "admin" && req.user.role !== "superadmin") {
+      return res.status(403).json({ message: "Access denied. Admin only." });
+    }
+
+    const { page = 1, per_page = 50, status } = req.query;
+    const params = new URLSearchParams({ page, per_page });
+    if (status) params.append('status', status);
+
+    const response = await fetch(`https://api.paystack.co/transaction?${params}`, {
+      headers: {
+        Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Paystack API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return res.json(data);
+  } catch (error) {
+    console.error("Error fetching Paystack transactions:", error);
+    return res.status(500).json({ error: "Failed to fetch transactions" });
+  }
+};
+
+export const getPaystackSuccessfulCount = async (req, res) => {
+  try {
+    if (req.user.role !== "admin" && req.user.role !== "superadmin") {
+      return res.status(403).json({ message: "Access denied. Admin only." });
+    }
+
+    const { from, to } = req.query;
+    const params = new URLSearchParams();
+    if (from) params.append('from', from);
+    if (to) params.append('to', to);
+
+    const response = await fetch(`https://api.paystack.co/statistics?${params}`, {
+      headers: {
+        Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Paystack API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return res.json({
+      successful: data.data?.success?.count || 0,
+      total: data.data?.total || 0,
+      stats: data.data
+    });
+  } catch (error) {
+    console.error("Error fetching Paystack stats:", error);
+    return res.status(500).json({ error: "Failed to fetch stats" });
+  }
+};
+
 export const verifyPayment = async (req, res) => {
   const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
   const userId = req.user?._id;
