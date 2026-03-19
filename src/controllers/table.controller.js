@@ -47,17 +47,24 @@ export const getTables = async (req, res) => {
     const sort = {};
     sort[sortBy] = sortOrder === "asc" ? 1 : -1;
 
-const tables = await Table.find(query)
+    const tables = await Table.find(query)
       .populate('tableType', 'quantityAvailable seatingCapacity name')
       .sort(sort)
       .skip((page - 1) * limit)
       .limit(parseInt(limit));
 
+    const tablesWithCapacity = tables.map(table => ({
+      ...table.toObject(),
+      seatingCapacity: table.tableType?.seatingCapacity || 0,
+      quantityAvailable: table.tableType?.quantityAvailable || 0,
+      tableTypeName: table.tableType?.name || 'Legacy Table'
+    }));
+
     res.status(200).json({
       total: totalTables,
       page: parseInt(page),
       limit: parseInt(limit),
-      tables,
+      tables: tablesWithCapacity,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -71,7 +78,13 @@ export const getTableById = async (req, res) => {
     if (!table) {
       return res.status(404).json({ message: "Table not found" });
     }
-    res.status(200).json(table);
+    const tableWithCapacity = {
+      ...table.toObject(),
+      seatingCapacity: table.tableType?.seatingCapacity || 0,
+      quantityAvailable: table.tableType?.quantityAvailable || 0,
+      tableTypeName: table.tableType?.name || 'Legacy Table'
+    };
+    res.status(200).json(tableWithCapacity);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -102,7 +115,13 @@ export const updateTable = async (req, res) => {
 
 
     const updatedTable = await Table.findByIdAndUpdate(id, { clubId, tableType, name, price, addOns }, { new: true }).populate('tableType', 'quantityAvailable seatingCapacity name');
-    res.status(200).json(updatedTable);
+    const updatedTableWithCapacity = {
+      ...updatedTable.toObject(),
+      seatingCapacity: updatedTable.tableType?.seatingCapacity || 0,
+      quantityAvailable: updatedTable.tableType?.quantityAvailable || 0,
+      tableTypeName: updatedTable.tableType?.name || 'Legacy Table'
+    };
+    res.status(200).json(updatedTableWithCapacity);
   } catch (error) {
     res.status(400).json({ message: error.message });
   }
