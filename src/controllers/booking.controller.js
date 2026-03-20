@@ -7,7 +7,7 @@ import {
 } from "../models/booking.model.js";
 import Payment from "../models/payment.model.js";
 import { sendBookingConfirmationEmail } from "../services/mail.service.js";
-import { getVendorSocket } from "../websockets/socketManager.js";
+import { getVendorSocket, getUserSocket } from "../websockets/socketManager.js";
 import dayjs from "dayjs";
 import axios from "axios";
 import { Vendor } from "../models/vendor.model.js";
@@ -1263,7 +1263,7 @@ export const confirmReservation = async (req, res) => {
       }
     );
 
-    // Emit real-time update
+    // Emit real-time update to vendor (existing)
     const vendorSocket = getVendorSocket(booking.vendor);
     if (vendorSocket && vendorSocket.readyState === 1) {
       vendorSocket.send(
@@ -1278,6 +1278,39 @@ export const confirmReservation = async (req, res) => {
           },
         })
       );
+    }
+
+    // NEW: Notify user via WebSocket
+    const userSocket = getUserSocket(booking.customerId.toString());
+    if (userSocket && userSocket.readyState === 1) {
+      userSocket.send(
+        JSON.stringify({
+          type: "reservation_confirmed",
+          data: {
+            bookingId: booking._id,
+            bookingCode: booking.bookingCode,
+            customerName: booking.customerName,
+            vendorName: booking.vendor?.businessName,
+            confirmedAt: booking.confirmedAt,
+            confirmationMethod: booking.confirmationMethod,
+            message: "Your reservation has been confirmed by the vendor!",
+          },
+        })
+      );
+      console.log(`Sent confirmation to user ${booking.customerId}`);
+    }
+
+    // NEW: Send confirmation email to customer
+    try {
+      const vendorType = booking.reservationType?.replace('Reservation', '').toLowerCase() || 'booking';
+      await sendBookingConfirmationEmail(
+        booking.customerEmail,
+        booking,
+        vendorType
+      );
+      console.log(`Confirmation email sent to ${booking.customerEmail}`);
+    } catch (emailError) {
+      console.error('Email notification failed:', emailError);
     }
 
     res.status(200).json({
@@ -1358,7 +1391,7 @@ export const confirmByQRCode = async (req, res) => {
       }
     );
 
-    // Emit real-time update
+    // Emit real-time update to vendor (existing)
     const vendorSocket = getVendorSocket(booking.vendor);
     if (vendorSocket && vendorSocket.readyState === 1) {
       vendorSocket.send(
@@ -1374,6 +1407,39 @@ export const confirmByQRCode = async (req, res) => {
           },
         })
       );
+    }
+
+    // NEW: Notify user via WebSocket
+    const userSocket = getUserSocket(booking.customerId.toString());
+    if (userSocket && userSocket.readyState === 1) {
+      userSocket.send(
+        JSON.stringify({
+          type: "reservation_confirmed",
+          data: {
+            bookingId: booking._id,
+            bookingCode: booking.bookingCode,
+            customerName: booking.customerName,
+            vendorName: booking.vendor?.businessName,
+            confirmedAt: booking.confirmedAt,
+            confirmationMethod: booking.confirmationMethod,
+            message: "Your reservation has been confirmed by the vendor via QR code!",
+          },
+        })
+      );
+      console.log(`Sent QR confirmation to user ${booking.customerId}`);
+    }
+
+    // NEW: Send confirmation email to customer
+    try {
+      const vendorType = booking.reservationType?.replace('Reservation', '').toLowerCase() || 'booking';
+      await sendBookingConfirmationEmail(
+        booking.customerEmail,
+        booking,
+        vendorType
+      );
+      console.log(`QR confirmation email sent to ${booking.customerEmail}`);
+    } catch (emailError) {
+      console.error('QR confirmation email failed:', emailError);
     }
 
     res.status(200).json({
