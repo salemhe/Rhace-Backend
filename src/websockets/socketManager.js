@@ -1,6 +1,7 @@
 import { WebSocketServer } from 'ws';
 
 const vendorSockets = new Map();
+const userSockets = new Map();
 
 function setupWebSocket(server) {
   const wss = new WebSocketServer ({ server });
@@ -29,26 +30,42 @@ function setupWebSocket(server) {
 
       console.log(`Connection type: ${userType}, id: ${userId}`);
 
-      if (userType === 'vendor') {
-        vendorSockets.set(userId, ws);
-        console.log(`Vendor ${userId} connected`);
+        if (userType === 'vendor') {
+          vendorSockets.set(userId, ws);
+          console.log(`Vendor ${userId} connected`);
 
-        ws.on('message', (message) => {
-          console.log(`Received message from vendor ${userId}:`, message);
-        });
+          ws.on('message', (message) => {
+            console.log(`Received message from vendor ${userId}:`, message);
+          });
 
-        ws.on('close', (code, reason) => {
-          vendorSockets.delete(userId);
-          console.log(`Vendor ${userId} disconnected: code=${code}, reason=${reason}`);
-        });
+          ws.on('close', (code, reason) => {
+            vendorSockets.delete(userId);
+            console.log(`Vendor ${userId} disconnected: code=${code}, reason=${reason}`);
+          });
 
-        ws.on('error', (err) => {
-          console.error(`WebSocket error from vendor ${userId}:`, err);
-        });
-      } else {
-        console.log(`Unknown userType: ${userType}, closing connection`);
-        ws.close(1008, 'Unauthorized userType');
-      }
+          ws.on('error', (err) => {
+            console.error(`WebSocket error from vendor ${userId}:`, err);
+          });
+        } else if (userType === 'user') {
+          userSockets.set(userId, ws);
+          console.log(`User ${userId} connected`);
+
+          ws.on('message', (message) => {
+            console.log(`Received message from user ${userId}:`, message.toString());
+          });
+
+          ws.on('close', (code, reason) => {
+            userSockets.delete(userId);
+            console.log(`User ${userId} disconnected: code=${code}, reason=${reason}`);
+          });
+
+          ws.on('error', (err) => {
+            console.error(`WebSocket error from user ${userId}:`, err);
+          });
+        } else {
+          console.log(`Unknown userType: ${userType}, closing connection`);
+          ws.close(1008, 'Unauthorized userType');
+        }
     } catch (err) {
       console.error('Error in connection handler:', err);
       ws.close(1011, 'Internal server error');
@@ -60,4 +77,8 @@ function getVendorSocket(vendorId) {
   return vendorSockets.get(vendorId);
 }
 
-export { setupWebSocket, getVendorSocket };
+function getUserSocket(userId) {
+  return userSockets.get(userId);
+}
+
+export { setupWebSocket, getVendorSocket, getUserSocket };
