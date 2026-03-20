@@ -1133,21 +1133,34 @@ export const verifyQRCode = async (req, res) => {
 export const confirmReservation = async (req, res) => {
   try {
     const { id } = req.params;
-    const { resId, paymentId } = req.body;
-    const vendorId = req.body.vendorId || req.user._id;
-
-    // NEW VALIDATION: Require hotelReservation.resId and hotelReservation.payment
-    if (!resId || !paymentId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Missing required fields for hotel reservation confirmation: resId and paymentId',
-        required: ['resId', 'paymentId']
-      });
-    }
+    const { resId: bodyResId, paymentId: bodyPaymentId, vendorId } = req.body;
+    const effectiveVendorId = vendorId || req.user?._id;
 
     const booking = await Booking.findById(id).populate('paymentRef');
     if (!booking) {
       return res.status(404).json({ message: "Booking not found" });
+    }
+
+    // Auto-resolve from booking document (always available)
+    const effectiveResId = booking.resId;
+    const effectivePaymentId = booking.paymentRef?._id?.toString();
+
+    // Optional: validate if body provided (for security/extra check)
+    if (bodyResId && bodyResId !== effectiveResId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Provided resId does not match booking.resId',
+        bookingResId: effectiveResId,
+        providedResId: bodyResId
+      });
+    }
+    if (bodyPaymentId && bodyPaymentId !== effectivePaymentId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Provided paymentId does not match booking.paymentRef',
+        bookingPaymentId: effectivePaymentId,
+        providedPaymentId: bodyPaymentId
+      });
     }
 
     // Validate hotelReservation type
@@ -1159,32 +1172,13 @@ export const confirmReservation = async (req, res) => {
       });
     }
 
-    // Validate hotelReservation.resId matches
-    if (booking.resId !== resId) {
+    // Validate payment exists & successful (using effective values)
+    if (!booking.paymentRef || booking.paymentRef.status !== 'success') {
       return res.status(400).json({
         success: false,
-        message: 'Provided resId does not match hotelReservation.resId',
-        bookingResId: booking.resId,
-        providedResId: resId
-      });
-    }
-
-    // Validate hotelReservation.payment (paymentRef) matches
-    if (!booking.paymentRef || booking.paymentRef._id.toString() !== paymentId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Provided paymentId does not match hotelReservation.paymentRef',
-        bookingPaymentRef: booking.paymentRef?._id?.toString(),
-        providedPaymentId: paymentId
-      });
-    }
-
-    // Validate payment status
-    if (booking.paymentRef.status !== 'success') {
-      return res.status(400).json({
-        success: false,
-        message: 'Payment must be successful (status: "success") before confirmation',
-        paymentStatus: booking.paymentRef.status
+        message: 'Payment must exist and have status "success" before confirmation',
+        paymentStatus: booking.paymentRef?.status || 'missing',
+        effectivePaymentId
       });
     }
 
@@ -1197,7 +1191,7 @@ export const confirmReservation = async (req, res) => {
       });
     }
 
-    if (booking.vendor.toString() !== vendorId) {
+    if (booking.vendor.toString() !== effectiveVendorId) {
       const userRole = req.user?.role;
       if (userRole !== "superadmin" && userRole !== "admin") {
         return res.status(403).json({ message: "Not authorized to confirm this reservation" });
@@ -1210,12 +1204,12 @@ export const confirmReservation = async (req, res) => {
     booking.reservationStatus = "confirmed";
     await booking.save();
 
-    await recordAuditLog(vendorId || req.user?._id, "RESERVATION_CONFIRMED", "Booking", booking._id, {
-      confirmedBy: vendorId || req.user?._id,
+    await recordAuditLog(effectiveVendorId, "RESERVATION_CONFIRMED", "Booking", booking._id, {
+      confirmedBy: effectiveVendorId,
       confirmationMethod: "manual",
       previousStatus: booking.reservationStatus,
-      validatedResId: resId,
-      validatedPaymentId: paymentId
+      effectiveResId,
+      effectivePaymentId
     });
 
     const vendorSocket = getVendorSocket(booking.vendor);
@@ -1260,12 +1254,12 @@ export const confirmReservation = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: "Hotel reservation confirmed successfully after resId and payment validation",
+      message: "Hotel reservation confirmed successfully",
       data: {
         bookingId: booking._id,
         bookingCode: booking.bookingCode,
-        resId: booking.resId,
-        paymentId: booking.paymentRef._id.toString(),
+        resId: effectiveResId,
+        paymentId: effectivePaymentId,
         confirmedAt: booking.confirmedAt,
         confirmedBy: booking.confirmedBy,
         confirmationMethod: booking.confirmationMethod,
