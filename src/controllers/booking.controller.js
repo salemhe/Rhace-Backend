@@ -911,7 +911,7 @@ export async function createReservationFromPayment(payment) {
     location: metadata.location,
     totalAmount: payment.amount,
     paymentStatus: payment.payLater ? "not_paid" : payment.partPaid ? "partly_paid" : "paid",
-    reservationStatus: "upcoming",
+reservationStatus: payment.payLater ? "upcoming" : "confirmed",
     payLater: payment.payLater,
     partPaid: payment.partPaid,
     reservationType: metadata.reservationType + "Reservation",
@@ -1070,7 +1070,17 @@ export async function completePayment(req, res) {
      "room" : "drinks.drink combos table";
 
     
-    await reservation.populate(`vendor ${populate}`);
+await reservation.populate(`vendor ${populate}`);
+    
+    // Auto-confirm reservation on successful payment (non-payLater)
+    if (!reservation.confirmedAt && payment.status === "success" && !payment.payLater) {
+      reservation.reservationStatus = "confirmed";
+      reservation.confirmedAt = new Date();
+      reservation.confirmedBy = reservation.vendor._id;
+      await reservation.save();
+      
+      console.log(`Auto-confirmed reservation ${reservation._id} for payment ${payment._id}`);
+    }
     
     if (isNewBooking) {
       sendBookingConfirmationEmail(
