@@ -985,6 +985,13 @@ reservationStatus: payment.payLater ? "upcoming" : "confirmed",
     reservation = reservation[0];
   }
 
+    // 🛡️ Validate club reservation required fields from metadata
+    if (metadata.reservationType === "club") {
+      if (!metadata.date || !metadata.time || !metadata.guests || !metadata.drinks || !Array.isArray(metadata.drinks) || metadata.drinks.length === 0) {
+        throw new Error("clubReservation validation failed: Missing required metadata fields - date, time, guests, drinks[array]");
+      }
+    }
+
   if (metadata.reservationType === "club") {
     reservation = await clubReservation.create(
       [
