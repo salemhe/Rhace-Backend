@@ -308,14 +308,37 @@ export const createReservation = async (req, res) => {
       payLater,
     } = req.body;
 
-    console.log(req.body);
-    if (!vendor || !reservationType || !location || !totalAmount || !resId) {
-      return res.status(400).json({ message: "Fill required fields" });
+    console.log('Received body:', req.body);
+
+    // Enhanced validation for clubReservation
+    const requiredBaseFields = ['resId', 'vendor', 'customerName', 'customerId', 'customerEmail', 'reservationType', 'location', 'totalAmount'];
+    const missingBase = requiredBaseFields.filter(field => !req.body[field]);
+    if (missingBase.length > 0) {
+      return res.status(400).json({ 
+        message: `Missing required base fields: ${missingBase.join(', ')}`,
+        required: requiredBaseFields
+      });
+    }
+
+    // Club-specific validation
+    if (reservationType === 'club') {
+      const clubRequired = ['date', 'time', 'guests', 'drinks'];
+      const missingClub = clubRequired.filter(field => !req.body[field]);
+      if (missingClub.length > 0) {
+        return res.status(400).json({ 
+          message: `Missing required club fields: ${missingClub.join(', ')}`,
+          required: clubRequired
+        });
+      }
     }
 
     const payment = await Payment.findOne({ booking: resId });
-    if (!payment)
-      return res.status(400).json({ message: "Payment Before Booking!" });
+    if (!payment) {
+      return res.status(400).json({ 
+        message: `Payment not found for booking: ${resId}. Create payment first with resId.`,
+        hint: 'Ensure payment has {booking: resId} field matching this resId'
+      });
+    }
 
     // ============================================
     // AVAILABILITY CHECK - Prevent Double Booking
@@ -358,7 +381,7 @@ export const createReservation = async (req, res) => {
       reservationStatus: "upcoming",
       location,
       totalAmount,
-      paymentStatus: partPaid ? "partly_paid" : payLater ? "not_paid" : "paid",
+      paymentStatus: (partPaid ? "partly_paid" : payLater ? "not_paid" : "paid"),
       payLater,
       partPaid,
       qrConfirmationToken,
