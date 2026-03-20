@@ -81,9 +81,12 @@ export const changePassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
 
-    if (!currentPassword || !newPassword) {
+
+    console.log('Password change req.body:', { hasCurrent: !!currentPassword, hasNew: !!newPassword, currentLength: currentPassword?.length || 0, newLength: newPassword?.length || 0, bodyKeys: Object.keys(req.body || {}) });
+    if (!currentPassword?.trim() || !newPassword?.trim() || currentPassword.trim().length === 0 || newPassword.trim().length === 0) {
       return res.status(400).json({ message: "Current password and new password are required" });
     }
+
 
     if (newPassword.length < 6) {
       return res.status(400).json({ message: "New password must be at least 6 characters long" });
