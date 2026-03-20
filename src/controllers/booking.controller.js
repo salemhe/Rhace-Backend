@@ -935,12 +935,24 @@ export async function createReservationFromPayment(payment) {
     location: metadata.location,
     totalAmount: payment.amount,
     paymentStatus: payment.payLater ? "not_paid" : payment.partPaid ? "partly_paid" : "paid",
-reservationStatus: payment.payLater ? "upcoming" : "confirmed",
+    reservationStatus: payment.payLater ? "upcoming" : "confirmed",
     payLater: payment.payLater,
     partPaid: payment.partPaid,
-    reservationType: metadata.reservationType + "Reservation",
+    reservationType: (metadata.reservationType || "").replace(/Reservation$/i, "") + "Reservation",
     qrConfirmationToken,
   };
+
+  if (!baseData.resId || !baseData.paymentRef) {
+    throw new Error("clubReservation validation failed: Missing required base fields - resId, paymentRef");
+  }
+
+  const isClubType = ["club", "clubReservation"].includes((metadata.reservationType || "").toLowerCase());
+
+  if (isClubType) {
+    if (!metadata.date || !metadata.time || !metadata.guests || !metadata.drinks || !Array.isArray(metadata.drinks) || metadata.drinks.length === 0) {
+      throw new Error("clubReservation validation failed: Missing required metadata fields - date, time, guests, drinks[array]");
+    }
+  }
 
   let reservation;
   if (metadata.reservationType === "restaurant") {
@@ -992,7 +1004,7 @@ reservationStatus: payment.payLater ? "upcoming" : "confirmed",
       }
     }
 
-  if (metadata.reservationType === "club") {
+  if (isClubType) {
     reservation = await clubReservation.create(
       [
         {
