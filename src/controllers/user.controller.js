@@ -79,10 +79,12 @@ export const getUsers = async (req, res) => {
 // @access  Private (Authenticated User)
 export const changePassword = async (req, res) => {
   try {
-    const { currentPassword, newPassword } = req.body;
 
+    const bodyData = req.body.data || req.body;
+    const { currentPassword, newPassword } = bodyData;
 
-    console.log('Password change req.body:', { hasCurrent: !!currentPassword, hasNew: !!newPassword, currentLength: currentPassword?.length || 0, newLength: newPassword?.length || 0, bodyKeys: Object.keys(req.body || {}) });
+    console.log('Password change req.body:', req.body, 'bodyData:', bodyData);
+
     if (!currentPassword?.trim() || !newPassword?.trim() || currentPassword.trim().length === 0 || newPassword.trim().length === 0) {
       return res.status(400).json({ message: "Current password and new password are required" });
     }
