@@ -381,7 +381,7 @@ export const createReservation = async (req, res) => {
       reservationStatus: "upcoming",
       location,
       totalAmount,
-      paymentStatus: (partPaid ? "partly_paid" : payLater ? "not_paid" : "paid"),
+      paymentStatus: (partPaid ? "Part Paid" : payLater ? "Pay Later" : "Paid"),
       payLater,
       partPaid,
       qrConfirmationToken,
@@ -1521,12 +1521,21 @@ export const createMultiTableReservation = async (req, res) => {
       specialRequest,
       partPaid,
       payLater,
+      resId,
+      paymentRef,
     } = req.body;
 
     // Validate required fields
     if (!vendor || !location || !date || !time || !tables || tables.length === 0) {
+      const missing = [];
+      if (!vendor) missing.push('vendor');
+      if (!location) missing.push('location');
+      if (!date) missing.push('date');
+      if (!time) missing.push('time');
+      if (!tables || tables.length === 0) missing.push('tables');
+
       return res.status(400).json({ 
-        message: "Fill required fields: vendor, location, date, time, and at least one table" 
+        message: `Missing required fields: ${missing.join(', ')}`
       });
     }
 
@@ -1547,10 +1556,68 @@ export const createMultiTableReservation = async (req, res) => {
       totalTables += tableItem.quantity;
     }
 
+    const generateUniqueResId = async () => {
+      let candidate = `RES${Date.now()}${Math.random().toString(36).substr(2, 9)}`.toUpperCase();
+      while (await Payment.findOne({ booking: candidate }) || await Booking.findOne({ resId: candidate })) {
+        candidate = `RES${Date.now()}${Math.random().toString(36).substr(2, 9)}`.toUpperCase();
+      }
+      return candidate;
+    };
+
+    let effectiveResId = resId;
+    let effectivePaymentRef = paymentRef;
+
+    if (!effectiveResId && effectivePaymentRef) {
+      const pem = await Payment.findById(effectivePaymentRef);
+      if (pem) effectiveResId = pem.booking;
+    }
+
+    if (!effectiveResId) {
+      effectiveResId = await generateUniqueResId();
+    }
+
+    if (!effectivePaymentRef) {
+      const existingPayment = await Payment.findOne({ booking: effectiveResId });
+      if (existingPayment) {
+        effectivePaymentRef = existingPayment._id;
+      }
+    }
+
+    if (!effectivePaymentRef) {
+      const createdPayment = await Payment.create({
+        vendor,
+        booking: effectiveResId,
+        user: customerId || req.user._id,
+        email: customerEmail,
+        customerName,
+        amount: totalAmount,
+        amountPaid: payLater ? 0 : partPaid ? totalAmount / 2 : totalAmount,
+        status: payLater ? 'pending' : partPaid ? 'partly_paid' : 'success',
+        payLater,
+        partPaid,
+        booked: !payLater,
+        metadata: {
+          vendorId: vendor,
+          reservationType: 'club',
+          location,
+          date,
+          time,
+          guests,
+          drinks,
+          combos,
+          table: tables,
+          specialRequest,
+        },
+      });
+      effectivePaymentRef = createdPayment._id;
+    }
+
     const bookingCode = generateBookingCode();
     const qrConfirmationToken = crypto.randomBytes(32).toString("hex");
 
     const initialData = {
+      resId: effectiveResId,
+      paymentRef: effectivePaymentRef,
       customerName,
       customerId,
       customerEmail,
