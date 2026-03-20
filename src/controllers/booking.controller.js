@@ -1549,7 +1549,7 @@ export const createMultiTableReservation = async (req, res) => {
       customerEmail,
       vendor,
       reservationType: "clubReservation",
-      reservationStatus: "Upcoming",
+      reservationStatus: "upcoming",
       location,
       totalAmount,
       paymentStatus: partPaid ? "partly_paid" : payLater ? "not_paid" : "paid",
