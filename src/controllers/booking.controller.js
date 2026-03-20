@@ -1247,6 +1247,7 @@ export const confirmReservation = async (req, res) => {
     booking.confirmedAt = new Date();
     booking.confirmedBy = vendorId || req.user?._id;
     booking.confirmationMethod = "manual";
+    booking.reservationStatus = 'confirmed';
     await booking.save();
 
     // Record audit log
@@ -1340,6 +1341,7 @@ export const confirmByQRCode = async (req, res) => {
     booking.confirmedAt = new Date();
     booking.confirmedBy = vendorId || req.user?._id;
     booking.confirmationMethod = "qr_code";
+    booking.reservationStatus = 'confirmed';
     await booking.save();
 
     // Record audit log
