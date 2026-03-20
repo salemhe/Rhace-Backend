@@ -348,18 +348,19 @@ export const createReservation = async (req, res) => {
 
     const initialData = {
       resId,
+      bookingCode,
+      paymentRef: payment._id,
       customerName,
       customerId,
       customerEmail,
       vendor,
       reservationType: reservationType + "Reservation",
-      reservationStatus: "Upcoming",
+      reservationStatus: "upcoming",
       location,
       totalAmount,
-      paymentStatus: partPaid ? "Part Paid" : payLater ? "Pay Later" : "Paid",
+      paymentStatus: partPaid ? "partly_paid" : payLater ? "not_paid" : "paid",
       payLater,
-      paidFor: true,
-      bookingCode,
+      partPaid,
       qrConfirmationToken,
     };
 
