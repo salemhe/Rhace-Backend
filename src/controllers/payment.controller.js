@@ -757,9 +757,15 @@ export const initializePayment = async (req, res) => {
         fix: "Use partPaid: true for deposits"
       });
     }
-    if (reservationType === "club" && (!date || !time || !guests || !drinks)) {
+    if (reservationType === "club" && (!date || !time || !guests || !drinks || !Array.isArray(drinks) || drinks.length === 0)) {
       return res.status(400).json({
-        message: "Missing club required fields",
+        message: "Club requires: date(Date), time(HH:MM format), guests(number), drinks(non-empty array of {drink: ObjectId, quantity: number})",
+        missing: {
+          date: !!date,
+          time: !!time,
+          guests: !!guests,
+          drinks: Array.isArray(drinks) ? drinks.length > 0 : false
+        }
       });
     }
 
