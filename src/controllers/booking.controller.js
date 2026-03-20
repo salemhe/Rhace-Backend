@@ -1217,7 +1217,7 @@ export const verifyQRCode = async (req, res) => {
 export const confirmReservation = async (req, res) => {
   try {
     const { id } = req.params;
-    const { vendorId } = req.body; // Vendor confirming the reservation
+    const vendorId = req.body.vendorId || req.user._id; // Use body or authenticated user
 
     const booking = await Booking.findById(id);
     if (!booking) {
@@ -1235,7 +1235,7 @@ export const confirmReservation = async (req, res) => {
     }
 
     // Verify vendor owns this booking (if vendor is confirming)
-    if (vendorId && booking.vendor.toString() !== vendorId) {
+    if (booking.vendor.toString() !== vendorId) {
       // Admin can confirm any booking
       const userRole = req.user?.role;
       if (userRole !== "superadmin" && userRole !== "admin") {
@@ -1302,7 +1302,8 @@ export const confirmReservation = async (req, res) => {
 // @access  Private (Vendor, Admin)
 export const confirmByQRCode = async (req, res) => {
   try {
-    const { token, vendorId } = req.body;
+    const { token, vendorId: bodyVendorId } = req.body;
+    const vendorId = bodyVendorId || req.user._id; // Use body or authenticated user
 
     if (!token) {
       return res.status(400).json({ message: "QR token is required" });

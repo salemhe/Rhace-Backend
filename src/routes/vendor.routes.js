@@ -2,6 +2,7 @@ import express from "express";
 import {protect} from "../middlewares/auth.middleware.js"
 import { getVendor, forgotVendorPassword, loginVendor, onboardVendor, updateVendor, registerVendor, resendVendorOTP, resetPassword, verifyVendorOTP } from "../controllers/auth.controller.js";
 import { getVendorById, getOffers, getNearest, getTopRated, getVendorStats, deleteVendor } from "../controllers/vendor.controller.js";
+import { confirmReservation, confirmByQRCode } from "../controllers/booking.controller.js";
 
 
 const router = express.Router();
@@ -49,4 +50,9 @@ router.get("/stats", protect, getVendorStats)
 router.get("/:id", protect, getVendorById)
 router.put("/:id", protect, updateVendor)
 router.delete("/:id", protect, deleteVendor)
+
+// Vendor proxy routes for reservation confirmation
+router.post("/bookings/:id/confirm", protect, confirmReservation);
+router.post("/bookings/confirm-by-qr", protect, confirmByQRCode);
+
 export default router;
