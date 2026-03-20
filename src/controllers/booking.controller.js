@@ -511,6 +511,7 @@ export const getReservations = async (req, res) => {
     const reservations = await Booking.find(query)
       .populate({ path: "menus.menu" })
       .populate({ path: "vendor" })
+      .populate({ path: "paymentRef" })
       .populate({ path: "room" })
       .populate({ path: "drinks.drink" })
       .populate({ path: "combos" })
