@@ -1180,13 +1180,27 @@ export const confirmReservation = async (req, res) => {
     );
 
     if (!isPaymentValid) {
-      return res.status(400).json({
-        success: false,
-        message: 'Payment must be completed (status "success" or fully paid)',
-        paymentStatus: payment?.status || 'missing',
+      console.log('🚫 Payment validation failed:', {
+        paymentId: effectivePaymentId,
+        paymentStatus: payment?.status,
         amountDue: payment?.amount,
         amountPaid: payment?.amountPaid,
-        effectivePaymentId
+        isSuccessStatus: payment?.status === 'success',
+        isFullyPaid: payment?.amountPaid >= payment?.amount,
+        rawPayment: payment
+      });
+      
+      return res.status(400).json({
+        success: false,
+        message: `Payment validation failed. Expected status="success" or fully paid. Current: "${payment?.status || 'missing'}"`,
+        paymentStatus: payment?.status || 'missing',
+        amountDue: payment?.amount || 0,
+        amountPaid: payment?.amountPaid || 0,
+        isSuccessStatus: payment?.status === 'success',
+        isFullyPaid: payment?.amountPaid >= (payment?.amount || 0),
+        effectivePaymentId,
+        debug: 'Use Paystack webhook or manually set payment.status="success" in DB',
+        fix: 'Test with: db.payments.updateOne({_id: ObjectId("PAYMENT_ID")}, {$set: {status: "success"}})'
       });
     }
 
