@@ -1156,20 +1156,28 @@ export const confirmReservation = async (req, res) => {
     let payment = booking.paymentRef;
     console.log('💳 Payment lookup #1 (from booking.paymentRef):', payment?._id || 'MISSING');
 
-    if (!payment && booking.resId) {
-      payment = await Payment.findOne({ booking: booking.resId });
-      console.log('💳 Fallback #1 (by resId):', payment?._id || 'NOT FOUND');
+    if (!payment) {
+      if (booking.resId) {
+        payment = await Payment.findOne({ booking: booking.resId });
+        console.log('💳 Fallback #1 (by resId):', payment?._id || 'NOT FOUND');
+      }
       
-      if (payment) {
-        booking.paymentRef = payment._id;
-        await booking.save();
-        console.log('🔧 Auto-fixed booking.paymentRef');
+      if (!payment && booking._id) {
+        payment = await Payment.findOne({ booking: booking._id.toString() });
+        console.log('💳 Fallback #2 (by booking ID):', payment?._id || 'NOT FOUND');
       }
     }
-
-    if (!payment && booking._id) {
-      payment = await Payment.findOne({ booking: booking._id.toString() });
-      console.log('💳 Fallback #2 (by booking ID):', payment?._id || 'NOT FOUND');
+    
+    if (!payment) {
+      return res.status(400).json({
+        success: false,
+        message: 'No payment found for this booking. Check payments collection.',
+        bookingId: booking._id,
+        bookingResId: booking.resId,
+        debug: [
+          `db.payments.find({ $or: [{booking: "${booking.resId || 'MISSING'}"}, {booking: ObjectId("${booking._id}")}] })`
+        ]
+      });
     }
 
 
@@ -1178,7 +1186,7 @@ export const confirmReservation = async (req, res) => {
 
     // Validate payment exists & successful
     const isPaymentValid = payment.status === 'success' && 
-                          payment.amountPaid >= (payment.amount * 0.95);;
+                          payment.amountPaid >= (payment.amount * 0.95);
 
     if (!isPaymentValid) {
       console.log('🚫 Payment validation failed:', {
