@@ -80,20 +80,36 @@ async function handleSuccessfulPayment(data) {
       console.log("⏭️  Reservation already exists:", reservation.resId);
     }
 
-    await Payment.updateOne(
-      { _id: paymentId },
-      {
-        status: "success",
-        booked: true,
-        webhookProcessed: true,
-        webhookProcessedAt: new Date(),
-        webhookAttempts: payment.webhookAttempts + 1 || 1,
-        paystackData: data,
-        paidAt: data.paid_at,
-        reservationId: reservation._id,
-        paymentMethod: data.channel,
-      },
-    );
+        // ✅ Update payment status first
+        await Payment.updateOne(
+          { _id: paymentId },
+          {
+            status: "success",
+            booked: true,
+            webhookProcessed: true,
+            webhookProcessedAt: new Date(),
+            webhookAttempts: payment.webhookAttempts + 1 || 1,
+            paystackData: data,
+            paidAt: data.paid_at,
+            reservationId: reservation._id,
+            paymentMethod: data.channel,
+          },
+        );
+
+        // ✅ TASK 1: Update ALL matching reservations paymentStatus = "paid"
+        // Handle both main Booking model AND dashboard Reservation model
+        const [mainBookingsUpdated, dashboardReservationsUpdated] = await Promise.all([
+          Booking.updateMany(
+            { resId: payment.booking }, // Match by booking resId
+            { $set: { paymentStatus: "paid" } }
+          ),
+          Reservation.updateMany( // Dashboard reservations
+            { payment: paymentId }, // Match by payment reference
+            { $set: { paymentStatus: "paid" } }
+          )
+        ]);
+
+        console.log(`✅ Updated ${mainBookingsUpdated.modifiedCount} main bookings + ${dashboardReservationsUpdated.modifiedCount} dashboard reservations to "paid"`);
 
     // 🆕 FIX: Create PaymentTransaction for hotel dashboard compatibility
     if (payment.metadata?.reservationType === "hotel" && reservation._id) {
