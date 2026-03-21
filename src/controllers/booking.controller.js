@@ -1173,11 +1173,19 @@ export const confirmReservation = async (req, res) => {
     }
 
     // Validate payment exists & successful (using effective values)
-    if (!booking.paymentRef || booking.paymentRef.status !== 'success') {
+    const payment = booking.paymentRef;
+    const isPaymentValid = payment && (
+      payment.status === 'success' || 
+      (payment.amountPaid >= payment.amount && payment.status !== 'failed')
+    );
+
+    if (!isPaymentValid) {
       return res.status(400).json({
         success: false,
-        message: 'Payment must exist and have status "success" before confirmation',
-        paymentStatus: booking.paymentRef?.status || 'missing',
+        message: 'Payment must be completed (status "success" or fully paid)',
+        paymentStatus: payment?.status || 'missing',
+        amountDue: payment?.amount,
+        amountPaid: payment?.amountPaid,
         effectivePaymentId
       });
     }
