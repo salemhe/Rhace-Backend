@@ -1178,6 +1178,34 @@ export const verifyPayment = async (req, res) => {
     const existingTransaction = await Payment.findOne({ reference });
     const amount = transaction.amount / 100;
 
+    // ✅ TASK 2: Idempotency check - skip if already webhook-processed success
+    if (existingTransaction && existingTransaction.status === "success" && existingTransaction.webhookProcessed) {
+      console.log("⏭️ Payment already processed via webhook:", existingTransaction._id);
+      
+      // Update reservations paymentStatus (safety net)
+      await Promise.all([
+        Booking.updateMany(
+          { resId: existingTransaction.booking },
+          { $set: { paymentStatus: "paid" } }
+        ),
+        Reservation.updateMany(
+          { payment: existingTransaction._id },
+          { $set: { paymentStatus: "paid" } }
+        )
+      ]);
+
+      const booking = await Booking.findOne({ resId: existingTransaction.booking });
+
+      return res.status(200).json({
+        success: true,
+        alreadyProcessed: true,
+        payment: existingTransaction,
+        bookingId: existingTransaction.booking,
+        booked: !!booking,
+        message: "Payment already verified and processed via webhook"
+      });
+    }
+
     if (!existingTransaction) {
       // Save the payment
       const newTransaction = new Payment({
@@ -1192,7 +1220,8 @@ export const verifyPayment = async (req, res) => {
         amountPaid: transaction.amount / 100,
         reference,
         payLater: transaction.metadata.payLater,
-        status: "Paid",
+        status: "success", // ✅ Consistent with payment model enum
+        webhookProcessed: true, // ✅ Mark as processed
       });
 
       await newTransaction.save();
@@ -1224,10 +1253,34 @@ export const verifyPayment = async (req, res) => {
         vendorId: vendorId,
         amount: amount,
         reference: reference,
-        status: "Paid",
+        status: "success",
         createdAt: newTransaction.createdAt,
       });
+    } else {
+      // Update existing transaction
+      await Payment.updateOne(
+        { _id: existingTransaction._id },
+        {
+          status: "success",
+          webhookProcessed: true,
+          paidAt: transaction.paid_at,
+          amountPaid: amount,
+          paymentMethod: transaction.channel,
+        }
+      );
     }
+
+    // ✅ Update reservations paymentStatus
+    await Promise.all([
+      Booking.updateMany(
+        { resId: transaction.metadata.bookingId },
+        { $set: { paymentStatus: "paid" } }
+      ),
+      Reservation.updateMany(
+        { payment: existingTransaction?._id || reference },
+        { $set: { paymentStatus: "paid" } }
+      )
+    ]);
 
     // Update booking payment status
     console.log("Booking ID from metadata:", transaction.metadata.bookingId);

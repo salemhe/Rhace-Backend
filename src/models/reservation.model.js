@@ -22,6 +22,12 @@ const reservationSchema = new mongoose.Schema({
     default: "pending",
   },
   payment: { type: mongoose.Schema.Types.ObjectId, ref: "PaymentTransaction" },
+  paymentStatus: {
+    type: String,
+    enum: ["pending", "paid", "partly_paid", "failed"],
+    default: "pending",
+    index: true
+  },
 }, { timestamps: true });
 
 reservationSchema.plugin(mongoosePaginate);

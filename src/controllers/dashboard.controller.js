@@ -154,9 +154,13 @@ export const getKPIs = async (req, res) => {
     console.log("🧾 Hotel Revenue - PaymentTransaction:", hotelRevenueAgg[0]?.total || 0, "Payment fallback:", paymentRevenue);
 
     // Total Revenue from reservations (assuming deposit or payment amount)
+    // ✅ FIX: Use paymentStatus="paid" (webhook standard)
     const reservationRevenueAgg = await Reservation.aggregate([
-      { $match: { vendor: { $in: [...clubIds, ...restaurantIds] }, payment_status: "Paid" } },
-      { $group: { _id: null, total: { $sum: "$deposit" } } } // Assuming deposit is the revenue
+      { $match: { 
+        vendor: { $in: [...clubIds, ...restaurantIds] }, 
+        $or: [{ paymentStatus: "paid" }, { payment_status: "Paid" }] 
+      } },
+      { $group: { _id: null, total: { $sum: "$deposit" } } }
     ]);
     const reservationRevenue = reservationRevenueAgg.length > 0 ? reservationRevenueAgg[0].total : 0;
 
@@ -172,7 +176,11 @@ export const getKPIs = async (req, res) => {
     const hotelRevenueLastWeek = hotelRevenueLastWeekAgg.length > 0 ? hotelRevenueLastWeekAgg[0].total : 0;
 
     const reservationRevenueLastWeekAgg = await Reservation.aggregate([
-      { $match: { vendor: { $in: [...clubIds, ...restaurantIds] }, payment_status: "Paid", createdAt: { $gte: lastWeek, $lt: today } } },
+      { $match: { 
+        vendor: { $in: [...clubIds, ...restaurantIds] }, 
+        $or: [{ paymentStatus: "paid" }, { payment_status: "Paid" }],
+        createdAt: { $gte: lastWeek, $lt: today } 
+      } },
       { $group: { _id: null, total: { $sum: "$deposit" } } }
     ]);
     const reservationRevenueLastWeek = reservationRevenueLastWeekAgg.length > 0 ? reservationRevenueLastWeekAgg[0].total : 0;
@@ -189,7 +197,11 @@ export const getKPIs = async (req, res) => {
     const hotelRevenueTwoWeeksAgo = hotelRevenueTwoWeeksAgoAgg.length > 0 ? hotelRevenueTwoWeeksAgoAgg[0].total : 0;
 
     const reservationRevenueTwoWeeksAgoAgg = await Reservation.aggregate([
-      { $match: { vendor: { $in: [...clubIds, ...restaurantIds] }, payment_status: "Paid", createdAt: { $gte: twoWeeksAgo, $lt: lastWeek } } },
+      { $match: { 
+        vendor: { $in: [...clubIds, ...restaurantIds] }, 
+        $or: [{ paymentStatus: "paid" }, { payment_status: "Paid" }],
+        createdAt: { $gte: twoWeeksAgo, $lt: lastWeek } 
+      } },
       { $group: { _id: null, total: { $sum: "$deposit" } } }
     ]);
     const reservationRevenueTwoWeeksAgo = reservationRevenueTwoWeeksAgoAgg.length > 0 ? reservationRevenueTwoWeeksAgoAgg[0].total : 0;
