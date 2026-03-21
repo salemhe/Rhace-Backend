@@ -2,6 +2,7 @@ import { Vendor } from "../models/vendor.model.js";
 import Payment from "../models/payment.model.js";
 import moment from "moment";
 import { Booking } from "../models/booking.model.js";
+import Reservation from "../models/reservation.model.js";
 import { getVendorSocket } from "../websockets/socketManager.js";
 import { MenuItem } from "../models/menu.model.js";
 import RoomType from "../models/roomtype.model.js";

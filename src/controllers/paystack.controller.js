@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { Booking } from "../models/booking.model.js";
 import Payment from "../models/payment.model.js";
 import PaymentTransaction from "../models/paymenttransaction.model.js";
+import Reservation from "../models/reservation.model.js";
 import { createReservationFromPayment } from "./booking.controller.js";
 import { sendBookingConfirmationEmail } from "../services/mail.service.js";
 import { getVendorSocket } from "../websockets/socketManager.js";
@@ -44,11 +45,16 @@ export const handlePaystack = async (req, res) => {
 async function handleSuccessfulPayment(data) {
   const paymentId = data.reference;
 
+  console.log('🔍 Looking for payment with paystackReference:', paymentId);
+
   try {
     const payment = await Payment.findOne({ paystackReference: paymentId });
 
     if (!payment) {
       console.error("❌ PAYMENT NOT FOUND BY REFERENCE:", paymentId);
+      console.log("Available paystackReferences in recent payments:");
+      const recentPayments = await Payment.find({}).sort({ createdAt: -1 }).limit(5);
+      recentPayments.forEach(p => console.log(`  ${p._id}: ${p.paystackReference}`));
       return;
     }
 
