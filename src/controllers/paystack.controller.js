@@ -8,7 +8,8 @@ import { emitPaymentUpdate } from "./payment.controller.js";
 import { Vendor } from "../models/vendor.model.js";
 
 export const handlePaystack = async (req, res) => {
-  console.log('Webhook hit:', req.body); // Missing this log?
+  console.log('🔥 WEBHOOK HIT:', JSON.stringify(req.body, null, 2));
+  console.log('📧 Signature:', req.headers["x-paystack-signature"]);
   try {
     const hash = crypto
       .createHmac("sha512", process.env.PAYSTACK_SECRET_KEY)
@@ -21,7 +22,8 @@ export const handlePaystack = async (req, res) => {
     }
 
     const event = req.body;
-    console.log("✅ Webhook received:", event.event);
+    console.log("✅ WEBHOOK EVENT:", event.event);
+    console.log("💰 PAYMENT DATA:", event.data?.reference, event.data?.status);
 
     if (event.event === "charge.success") {
       await handleSuccessfulPayment(event.data);
@@ -45,7 +47,8 @@ async function handleSuccessfulPayment(data) {
     const payment = await Payment.findById(paymentId);
 
     if (!payment) {
-      console.error("❌ Payment not found:", paymentId);
+      console.error("❌ PAYMENT NOT FOUND IN DB:", paymentId);
+      console.error("💾 DB PAYMENT:", payment);
       return;
     }
 
