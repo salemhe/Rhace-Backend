@@ -506,8 +506,8 @@ export const getRevenueTrends = async (req, res) => {
     ]);
 
     // Group vendor payments by month
-    const vendorTrends = await Payment.aggregate([
-      { $match: { vendor: { $in: vendorIds }, status: "Paid" } },
+        vendorTrends = await Payment.aggregate([
+      { $match: { vendor: { $in: vendorIds }, status: "success" } },
       {
         $group: {
           _id: {
@@ -673,7 +673,7 @@ export const getTopVendors = async (req, res) => {
       {
         $match: {
           createdAt: { $gte: currentMonth, $lt: nextMonth },
-          status: "Paid",
+          status: "success",
         },
       },
       {
@@ -747,7 +747,7 @@ export const getVendorsEarnings = async (req, res) => {
 
     const earnings = await Payment.aggregate([
       {
-        $match: { status: "Paid" }
+        $match: { status: "success" }
       },
       {
         $group: {
@@ -788,7 +788,7 @@ export const getVendorsEarnings = async (req, res) => {
       }
     ]);
 
-    const totalVendors = await Payment.distinct("vendor", { status: "Paid" }).then(vendors => vendors.length);
+    const totalVendors = await Payment.distinct("vendor", { status: "success" }).then(vendors => vendors.length);
 
     return res.json({
       earnings,
@@ -824,7 +824,7 @@ export const getRecentTransactions = async (req, res) => {
       });
 
     // Fetch recent vendor payments (clubs and restaurants)
-    const vendorPayments = await Payment.find({ status: "Paid" })
+    const vendorPayments = await Payment.find({ status: { $in: ["success", "pending"] } })
       .sort({ createdAt: -1 })
       .limit(10)
       .populate("vendor", "businessName");
