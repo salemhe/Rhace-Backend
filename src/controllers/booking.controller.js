@@ -993,6 +993,7 @@ export async function completePayment(req, res) {
       {
         status: "success",
         booked: true,
+        webhookProcessed: true,
         paidAt: paystackData.paid_at,
         reservationId: reservation._id,
         paystackData,
@@ -1009,12 +1010,14 @@ export async function completePayment(req, res) {
 
     await reservation.populate(`vendor ${populate}`);
 
-    // Auto-confirm on successful non-payLater payment
-    if (!reservation.confirmedAt && !payment.payLater) {
+    // AUTO-CONFIRM: Full payment bookings (non-payLater)
+    if (!reservation.confirmedAt && !payment.payLater && payment.status === 'success') {
       reservation.reservationStatus = "confirmed";
       reservation.confirmedAt = new Date();
       reservation.confirmedBy = reservation.vendor._id;
+      reservation.confirmationMethod = "auto_payment";
       await reservation.save();
+      console.log('🤖 AUTO-CONFIRMED booking:', reservation._id, 'Full payment detected');
     }
 
     if (isNewBooking) {

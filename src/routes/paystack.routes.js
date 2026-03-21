@@ -3,6 +3,9 @@ import { handlePaystack } from "../controllers/paystack.controller.js";
 
 const router = express.Router();
 
-router.post("/", express.raw({ type: "application/json" }), handlePaystack);
+// Paystack Webhook - NO AUTH MIDDLEWARE (raw access required)
+// Expects raw JSON body + x-paystack-signature header
+router.post("/webhook", express.raw({ type: "application/json" }), handlePaystack);
 
 export default router;
+
