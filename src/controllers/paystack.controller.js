@@ -8,6 +8,7 @@ import { emitPaymentUpdate } from "./payment.controller.js";
 import { Vendor } from "../models/vendor.model.js";
 
 export const handlePaystack = async (req, res) => {
+  console.log('Webhook hit:', req.body); // Missing this log?
   try {
     const hash = crypto
       .createHmac("sha512", process.env.PAYSTACK_SECRET_KEY)

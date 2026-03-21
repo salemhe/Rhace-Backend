@@ -84,7 +84,7 @@ export const getAdminTotalEarnings = async (req, res) => {
     // Get all successful payments with vendor info
     const payments = await Payment.find({
       ...dateFilter,
-      status: "Paid",
+      status: "success",
       isSplitPayment: true
     }).populate({
       path: "vendor",
@@ -208,7 +208,7 @@ export const getTotalSuccessfulPayments = async (req, res) => {
     // Get total successful payments count
     const totalSuccessful = await Payment.countDocuments({
       ...dateFilter,
-      status: "Paid"
+      status: "success"
     });
 
     // Get total failed payments count
@@ -220,7 +220,7 @@ export const getTotalSuccessfulPayments = async (req, res) => {
     // Get total pending payments count
     const totalPending = await Payment.countDocuments({
       ...dateFilter,
-      status: "Pending"
+      status: "pending"
     });
 
     // Get total cancelled payments count
