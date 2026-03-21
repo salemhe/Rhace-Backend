@@ -1133,55 +1133,58 @@ export const verifyQRCode = async (req, res) => {
 export const confirmReservation = async (req, res) => {
   try {
     const { id } = req.params;
-    const { resId: bodyResId, paymentId: bodyPaymentId, vendorId } = req.body;
+    const { vendorId } = req.body;
     const effectiveVendorId = vendorId || req.user?._id;
 
-    const booking = await Booking.findById(id).populate('paymentRef');
+    const booking = await Booking.findById(id).populate({
+      path: 'paymentRef',
+      model: 'Payment'
+    }).populate('vendor');
     if (!booking) {
       return res.status(404).json({ message: "Booking not found" });
     }
 
-    // Auto-resolve from booking document (always available)
-    const effectiveResId = booking.resId;
-    const effectivePaymentId = booking.paymentRef?._id?.toString();
+    console.log('📋 Booking details:', {
+      _id: booking._id,
+      resId: booking.resId,
+      type: booking.reservationType,
+      status: booking.reservationStatus,
+      paymentRef: booking.paymentRef?._id,
+      vendor: booking.vendor?._id
+    });
 
-    // Optional: validate if body provided (for security/extra check)
-    if (bodyResId && bodyResId !== effectiveResId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Provided resId does not match booking.resId',
-        bookingResId: effectiveResId,
-        providedResId: bodyResId
-      });
-    }
-    if (bodyPaymentId && bodyPaymentId !== effectivePaymentId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Provided paymentId does not match booking.paymentRef',
-        bookingPaymentId: effectivePaymentId,
-        providedPaymentId: bodyPaymentId
-      });
-    }
+    let payment = booking.paymentRef;
+    console.log('💳 Payment lookup #1 (from booking.paymentRef):', payment?._id || 'MISSING');
 
-    // Validate hotelReservation type
-    if (booking.reservationType !== 'hotelReservation') {
-      return res.status(400).json({
-        success: false,
-        message: 'Only hotel reservations can be confirmed via this endpoint',
-        actualType: booking.reservationType
-      });
+    if (!payment && booking.resId) {
+      payment = await Payment.findOne({ booking: booking.resId });
+      console.log('💳 Fallback #1 (by resId):', payment?._id || 'NOT FOUND');
+      
+      if (payment) {
+        booking.paymentRef = payment._id;
+        await booking.save();
+        console.log('🔧 Auto-fixed booking.paymentRef');
+      }
     }
 
-    // Validate payment exists & successful (using effective values)
-    const payment = booking.paymentRef;
-    const isPaymentValid = payment && (
-      payment.status === 'success' || 
-      (payment.amountPaid >= payment.amount && payment.status !== 'failed')
-    );
+    if (!payment && booking._id) {
+      payment = await Payment.findOne({ booking: booking._id.toString() });
+      console.log('💳 Fallback #2 (by booking ID):', payment?._id || 'NOT FOUND');
+    }
+
+
+
+
+
+    // Validate payment exists & successful
+    const isPaymentValid = payment.status === 'success' && 
+                          payment.amountPaid >= (payment.amount * 0.95);;
 
     if (!isPaymentValid) {
       console.log('🚫 Payment validation failed:', {
-        paymentId: effectivePaymentId,
+        bookingId: id,
+        resId: effectiveResId,
+        paymentId: payment?._id,
         paymentStatus: payment?.status,
         amountDue: payment?.amount,
         amountPaid: payment?.amountPaid,
@@ -1192,17 +1195,19 @@ export const confirmReservation = async (req, res) => {
       
       return res.status(400).json({
         success: false,
-        message: `Payment validation failed. Expected status="success" or fully paid. Current: "${payment?.status || 'missing'}"`,
-        paymentStatus: payment?.status || 'missing',
+        message: `Payment validation failed for booking ${effectiveResId}. Expected status="success". Current: "${payment?.status || 'MISSING'}"`,
+        paymentStatus: payment?.status || 'MISSING',
+        paymentId: payment?._id,
         amountDue: payment?.amount || 0,
         amountPaid: payment?.amountPaid || 0,
-        isSuccessStatus: payment?.status === 'success',
-        isFullyPaid: payment?.amountPaid >= (payment?.amount || 0),
-        effectivePaymentId,
-        debug: 'Use Paystack webhook or manually set payment.status="success" in DB',
-        fix: 'Test with: db.payments.updateOne({_id: ObjectId("PAYMENT_ID")}, {$set: {status: "success"}})'
+        bookingPaymentRef: booking.paymentRef?._id,
+        effectiveResId,
+        debug: '1. Check if payment exists: db.payments.findOne({booking: "' + effectiveResId + '"})',
+        fix: '2. Set status: db.payments.updateOne({_id: ObjectId("PAYMENT_ID")}, {$set: {status: "success"}})\n3. Add to booking: db.reservations.updateOne({_id: ObjectId("' + id + '")}, {$set: {paymentRef: ObjectId("PAYMENT_ID")}})'
       });
     }
+
+    console.log('✅ Payment validation passed:', {paymentId: payment._id, status: payment.status});
 
     if (booking.confirmedAt) {
       return res.status(400).json({
