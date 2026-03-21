@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { Booking } from "../models/booking.model.js";
 import Payment from "../models/payment.model.js";
+import PaymentTransaction from "../models/paymenttransaction.model.js";
 import { createReservationFromPayment } from "./booking.controller.js";
 import { sendBookingConfirmationEmail } from "../services/mail.service.js";
 import { getVendorSocket } from "../websockets/socketManager.js";
@@ -44,13 +45,14 @@ async function handleSuccessfulPayment(data) {
   const paymentId = data.reference;
 
   try {
-    const payment = await Payment.findById(paymentId);
+    const payment = await Payment.findOne({ paystackReference: paymentId });
 
     if (!payment) {
-      console.error("❌ PAYMENT NOT FOUND IN DB:", paymentId);
-      console.error("💾 DB PAYMENT:", payment);
+      console.error("❌ PAYMENT NOT FOUND BY REFERENCE:", paymentId);
       return;
     }
+
+    console.log("✅ Found payment:", payment._id, "for reference:", paymentId);
 
     if (payment.webhookProcessed) {
       console.log("⏭️  Webhook already processed:", paymentId);
@@ -58,7 +60,7 @@ async function handleSuccessfulPayment(data) {
     }
 
     const paidAmount = data.amount / 100;
-    if (paidAmount !== payment.amount) {
+    if (Math.abs(paidAmount - payment.amount) > 0.01) {
       console.error("❌ Amount mismatch:", {
         expected: payment.amount,
         received: paidAmount,
@@ -74,70 +76,62 @@ async function handleSuccessfulPayment(data) {
 
     if (!reservation) {
       reservation = await createReservationFromPayment(payment);
-      const vendor = await Vendor.findOne({ _id: reservation.vendor._id });
-      if (payment.isSplitPayment && !payment.booked) {
+      const vendor = await Vendor.findOne({ _id: reservation?.vendor?._id });
+      if (vendor && payment.isSplitPayment && !payment.booked) {
         vendor.balance += payment.amountPaid;
+        await vendor.save();
       }
-      await vendor.save();
       isNewReservation = true;
     } else {
       console.log("⏭️  Reservation already exists:", reservation.resId);
     }
 
-        // ✅ Update payment status first
-        await Payment.updateOne(
-          { _id: paymentId },
-          {
-            status: "success",
-            booked: true,
-            webhookProcessed: true,
-            webhookProcessedAt: new Date(),
-            webhookAttempts: payment.webhookAttempts + 1 || 1,
-            paystackData: data,
-            paidAt: data.paid_at,
-            reservationId: reservation._id,
-            paymentMethod: data.channel,
-          },
-        );
+    // ✅ Update payment status first using payment._id
+    await Payment.updateOne(
+      { _id: payment._id },
+      {
+        status: "success",
+        booked: true,
+        webhookProcessed: true,
+        webhookProcessedAt: new Date(),
+        webhookAttempts: payment.webhookAttempts + 1 || 1,
+        paystackData: data,
+        paidAt: data.paid_at,
+        reservationId: reservation?._id,
+        paymentMethod: data.channel,
+      },
+    );
 
         // ✅ TASK 1: Update ALL matching reservations paymentStatus = "paid"
         // Handle both main Booking model AND dashboard Reservation model
-        const [mainBookingsUpdated, dashboardReservationsUpdated] = await Promise.all([
-          Booking.updateMany(
-            { resId: payment.booking }, // Match by booking resId
-            { $set: { paymentStatus: "paid" } }
-          ),
-          Reservation.updateMany( // Dashboard reservations
-            { payment: paymentId }, // Match by payment reference
-            { $set: { paymentStatus: "paid" } }
-          )
-        ]);
+        // Update booking paymentStatus
+        const mainBookingsUpdated = await Booking.updateMany(
+          { resId: payment.booking },
+          { $set: { paymentStatus: "paid" } }
+        );
 
-        console.log(`✅ Updated ${mainBookingsUpdated.modifiedCount} main bookings + ${dashboardReservationsUpdated.modifiedCount} dashboard reservations to "paid"`);
+        console.log(`✅ Updated ${mainBookingsUpdated.modifiedCount} main bookings to "paid"`);
 
-    // 🆕 FIX: Create PaymentTransaction for hotel dashboard compatibility
-    if (payment.metadata?.reservationType === "hotel" && reservation._id) {
-      const PaymentTransaction = require("../models/paymenttransaction.model.js").default;
-      
+    // 🆕 Create PaymentTransaction for hotel dashboard (adjust fields to schema)
+    if (payment.metadata?.reservationType === "hotel" && reservation?._id) {
       const existingPT = await PaymentTransaction.findOne({
         booking: reservation._id,
-        paystackReference: paymentId
+        providerRef: paymentId
       });
 
       if (!existingPT) {
-        await PaymentTransaction.create([{
+        await PaymentTransaction.create({
           booking: reservation._id,
           vendor: reservation.vendor,
           amount: payment.amount,
-          status: "succeeded",  // Matches dashboard.controller.js query
-          paystackReference: paymentId,
-          paymentMethod: data.channel,
-          paidAt: data.paid_at,
+          method: data.channel,
+          providerRef: paymentId,
+          status: "succeeded",
           metadata: {
             paystackData: data,
             source: "paystack_webhook"
           }
-        }]);
+        });
         console.log("✅ Created PaymentTransaction for hotel:", reservation._id);
       } else {
         console.log("ℹ️ PaymentTransaction already exists:", existingPT._id);
@@ -183,8 +177,14 @@ async function handleFailedPayment(data) {
   const paymentId = data.reference;
 
   try {
+    const payment = await Payment.findOne({ paystackReference: paymentId });
+    if (!payment) {
+      console.error("❌ PAYMENT NOT FOUND FOR FAILED WEBHOOK:", paymentId);
+      return;
+    }
+
     await Payment.updateOne(
-      { _id: paymentId },
+      { _id: payment._id },
       {
         status: "failed",
         failureReason: data.gateway_response,
@@ -196,9 +196,9 @@ async function handleFailedPayment(data) {
     console.log("❌ Payment failed:", paymentId, data.gateway_response);
 
     // ✅ Emit realtime update
-    emitPaymentUpdate(metadata.bookingId, "failed");
+    emitPaymentUpdate(payment.metadata?.bookingId, "failed");
 
-    console.log("✅ Paystack webhook processed:", paymentId);
+    console.log("✅ Failed webhook processed:", payment._id);
   } catch (error) {
     console.error("Error handling failed payment:", error);
   }
