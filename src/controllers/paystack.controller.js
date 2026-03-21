@@ -87,13 +87,42 @@ async function handleSuccessfulPayment(data) {
         booked: true,
         webhookProcessed: true,
         webhookProcessedAt: new Date(),
-        webhookAttempts: payment.webhookAttempts + 1,
+        webhookAttempts: payment.webhookAttempts + 1 || 1,
         paystackData: data,
         paidAt: data.paid_at,
         reservationId: reservation._id,
         paymentMethod: data.channel,
       },
     );
+
+    // 🆕 FIX: Create PaymentTransaction for hotel dashboard compatibility
+    if (payment.metadata?.reservationType === "hotel" && reservation._id) {
+      const PaymentTransaction = require("../models/paymenttransaction.model.js").default;
+      
+      const existingPT = await PaymentTransaction.findOne({
+        booking: reservation._id,
+        paystackReference: paymentId
+      });
+
+      if (!existingPT) {
+        await PaymentTransaction.create([{
+          booking: reservation._id,
+          vendor: reservation.vendor,
+          amount: payment.amount,
+          status: "succeeded",  // Matches dashboard.controller.js query
+          paystackReference: paymentId,
+          paymentMethod: data.channel,
+          paidAt: data.paid_at,
+          metadata: {
+            paystackData: data,
+            source: "paystack_webhook"
+          }
+        }]);
+        console.log("✅ Created PaymentTransaction for hotel:", reservation._id);
+      } else {
+        console.log("ℹ️ PaymentTransaction already exists:", existingPT._id);
+      }
+    }
 
     const populate = reservation.reservationType === "restaurantReservation" ?
      "menus.menu" : reservation.reservationType === "hotelReservation" ?
