@@ -127,14 +127,31 @@ export const getKPIs = async (req, res) => {
 
     const totalBookingsTwoWeeksAgo = totalHotelBookingsTwoWeeksAgo + totalReservationsTwoWeeksAgo;
 
-    // Total Revenue from hotels
-    const hotelRevenueAgg = await PaymentTransaction.aggregate([
+    // 🆕 FIX: Total Revenue from hotels (PaymentTransaction OR fallback to Payment.success)
+    let hotelRevenueAgg = await PaymentTransaction.aggregate([
       { $lookup: { from: "bookings", localField: "booking", foreignField: "_id", as: "booking" } },
       { $unwind: "$booking" },
       { $match: { "booking.hotel": { $in: hotelIds }, status: "succeeded" } },
       { $group: { _id: null, total: { $sum: "$amount" } } }
     ]);
-    const hotelRevenue = hotelRevenueAgg.length > 0 ? hotelRevenueAgg[0].total : 0;
+    let hotelRevenue = hotelRevenueAgg.length > 0 ? hotelRevenueAgg[0].total : 0;
+
+    // Fallback: Include Paystack Payment.success records
+    const paymentRevenueAgg = await Payment.aggregate([
+      { $lookup: { from: "bookings", localField: "reservationId", foreignField: "_id", as: "booking" } },
+      { $unwind: "$booking" },
+      { $match: { 
+          "booking.hotel": { $in: hotelIds }, 
+          status: "success",
+          metadata: { $elemMatch: { reservationType: "hotel" } }
+        } 
+      },
+      { $group: { _id: null, total: { $sum: "$amount" } } }
+    ]);
+    const paymentRevenue = paymentRevenueAgg.length > 0 ? paymentRevenueAgg[0].total : 0;
+
+    hotelRevenue += paymentRevenue;
+    console.log("🧾 Hotel Revenue - PaymentTransaction:", hotelRevenueAgg[0]?.total || 0, "Payment fallback:", paymentRevenue);
 
     // Total Revenue from reservations (assuming deposit or payment amount)
     const reservationRevenueAgg = await Reservation.aggregate([
@@ -179,14 +196,23 @@ export const getKPIs = async (req, res) => {
 
     const revenueTwoWeeksAgo = hotelRevenueTwoWeeksAgo + reservationRevenueTwoWeeksAgo;
 
-    // Pending Payments from hotels
-    const hotelPendingPaymentsAgg = await PaymentTransaction.aggregate([
+    // 🆕 FIX: Pending Payments from hotels (PaymentTransaction.pending OR Payment not success)
+    let hotelPendingPaymentsAgg = await PaymentTransaction.aggregate([
       { $lookup: { from: "bookings", localField: "booking", foreignField: "_id", as: "booking" } },
       { $unwind: "$booking" },
       { $match: { "booking.hotel": { $in: hotelIds }, status: "pending" } },
       { $count: "count" }
     ]);
-    const hotelPendingPayments = hotelPendingPaymentsAgg.length > 0 ? hotelPendingPaymentsAgg[0].count : 0;
+    let hotelPendingPayments = hotelPendingPaymentsAgg.length > 0 ? hotelPendingPaymentsAgg[0].count : 0;
+
+    // Fallback: Count Payments for hotels that are NOT success
+    const pendingPaymentCount = await Payment.countDocuments({
+      metadata: { $elemMatch: { reservationType: "hotel" } },
+      status: { $ne: "success" }
+    });
+    hotelPendingPayments += pendingPaymentCount;
+
+    console.log("📊 Hotel Pending - PaymentTransaction:", hotelPendingPaymentsAgg[0]?.count || 0, "Payment fallback:", pendingPaymentCount);
 
     // Pending Payments from reservations
     const reservationPendingPayments = await Reservation.countDocuments({
