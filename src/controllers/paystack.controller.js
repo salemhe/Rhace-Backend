@@ -10,16 +10,14 @@ import { emitPaymentUpdate } from "./payment.controller.js";
 import { Vendor } from "../models/vendor.model.js";
 
 export const handlePaystack = async (req, res) => {
-  console.log('🔥 RAW BODY:', req.body);
-  console.log('📧 Signature:', req.headers["x-paystack-signature"]);
   try {
     const hash = crypto
       .createHmac("sha512", process.env.PAYSTACK_SECRET_KEY)
       .update(req.body)
       .digest("hex");
 
-    console.log("🧪 Generated hash:", hash);
-    console.log("🧪 Paystack hash:", req.headers["x-paystack-signature"]);
+    console.log("🔐 Calculated hash:", hash);
+    console.log("🔐 Received signature:", req.headers["x-paystack-signature"]);
 
     if (hash !== req.headers["x-paystack-signature"]) {
       console.error("Invalid webhook signature");
@@ -28,7 +26,6 @@ export const handlePaystack = async (req, res) => {
 
     const event = JSON.parse(req.body.toString());
     console.log("✅ WEBHOOK EVENT:", event.event);
-    console.log("💰 PAYMENT DATA:", event.data?.reference, event.data?.status);
 
     if (event.event === "charge.success") {
       await handleSuccessfulPayment(event.data);
