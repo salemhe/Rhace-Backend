@@ -841,7 +841,7 @@ export async function createReservationFromPayment(payment) {
 
   // FIX 3: normalise reservationType — strip any trailing "Reservation" then re-append
   const rawType = (metadata.reservationType || "").replace(/Reservation$/i, "").toLowerCase();
-  const reservationType = rawType.charAt(0).toUpperCase() + rawType.slice(1) + "Reservation";
+  const reservationType = rawType.charAt(0) + rawType.slice(1) + "Reservation";
 
   const baseData = {
     resId,                                // ✅ from payment.booking
