@@ -308,7 +308,6 @@ export const createReservation = async (req, res) => {
       payLater,
     } = req.body;
 
-    console.log(req.body);
     if (!vendor || !reservationType || !location || !totalAmount || !resId) {
       return res.status(400).json({ message: "Fill required fields" });
     }
@@ -523,7 +522,6 @@ export const getReservations = async (req, res) => {
     if (vendorId) query.vendor = vendorId;
     if (userId) query.customerId = userId;
     if (resId) query.resId = resId;
-    console.log(query)
     const reservations = await Booking.find(query)
       .populate({ path: "menus.menu" })
       .populate({ path: "vendor" })
@@ -534,7 +532,6 @@ export const getReservations = async (req, res) => {
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(parseInt(limit));
-    console.log(reservations)
 
     const total = await Booking.countDocuments(query);
 

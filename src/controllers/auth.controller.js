@@ -142,6 +142,7 @@ export const loginVendor = async (req, res) => {
       message: "Login successful.",
       vendor: user,
       accessToken,
+      isOnboarded: user.isOnboarded,
     });
   } catch (err) {
     console.error(err);
@@ -653,53 +654,34 @@ export const login = async (req, res) => {
 };
 
 export const loginGoogle = async (req, res) => {
-  const { code } = req.body;
-  const client = new OAuth2Client(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET,
-    "postmessage",
-  );
+  console.log("Headers:", req.headers);
+  console.log("Body:", req.body);
   try {
+    const { code } = req.body;
+    if (!code) {
+      return res.status(400).json({ message: "Authorization code is missing." });
+    }
+    const client = new OAuth2Client(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      "postmessage"
+    );
     const { tokens } = await client.getToken(code);
-
     const ticket = await client.verifyIdToken({
       idToken: tokens.id_token,
       audience: process.env.GOOGLE_CLIENT_ID,
     });
-
     const payload = ticket.getPayload();
-    const { email, sub: googleId, picture: profilePic } = payload;
-
-    const userExists = await User.findOne({ email });
-
-    if (userExists) {
-      if (!userExists.googleId) {
-        userExists.googleId = googleId;
-        userExists.profilePic = profilePic;
-        userExists.isVerified = true;
-        await userExists.save();
-      }
-
-      const accessToken = generateAccessToken(userExists._id, userExists.role);
-      const refreshToken = generateRefreshToken(
-        userExists._id,
-        userExists.role,
-      );
-
-      res.cookie("refreshToken", refreshToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "strict",
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-      });
-
-      return res.status(200).json({
-        message: "Registered successfully.",
-        user: userExists,
-        accessToken,
-      });
-    } else {
-      const user = await User.create({
+    const {
+      email,
+      sub: googleId,
+      given_name: firstName,
+      family_name: lastName,
+      picture: profilePic,
+    } = payload;
+    let user = await User.findOne({ email });
+    if (!user) {
+      user = await User.create({
         firstName,
         lastName,
         email,
@@ -708,26 +690,36 @@ export const loginGoogle = async (req, res) => {
         role: "user",
         isVerified: true,
       });
-      const accessToken = generateAccessToken(user._id, user.role);
-      const refreshToken = generateRefreshToken(user._id, user.role);
-
-      res.cookie("refreshToken", refreshToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "strict",
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-      });
-
-      return res.status(200).json({
-        message: "Registered successfully.",
-        user,
-        accessToken,
-      });
+    } else {
+      if (!user.googleId) {
+        user.googleId = googleId;
+      }
+      if (!user.profilePic) {
+        user.profilePic = profilePic;
+      }
+      if (!user.isVerified) {
+        user.isVerified = true;
+      }
+      await user.save();
     }
+    const accessToken = generateAccessToken(user._id, user.role);
+    const refreshToken = generateRefreshToken(user._id, user.role);
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+    return res.status(200).json({
+      message: "Login successful.",
+      user,
+      accessToken,
+    });
   } catch (error) {
-    console.error(error);
+    console.error("Google login error:", error);
     return res.status(500).json({
-      message: "Error Logging in with Google",
+      message: "Error logging in with Google.",
+      error: error.message,
     });
   }
 };
@@ -966,6 +958,68 @@ export const resetPassword = async (req, res) => {
   }
 };
 
+export const refreshAccessToken = async (req, res) => {
+  try {
+    const refreshToken = req.cookies.refreshToken;
+    if (!refreshToken) {
+      console.error('[AUTH] No refresh token cookie found');
+      return res.status(401).json({ message: "No refresh token provided" });
+    }
+
+    let decoded;
+    try {
+      decoded = verifyRefreshToken(refreshToken);
+    } catch (jwtError) {
+      console.error('[AUTH] Refresh token verification failed:', jwtError.message);
+      return res.status(401).json({ message: "Invalid refresh token" });
+    }
+
+    // Try User first, then Vendor (vendors login via loginVendor)
+    let user = await User.findById(decoded.id).select('_id role isOnboarded vendorType');
+    if (!user) {
+      const Vendor = (await import('../models/vendor.model.js')).default;
+      user = await Vendor.findById(decoded.id).select('_id role isOnboarded vendorType');
+    }
+
+    if (!user) {
+      console.error('[AUTH] User/Vendor not found for ID:', decoded.id);
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    console.log('[AUTH] Refresh successful for user:', user._id, 'role:', decoded.role);
+
+    // Generate tokens (use decoded values + model data where needed)
+    const newAccessToken = generateAccessToken(
+      user._id, 
+      decoded.role, 
+      user.isOnboarded, 
+      user.vendorType
+    );
+    const newRefreshToken = generateRefreshToken(user._id, decoded.role);
+
+    res.cookie("refreshToken", newRefreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    return res.status(200).json({ accessToken: newAccessToken });
+  } catch (error) {
+    console.error('[AUTH] RefreshAccessToken error:', error);
+    return res.status(401).json({ message: "Refresh failed" });
+  }
+};
+
+export const logout = async (req, res) => {
+  res.clearCookie("refreshToken", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+  });
+  res.json({ message: "Logged out successfully" });
+};
+
 export const loginAdmin = async (req, res) => {
   const { email, password } = req.body;
 
@@ -1009,50 +1063,4 @@ export const loginAdmin = async (req, res) => {
       error: err.message,
     });
   }
-};
-
-
-export const refreshAccessToken = async (req, res) => {
-  const token = req.cookies.refreshToken;
-
-  if (!token) {
-    return res.status(401).json({ message: 'No refresh token' });
-  }
-
-  try {
-    const decoded = verifyRefreshToken(token);
-
-    let user;
-    if (decoded.role === 'vendor') {
-      user = await Vendor.findById(decoded.id).select('_id role vendorType isOnboarded isVerified');
-    } else {
-      user = await User.findById(decoded.id).select('_id role status isVerified');
-    }
-
-    if (!user) {
-      return res.status(401).json({ message: 'User no longer exists' });
-    }
-
-    // Issue new access token
-    const accessToken = generateAccessToken(
-      user._id,
-      user.role,
-      user.isOnboarded || null,
-      user.vendorType || null,
-    );
-
-    return res.status(200).json({ accessToken });
-  } catch (err) {
-    console.error(err);
-    return res.status(403).json({ message: 'Invalid or expired refresh token' });
-  }
-};
-
-export const logout = async (req, res) => {
-  res.clearCookie('refreshToken', {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
-  });
-  return res.status(200).json({ message: 'Logged out successfully' });
 };
