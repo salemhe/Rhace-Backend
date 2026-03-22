@@ -7,13 +7,14 @@ import {
 } from "../models/booking.model.js";
 import Payment from "../models/payment.model.js";
 import { sendBookingConfirmationEmail } from "../services/mail.service.js";
-import { getVendorSocket } from "../websockets/socketManager.js";
+import { getVendorSocket, getUserSocket } from "../websockets/socketManager.js";
 import dayjs from "dayjs";
 import axios from "axios";
 import { Vendor } from "../models/vendor.model.js";
 import crypto from "crypto";
 import { recordAuditLog } from "../utils/auditLogger.js";
 import { validateBookingAvailability } from "../services/availability.service.js";
+
 const getDateRange = (date) => ({
   start: dayjs(date).startOf("day").toDate(),
   end: dayjs(date).endOf("day").toDate(),
@@ -42,7 +43,6 @@ export const getBookingSummary = async (req, res) => {
       dayjs(today).subtract(7, "day"),
     );
 
-    // ---------- 1️⃣ TOTAL RESERVATIONS ----------
     const [todayCount, lastWeekCount] = await Promise.all([
       Booking.countDocuments({
         ...vendorFilter,
@@ -55,7 +55,6 @@ export const getBookingSummary = async (req, res) => {
     ]);
     const totalReservationsChange = percentChange(todayCount, lastWeekCount);
 
-    // ---------- 2️⃣ PREPAID RESERVATIONS ----------
     const [todayPrepaid, lastWeekPrepaid] = await Promise.all([
       Booking.countDocuments({
         ...vendorFilter,
@@ -70,7 +69,6 @@ export const getBookingSummary = async (req, res) => {
     ]);
     const prepaidChange = percentChange(todayPrepaid, lastWeekPrepaid);
 
-    // ---------- 3️⃣ PENDING PAYMENTS ----------
     const [todayPending, lastWeekPending] = await Promise.all([
       Booking.countDocuments({
         ...vendorFilter,
@@ -85,7 +83,6 @@ export const getBookingSummary = async (req, res) => {
     ]);
     const pendingChange = percentChange(todayPending, lastWeekPending);
 
-    // ---------- 4️⃣ EXPECTED GUESTS ----------
     const guestAggregation = async (start, end) => {
       const result = await Booking.aggregate([
         {
@@ -114,7 +111,6 @@ export const getBookingSummary = async (req, res) => {
     ]);
     const guestsChange = percentChange(guestsToday, guestsLastWeek);
 
-    // ---------- 5️⃣ TODAY'S RESERVATIONS (ARRAY) ----------
     const todaysReservations = await Booking.find({
       ...vendorFilter,
       $or: [
@@ -128,7 +124,6 @@ export const getBookingSummary = async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    // ---------- 6️⃣ RESERVATION TRENDS (14 days) ----------
     const fourteenDaysAgo = dayjs().subtract(13, "day").startOf("day").toDate();
 
     const trends = await Booking.aggregate([
@@ -155,7 +150,6 @@ export const getBookingSummary = async (req, res) => {
     const prev7Days = trends.slice(0, -7).reduce((acc, d) => acc + d.count, 0);
     const trendChange = percentChange(last7Days, prev7Days);
 
-    // ---------- 7️⃣ CUSTOMER FREQUENCY ----------
     const customerAgg = await Booking.aggregate([
       { $match: { ...vendorFilter } },
       { $group: { _id: "$customerEmail", count: { $sum: 1 } } },
@@ -166,11 +160,11 @@ export const getBookingSummary = async (req, res) => {
 
     const restaurantMenuBreakdown = await restaurantReservation.aggregate([
       { $match: { ...vendorFilter } },
-      { $unwind: "$menus" }, // flatten menus array
+      { $unwind: "$menus" },
       { $group: { _id: "$menus.menu", quantity: { $sum: "$menus.quantity" } } },
       {
         $lookup: {
-          from: "menuitems", // MongoDB collection name
+          from: "menuitems",
           localField: "_id",
           foreignField: "_id",
           as: "menuInfo",
@@ -180,7 +174,6 @@ export const getBookingSummary = async (req, res) => {
       { $project: { menuName: "$menuInfo.name", quantity: 1 } },
     ]);
 
-    // Drinks
     const clubDrinksBreakdown = await clubReservation.aggregate([
       { $match: { ...vendorFilter } },
       { $unwind: "$drinks" },
@@ -202,7 +195,6 @@ export const getBookingSummary = async (req, res) => {
       { $project: { drinkName: "$drinkInfo.name", quantity: 1 } },
     ]);
 
-    // Combos
     const clubCombosBreakdown = await clubReservation.aggregate([
       { $match: { ...vendorFilter } },
       { $unwind: "$combos" },
@@ -224,7 +216,7 @@ export const getBookingSummary = async (req, res) => {
       { $group: { _id: "$room", count: { $sum: 1 } } },
       {
         $lookup: {
-          from: "roomtypes", // MongoDB collection name
+          from: "roomtypes",
           localField: "_id",
           foreignField: "_id",
           as: "roomInfo",
@@ -234,7 +226,6 @@ export const getBookingSummary = async (req, res) => {
       { $project: { roomName: "$roomInfo.name", count: 1 } },
     ]);
 
-    // ---------- ✅ FINAL RESPONSE ----------
     res.status(200).json({
       success: true,
       vendorScope: vendorId || "all",
@@ -252,10 +243,7 @@ export const getBookingSummary = async (req, res) => {
         clubCombosBreakdown,
         reservationTrends: {
           daily: trends.map((t) => ({
-            date: `${t._id.year}-${String(t._id.month).padStart(
-              2,
-              "0",
-            )}-${String(t._id.day).padStart(2, "0")}`,
+            date: `${t._id.year}-${String(t._id.month).padStart(2, "0")}-${String(t._id.day).padStart(2, "0")}`,
             count: t.count,
           })),
           last7Days,
@@ -308,17 +296,50 @@ export const createReservation = async (req, res) => {
       payLater,
     } = req.body;
 
-    if (!vendor || !reservationType || !location || !totalAmount || !resId) {
-      return res.status(400).json({ message: "Fill required fields" });
+    console.log("Received body:", req.body);
+
+    // Validate required base fields
+    const requiredBaseFields = [
+      "resId", "vendor", "customerName", "customerId",
+      "customerEmail", "reservationType", "location", "totalAmount",
+    ];
+    const missingBase = requiredBaseFields.filter((field) => !req.body[field]);
+    if (missingBase.length > 0) {
+      return res.status(400).json({
+        message: `Missing required base fields: ${missingBase.join(", ")}`,
+        required: requiredBaseFields,
+      });
     }
 
-    const payment = await Payment.findOne({ booking: resId });
-    if (!payment)
-      return res.status(400).json({ message: "Payment Before Booking!" });
+    // Club-specific validation
+    if (reservationType === "club") {
+      const clubRequired = ["date", "time", "guests", "drinks"];
+      const missingClub = clubRequired.filter((field) => !req.body[field]);
+      if (missingClub.length > 0) {
+        return res.status(400).json({
+          message: `Missing required club fields: ${missingClub.join(", ")}`,
+          required: clubRequired,
+        });
+      }
 
-    // ============================================
-    // AVAILABILITY CHECK - Prevent Double Booking
-    // ============================================
+      // FIX: drinks must be a non-empty array
+      if (!Array.isArray(drinks) || drinks.length === 0) {
+        return res.status(400).json({
+          message: "drinks must be a non-empty array of { drink, quantity }",
+        });
+      }
+    }
+
+    // FIX: Look up payment by resId (the booking reference)
+    const payment = await Payment.findOne({ booking: resId });
+    if (!payment) {
+      return res.status(400).json({
+        message: `Payment not found for booking: ${resId}. Create a payment with { booking: "${resId}" } first.`,
+        hint: "Ensure payment document has a 'booking' field matching this resId",
+      });
+    }
+
+    // Availability check
     const availabilityCheck = await validateBookingAvailability({
       reservationType,
       room,
@@ -328,37 +349,36 @@ export const createReservation = async (req, res) => {
       checkInDate,
       checkOutDate,
       guests,
-      vendor
+      vendor,
     });
 
     if (!availabilityCheck.available) {
-      return res.status(409).json({ 
+      return res.status(409).json({
         success: false,
         message: availabilityCheck.reason,
-        availability: availabilityCheck
+        availability: availabilityCheck,
       });
     }
-    // ============================================
 
     const bookingCode = generateBookingCode();
-    
-    // Generate QR confirmation token for this booking
     const qrConfirmationToken = crypto.randomBytes(32).toString("hex");
 
+    // FIX: paymentRef is now always set from the found payment document
     const initialData = {
       resId,
+      bookingCode,
+      paymentRef: payment._id,           // ✅ always resolved from DB
       customerName,
       customerId,
       customerEmail,
       vendor,
       reservationType: reservationType + "Reservation",
-      reservationStatus: "Upcoming",
+      reservationStatus: "upcoming",
       location,
       totalAmount,
       paymentStatus: partPaid ? "Part Paid" : payLater ? "Pay Later" : "Paid",
       payLater,
-      paidFor: true,
-      bookingCode,
+      partPaid,
       qrConfirmationToken,
     };
 
@@ -367,9 +387,7 @@ export const createReservation = async (req, res) => {
 
     if (reservationType === "restaurant") {
       if (!image || !date || !time || !guests) {
-        return res
-          .status(400)
-          .json({ message: "Fill restaurants required fields" });
+        return res.status(400).json({ message: "Fill restaurants required fields" });
       }
 
       const restaurant = await restaurantReservation.create({
@@ -390,13 +408,9 @@ export const createReservation = async (req, res) => {
         vendorSocket.send(
           JSON.stringify({
             type: "new_reservation",
-            data: {
-              ...restaurant,
-              message: "You have a new reservation",
-            },
+            data: { ...restaurant, message: "You have a new reservation" },
           }),
         );
-        console.log("Reservation sent to vendor via WebSocket.");
       }
     }
 
@@ -419,29 +433,18 @@ export const createReservation = async (req, res) => {
       if (vendorSocket && vendorSocket.readyState === 1) {
         const hotelRes = await hotelReservation
           .findById(hotel._id)
-          .populate({
-            path: "vendor",
-          })
-          .populate({
-            path: "room",
-          });
+          .populate({ path: "vendor" })
+          .populate({ path: "room" });
         vendorSocket.send(
           JSON.stringify({
             type: "new_reservation",
-            data: {
-              ...hotelRes,
-              message: "You have a new reservation",
-            },
+            data: { ...hotelRes.toObject(), message: "You have a new reservation" },
           }),
         );
       }
     }
 
     if (reservationType === "club") {
-      if (!drinks || !date || !time || !guests) {
-        return res.status(400).json({ message: "Fill Clubs required fields" });
-      }
-
       const club = await clubReservation.create({
         ...initialData,
         date,
@@ -450,6 +453,7 @@ export const createReservation = async (req, res) => {
         guests,
         drinks,
         combos,
+        specialRequest,
       });
 
       reservationData = club;
@@ -457,20 +461,12 @@ export const createReservation = async (req, res) => {
       if (vendorSocket && vendorSocket.readyState === 1) {
         const clubRes = await clubReservation
           .findById(club._id)
-          .populate({
-            path: "vendor",
-          })
-          .populate({
-            path: "drinks.drink",
-          });
-        // 1 = OPEN
+          .populate({ path: "vendor" })
+          .populate({ path: "drinks.drink" });
         vendorSocket.send(
           JSON.stringify({
             type: "new_reservation",
-            data: {
-              ...clubRes,
-              message: "You have a new reservation",
-            },
+            data: { ...clubRes.toObject(), message: "You have a new reservation" },
           }),
         );
       }
@@ -490,54 +486,87 @@ export const createReservation = async (req, res) => {
     );
 
     return res.status(201).json({
-      message: "Created Reservation succesfully",
+      message: "Created Reservation successfully",
       data: reservationData,
     });
   } catch (error) {
     console.error(error);
-    return res.status(500).json({
-      message: error.message,
-    });
+    return res.status(500).json({ message: error.message });
   }
 };
 
 export const getReservations = async (req, res) => {
-  const {
-    vendorId,
-    userId,
-    bookingId,
-    resId,
-    limit = 10,
-    page = 1,
-  } = req.query;
+  const { vendorId, userId, bookingId, resId, limit = 10, page = 1 } = req.query;
   try {
     const query = {};
     if (!vendorId && !userId && !bookingId && !resId) {
-      return res.status(401).json({
-        message: "Not Authorized",
-      });
+      return res.status(401).json({ message: "Not Authorized" });
     }
 
     if (bookingId) query._id = bookingId;
     if (vendorId) query.vendor = vendorId;
     if (userId) query.customerId = userId;
     if (resId) query.resId = resId;
+
     const reservations = await Booking.find(query)
       .populate({ path: "menus.menu" })
       .populate({ path: "vendor" })
+      .populate({ path: "paymentRef" })
       .populate({ path: "room" })
       .populate({ path: "drinks.drink" })
       .populate({ path: "combos" })
       .populate({ path: "table" })
+      .populate({ path: "rooms.roomType" })
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(parseInt(limit));
 
     const total = await Booking.countDocuments(query);
 
+    if (resId && reservations.length === 1) {
+      const booking = reservations[0];
+      let rooms = [];
+
+      if (booking.reservationType === "hotelReservation") {
+        if (booking.rooms && booking.rooms.length > 0) {
+          const numRooms = booking.rooms.length;
+          const guestsPerRoom = Math.floor((booking.guests || 1) / numRooms) || 1;
+          rooms = booking.rooms.map((room) => ({
+            roomId: room.roomType?._id?.toString() || room.roomType,
+            checkInDate: booking.checkInDate,
+            checkOutDate: booking.checkOutDate,
+            guests: guestsPerRoom,
+          }));
+        } else if (booking.room) {
+          rooms = [{
+            roomId: booking.room._id?.toString() || booking.room,
+            checkInDate: booking.checkInDate,
+            checkOutDate: booking.checkOutDate,
+            guests: booking.guests || 1,
+          }];
+        }
+      }
+
+      const transformed = {
+        vendorId: booking.vendor?._id?.toString(),
+        reservationType: booking.reservationType.replace("Reservation", ""),
+        location: booking.location,
+        resId: booking.resId,
+        customerName: booking.customerName,
+        customerEmail: booking.customerEmail,
+        amount: booking.totalAmount || 0,
+        partPaid: booking.partPaid || false,
+        rooms,
+      };
+
+      return res.status(200).json({
+        message: "Fetched Reservation Successfully",
+        data: transformed,
+      });
+    }
+
     if (userId) {
       const now = new Date();
-
       const upcoming = [];
       const past = [];
 
@@ -547,22 +576,13 @@ export const getReservations = async (req, res) => {
         switch (resv.reservationType) {
           case "restaurantReservation":
           case "clubReservation":
-            if (resv.date && new Date(resv.date) >= now) {
-              isUpcoming = true;
-            }
+            if (resv.date && new Date(resv.date) >= now) isUpcoming = true;
             break;
-
           case "hotelReservation":
-            if (resv.checkOutDate && new Date(resv.checkOutDate) >= now) {
-              isUpcoming = true;
-            }
+            if (resv.checkOutDate && new Date(resv.checkOutDate) >= now) isUpcoming = true;
             break;
-
           default:
-            // fallback on status
-            if (resv.reservationStatus === "Upcoming") {
-              isUpcoming = true;
-            }
+            if (resv.reservationStatus === "upcoming") isUpcoming = true;
             break;
         }
 
@@ -572,10 +592,7 @@ export const getReservations = async (req, res) => {
 
       return res.status(200).json({
         message: "Fetched Reservations Successfully",
-        data: {
-          upcoming,
-          past,
-        },
+        data: { upcoming, past },
         total,
         page: parseInt(page),
         pages: Math.ceil(total / limit),
@@ -591,60 +608,40 @@ export const getReservations = async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-    return res.status(500).json({
-      message: error.message,
-    });
+    return res.status(500).json({ message: error.message });
   }
 };
 
-// @desc    Create a multi-room hotel reservation
-// @route   POST /api/bookings/create-multi-room
-// @access  Private
 export const createMultiRoomReservation = async (req, res) => {
   try {
     const {
-      vendor,
-      customerName,
-      customerId,
-      customerEmail,
-      location,
-      checkInDate,
-      checkOutDate,
-      guests,
-      rooms,
-      specialRequest,
-      partPaid,
-      payLater,
+      vendor, customerName, customerId, customerEmail,
+      location, checkInDate, checkOutDate, guests,
+      rooms, specialRequest, partPaid, payLater,
     } = req.body;
 
-    // Validate required fields
     if (!vendor || !location || !checkInDate || !checkOutDate || !rooms || rooms.length === 0) {
-      return res.status(400).json({ 
-        message: "Fill required fields: vendor, location, checkInDate, checkOutDate, and at least one room" 
+      return res.status(400).json({
+        message: "Fill required fields: vendor, location, checkInDate, checkOutDate, and at least one room",
       });
     }
 
-    // Validate each room in the array
     for (const roomItem of rooms) {
       if (!roomItem.roomType || !roomItem.quantity || !roomItem.pricePerNight) {
-        return res.status(400).json({ 
-          message: "Each room must have roomType, quantity, and pricePerNight" 
+        return res.status(400).json({
+          message: "Each room must have roomType, quantity, and pricePerNight",
         });
       }
     }
 
-    // Calculate number of nights
     const checkIn = new Date(checkInDate);
     const checkOut = new Date(checkOutDate);
     const nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
 
     if (nights < 1) {
-      return res.status(400).json({ 
-        message: "Check-out date must be after check-in date" 
-      });
+      return res.status(400).json({ message: "Check-out date must be after check-in date" });
     }
 
-    // Calculate total amount
     let totalAmount = 0;
     let totalRooms = 0;
     for (const roomItem of rooms) {
@@ -652,24 +649,51 @@ export const createMultiRoomReservation = async (req, res) => {
       totalRooms += roomItem.quantity;
     }
 
+    // FIX: multi-room reservation also needs resId and paymentRef
+    const resId = `RES${Date.now()}${Math.random().toString(36).substr(2, 9)}`.toUpperCase();
+
+    const payment = await Payment.create({
+      vendor,
+      booking: resId,
+      user: customerId,
+      email: customerEmail,
+      customerName,
+      amount: totalAmount,
+      amountPaid: payLater ? 0 : partPaid ? totalAmount / 2 : totalAmount,
+      status: payLater ? "pending" : partPaid ? "partly_paid" : "success",
+      payLater,
+      partPaid,
+      booked: !payLater,
+      metadata: {
+        vendorId: vendor,
+        reservationType: "hotel",
+        location,
+        checkInDate,
+        checkOutDate,
+        guests,
+        rooms,
+        specialRequest,
+      },
+    });
+
     const bookingCode = generateBookingCode();
 
     const initialData = {
+      resId,
+      bookingCode,
+      paymentRef: payment._id,           // ✅ always set
       customerName,
       customerId,
       customerEmail,
       vendor,
       reservationType: "hotelReservation",
-      reservationStatus: "Upcoming",
+      reservationStatus: "upcoming",
       location,
       totalAmount,
-      paymentStatus: partPaid ? "Part Paid" : !payLater ? "Paid" : "Not Paid",
+      paymentStatus: partPaid ? "partly_paid" : payLater ? "not_paid" : "paid",
       payLater,
-      paidFor: true,
-      bookingCode,
     };
 
-    // Create multi-room hotel reservation
     const hotel = await hotelReservation.create({
       ...initialData,
       checkInDate,
@@ -680,18 +704,13 @@ export const createMultiRoomReservation = async (req, res) => {
       totalRooms,
     });
 
-    // Send notification via WebSocket
     const vendorSocket = getVendorSocket(vendor);
     if (vendorSocket && vendorSocket.readyState === 1) {
       const hotelRes = await hotelReservation
         .findById(hotel._id)
-        .populate({
-          path: "vendor",
-        })
-        .populate({
-          path: "rooms.roomType",
-        });
-      
+        .populate({ path: "vendor" })
+        .populate({ path: "rooms.roomType" });
+
       vendorSocket.send(
         JSON.stringify({
           type: "new_multi_room_reservation",
@@ -703,17 +722,12 @@ export const createMultiRoomReservation = async (req, res) => {
       );
     }
 
-    // Populate the result
-    const reservation = await hotelReservation.findById(hotel._id)
+    const reservation = await hotelReservation
+      .findById(hotel._id)
       .populate("vendor", "businessName vendorType")
       .populate("rooms.roomType", "name pricePerNight");
 
-    // Send confirmation email
-    await sendBookingConfirmationEmail(
-      customerEmail,
-      reservation,
-      "hotel",
-    );
+    await sendBookingConfirmationEmail(customerEmail, reservation, "hotel");
 
     return res.status(201).json({
       message: "Created Multi-Room Reservation successfully",
@@ -725,25 +739,23 @@ export const createMultiRoomReservation = async (req, res) => {
         nights,
         totalRooms,
         totalAmount,
-        rooms: rooms.map(r => ({
+        rooms: rooms.map((r) => ({
           roomType: r.roomType,
           quantity: r.quantity,
           pricePerNight: r.pricePerNight,
-          subtotal: r.pricePerNight * r.quantity * nights
-        }))
-      }
+          subtotal: r.pricePerNight * r.quantity * nights,
+        })),
+      },
     });
   } catch (error) {
     console.error("Error creating multi-room reservation:", error);
-    return res.status(500).json({
-      message: error.message,
-    });
+    return res.status(500).json({ message: error.message });
   }
 };
 
 export const getReservationStats = async (req, res) => {
   try {
-    const vendorId = req.user._id || null; // optional filter
+    const vendorId = req.user._id || null;
     const vendorFilter = vendorId ? { vendor: vendorId } : {};
 
     const today = new Date();
@@ -752,31 +764,15 @@ export const getReservationStats = async (req, res) => {
       dayjs(today).subtract(7, "day"),
     );
 
-    // 1. Total Reservations Today vs Last Week
     const [todayCount, lastWeekCount] = await Promise.all([
-      Booking.countDocuments({
-        ...vendorFilter,
-        createdAt: { $gte: todayStart, $lte: todayEnd },
-      }),
-      Booking.countDocuments({
-        ...vendorFilter,
-        createdAt: { $gte: lastWeekStart, $lte: lastWeekEnd },
-      }),
+      Booking.countDocuments({ ...vendorFilter, createdAt: { $gte: todayStart, $lte: todayEnd } }),
+      Booking.countDocuments({ ...vendorFilter, createdAt: { $gte: lastWeekStart, $lte: lastWeekEnd } }),
     ]);
     const totalReservationsChange = percentChange(todayCount, lastWeekCount);
 
-    // 2. Prepaid Reservations
     const [todayPrepaid, lastWeekPrepaid] = await Promise.all([
-      Booking.countDocuments({
-        ...vendorFilter,
-        paymentStatus: "success",
-        createdAt: { $gte: todayStart, $lte: todayEnd },
-      }),
-      Booking.countDocuments({
-        ...vendorFilter,
-        paymentStatus: "success",
-        createdAt: { $gte: lastWeekStart, $lte: lastWeekEnd },
-      }),
+      Booking.countDocuments({ ...vendorFilter, paymentStatus: "paid", createdAt: { $gte: todayStart, $lte: todayEnd } }),
+      Booking.countDocuments({ ...vendorFilter, paymentStatus: "paid", createdAt: { $gte: lastWeekStart, $lte: lastWeekEnd } }),
     ]);
     const prepaidChange = percentChange(todayPrepaid, lastWeekPrepaid);
 
@@ -792,12 +788,7 @@ export const getReservationStats = async (req, res) => {
             ],
           },
         },
-        {
-          $group: {
-            _id: null,
-            guests: { $sum: { $ifNull: ["$guests", 0] } },
-          },
-        },
+        { $group: { _id: null, guests: { $sum: { $ifNull: ["$guests", 0] } } } },
       ]);
       return result[0]?.guests || 0;
     };
@@ -808,28 +799,16 @@ export const getReservationStats = async (req, res) => {
     ]);
     const guestsChange = percentChange(guestsToday, guestsLastWeek);
 
-    // 4. Pending Payments
     const [todayPending, lastWeekPending] = await Promise.all([
-      Booking.countDocuments({
-        ...vendorFilter,
-        paymentStatus: "pending",
-        createdAt: { $gte: todayStart, $lte: todayEnd },
-      }),
-      Booking.countDocuments({
-        ...vendorFilter,
-        paymentStatus: "pending",
-        createdAt: { $gte: lastWeekStart, $lte: lastWeekEnd },
-      }),
+      Booking.countDocuments({ ...vendorFilter, paymentStatus: "pending", createdAt: { $gte: todayStart, $lte: todayEnd } }),
+      Booking.countDocuments({ ...vendorFilter, paymentStatus: "pending", createdAt: { $gte: lastWeekStart, $lte: lastWeekEnd } }),
     ]);
     const pendingChange = percentChange(todayPending, lastWeekPending);
 
     res.status(200).json({
       success: true,
       data: {
-        totalReservations: {
-          count: todayCount,
-          change: totalReservationsChange,
-        },
+        totalReservations: { count: todayCount, change: totalReservationsChange },
         prepaidReservations: { count: todayPrepaid, change: prepaidChange },
         expectedGuests: { count: guestsToday, change: guestsChange },
         pendingPayments: { count: todayPending, change: pendingChange },
@@ -844,17 +823,30 @@ export const getReservationStats = async (req, res) => {
   }
 };
 
+// FIX: createReservationFromPayment — all 3 required fields now guaranteed
 export async function createReservationFromPayment(payment) {
   const metadata = payment.metadata;
+
+  // FIX 1: resId comes from payment.booking (the booking reference ID)
+  const resId = payment.booking;
+  if (!resId) {
+    throw new Error("Payment is missing 'booking' field (resId). Cannot create reservation.");
+  }
+
+  // FIX 2: paymentRef is always payment._id — no longer conditional
+  const paymentRef = payment._id;
+
   const bookingCode = generateBookingCode();
-  
-  // Generate QR confirmation token for this booking
   const qrConfirmationToken = crypto.randomBytes(32).toString("hex");
 
+  // FIX 3: normalise reservationType — strip any trailing "Reservation" then re-append
+  const rawType = (metadata.reservationType || "").replace(/Reservation$/i, "").toLowerCase();
+  const reservationType = rawType.charAt(0).toUpperCase() + rawType.slice(1) + "Reservation";
+
   const baseData = {
-    resId: payment.booking,
+    resId,                                // ✅ from payment.booking
     bookingCode,
-    paymentRef: payment._id,
+    paymentRef,                           // ✅ always payment._id
     customerId: payment.user,
     customerName: metadata.customerName,
     customerEmail: metadata.customerEmail,
@@ -863,77 +855,82 @@ export async function createReservationFromPayment(payment) {
     location: metadata.location,
     totalAmount: payment.amount,
     paymentStatus: payment.payLater ? "not_paid" : payment.partPaid ? "partly_paid" : "paid",
-    reservationStatus: "upcoming",
+    reservationStatus: payment.payLater ? "upcoming" : "confirmed",
     payLater: payment.payLater,
     partPaid: payment.partPaid,
-    reservationType: metadata.reservationType + "Reservation",
+    reservationType,
     qrConfirmationToken,
   };
 
+  // FIX 4: validate club metadata ONCE, before branching
+  const isClubType = ["club", "clubreservation"].includes(rawType);
+
+  if (isClubType) {
+    if (
+      !metadata.date ||
+      !metadata.time ||
+      !metadata.guests ||
+      !Array.isArray(metadata.drinks) ||
+      metadata.drinks.length === 0
+    ) {
+      throw new Error(
+        "Club reservation requires metadata fields: date, time, guests, drinks (non-empty array)"
+      );
+    }
+  }
+
   let reservation;
-  if (metadata.reservationType === "restaurant") {
-    reservation = await restaurantReservation.create(
-      [
-        {
-          ...baseData,
-          date: metadata.date,
-          time: metadata.time,
-          guests: metadata.guests,
-          mealPreselected: metadata.mealPreselected,
-          menus:
-            metadata.menus?.map((m) => ({
-              menu: m.menuId,
-              quantity: m.quantity,
-              specialRequest: m.specialRequest,
-            })) || [],
-          specialOccasion: metadata.specialOccasion,
-          seatingPreference: metadata.seatingPreference,
-          specialRequest: metadata.specialRequest,
-        },
-      ],
-    );
 
-    reservation = reservation[0];
+  if (rawType === "restaurant") {
+    const [created] = await restaurantReservation.create([{
+      ...baseData,
+      date: metadata.date,
+      time: metadata.time,
+      guests: metadata.guests,
+      mealPreselected: metadata.mealPreselected,
+      menus: metadata.menus?.map((m) => ({
+        menu: m.menuId,
+        quantity: m.quantity,
+        specialRequest: m.specialRequest,
+      })) || [],
+      specialOccasion: metadata.specialOccasion,
+      seatingPreference: metadata.seatingPreference,
+      specialRequest: metadata.specialRequest,
+    }]);
+    reservation = created;
   }
 
-  if (metadata.reservationType === "hotel") {
-    reservation = await hotelReservation.create(
-      [
-        {
-          ...baseData,
-          checkInDate: metadata.checkInDate,
-          checkOutDate: metadata.checkOutDate,
-          guests: metadata.guests,
-          room: metadata.roomId,
-          specialRequest: metadata.specialRequest,
-        },
-      ],
-    );
-
-    reservation = reservation[0];
+  if (rawType === "hotel") {
+    const [created] = await hotelReservation.create([{
+      ...baseData,
+      checkInDate: metadata.checkInDate,
+      checkOutDate: metadata.checkOutDate,
+      guests: metadata.guests,
+      room: metadata.roomId,
+      specialRequest: metadata.specialRequest,
+    }]);
+    reservation = created;
   }
 
-  if (metadata.reservationType === "club") {
-    reservation = await clubReservation.create(
-      [
-        {
-          ...baseData,
-          date: metadata.date,
-          time: metadata.time,
-          guests: metadata.guests,
-          table: metadata.table,
-          drinks:
-            metadata.drinks?.map((d) => ({
-              drink: d.drink,
-              quantity: d.quantity,
-            })) || [],
-          combos: metadata.combos || [],
-          specialRequest: metadata.specialRequest,
-        },
-      ],
-    );
+  if (isClubType) {
+    const [created] = await clubReservation.create([{
+      ...baseData,
+      date: metadata.date,
+      time: metadata.time,
+      guests: metadata.guests,
+      table: metadata.table,
+      drinks: metadata.drinks.map((d) => ({
+        drink: d.drink,
+        quantity: d.quantity,
+      })),
+      combos: metadata.combos || [],
+      specialRequest: metadata.specialRequest,
+    }]);
+    reservation = created;
+  }
 
-    reservation = reservation[0];
+  if (!reservation) {
+    throw new Error(`Unknown reservationType: "${metadata.reservationType}"`);
   }
 
   return reservation;
@@ -946,13 +943,10 @@ export async function completePayment(req, res) {
     const payment = await Payment.findById(trxref);
 
     if (!payment) {
-      return res.status(404).json({
-        message: "Payment not found",
-      });
+      return res.status(404).json({ message: "Payment not found" });
     }
 
     if (payment.webhookProcessed && payment.booked) {
-
       const reservation = await Booking.findById(payment.reservationId)
         .populate("vendor")
         .populate("menus.menu")
@@ -963,11 +957,7 @@ export async function completePayment(req, res) {
 
       return res.json({
         success: true,
-        payment: {
-          status: payment.status,
-          paid_at: payment.paidAt,
-          amount: payment.amount,
-        },
+        payment: { status: payment.status, paid_at: payment.paidAt, amount: payment.amount },
         reservation,
         isNewBooking: false,
         source: "webhook",
@@ -976,31 +966,24 @@ export async function completePayment(req, res) {
 
     const paystackVerification = await axios.get(
       `https://api.paystack.co/transaction/verify/${payment._id}`,
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
-        },
-      },
+      { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` } },
     );
 
     const paystackData = paystackVerification.data.data;
 
     if (paystackData.status !== "success") {
-      return res.status(400).json({
-        message: "Payment not successful",
-      });
+      return res.status(400).json({ message: "Payment not successful" });
     }
 
-    let reservation = await Booking.findOne({
-      resId: payment.booking,
-    })
-
+    let reservation = await Booking.findOne({ resId: payment.booking });
     let isNewBooking = false;
 
     if (!reservation) {
       reservation = await createReservationFromPayment(payment);
       const vendor = await Vendor.findOne({ _id: reservation.vendor._id });
-      if (payment.isSplitPayment && !payment.booked) {vendor.balance += payment.amountPaid }
+      if (payment.isSplitPayment && !payment.booked) {
+        vendor.balance += payment.amountPaid;
+      }
       await vendor.save();
       isNewBooking = true;
     }
@@ -1010,6 +993,7 @@ export async function completePayment(req, res) {
       {
         status: "success",
         booked: true,
+        webhookProcessed: true,
         paidAt: paystackData.paid_at,
         reservationId: reservation._id,
         paystackData,
@@ -1017,13 +1001,25 @@ export async function completePayment(req, res) {
       },
     );
 
-    const populate = reservation.reservationType === "restaurantReservation" ?
-     "menus.menu" : reservation.reservationType === "hotelReservation" ?
-     "room" : "drinks.drink combos table";
+    const populate =
+      reservation.reservationType === "restaurantReservation"
+        ? "menus.menu"
+        : reservation.reservationType === "hotelReservation"
+        ? "room"
+        : "drinks.drink combos table";
 
-    
     await reservation.populate(`vendor ${populate}`);
-    
+
+    // AUTO-CONFIRM: Full payment bookings (non-payLater)
+    if (!reservation.confirmedAt && !payment.payLater && payment.status === 'success') {
+      reservation.reservationStatus = "confirmed";
+      reservation.confirmedAt = new Date();
+      reservation.confirmedBy = reservation.vendor._id;
+      reservation.confirmationMethod = "auto_payment";
+      await reservation.save();
+      console.log('🤖 AUTO-CONFIRMED booking:', reservation._id, 'Full payment detected');
+    }
+
     if (isNewBooking) {
       sendBookingConfirmationEmail(
         reservation.customerEmail,
@@ -1036,42 +1032,25 @@ export async function completePayment(req, res) {
         vendorSocket.send(
           JSON.stringify({
             type: "new_reservation",
-            data: {
-              ...reservation.toObject(),
-              message: "You have a new reservation",
-            },
+            data: { ...reservation.toObject(), message: "You have a new reservation" },
           }),
         );
       }
     }
-    
+
     res.json({
       success: true,
-      payment: {
-        status: "success",
-        paid_at: paystackData.paid_at,
-        amount: payment.amount,
-      },
+      payment: { status: "success", paid_at: paystackData.paid_at, amount: payment.amount },
       reservation,
       isNewBooking,
       source: "redirect",
     });
   } catch (error) {
     console.error("Complete payment error:", error);
-
-    res.status(400).json({
-      message: error.message || "Failed to complete payment",
-    });
+    res.status(400).json({ message: error.message || "Failed to complete payment" });
   }
 }
 
-// ============================================
-// RESERVATION CONFIRMATION SYSTEM
-// ============================================
-
-// @desc    Generate QR confirmation token for a booking
-// @route   POST /api/bookings/:id/generate-qr-token
-// @access  Private (Vendor, Admin)
 export const generateQRConfirmationToken = async (req, res) => {
   try {
     const { id } = req.params;
@@ -1081,10 +1060,7 @@ export const generateQRConfirmationToken = async (req, res) => {
       return res.status(404).json({ message: "Booking not found" });
     }
 
-    // Generate unique confirmation token
     const token = crypto.randomBytes(32).toString("hex");
-
-    // Update booking with QR token
     booking.qrConfirmationToken = token;
     await booking.save();
 
@@ -1106,9 +1082,6 @@ export const generateQRConfirmationToken = async (req, res) => {
   }
 };
 
-// @desc    Verify QR code before confirmation (for vendor scanning preview)
-// @route   GET /api/bookings/verify-qr/:token
-// @access  Private (Vendor, Admin)
 export const verifyQRCode = async (req, res) => {
   try {
     const { token } = req.params;
@@ -1118,21 +1091,18 @@ export const verifyQRCode = async (req, res) => {
       .populate("customerId", "firstName lastName email phone");
 
     if (!booking) {
-      return res.status(404).json({
-        success: false,
-        message: "Invalid QR code",
-        valid: false,
-      });
+      return res.status(404).json({ success: false, message: "Invalid QR code", valid: false });
     }
 
-    // Check if already confirmed
     const isConfirmed = !!booking.confirmedAt;
 
-    // Get reservation time based on type
     let reservationTime = null;
     let isPast = false;
 
-    if (booking.reservationType === "restaurantReservation" || booking.reservationType === "clubReservation") {
+    if (
+      booking.reservationType === "restaurantReservation" ||
+      booking.reservationType === "clubReservation"
+    ) {
       reservationTime = booking.date;
       isPast = new Date(booking.date) < new Date();
     } else if (booking.reservationType === "hotelReservation") {
@@ -1154,7 +1124,7 @@ export const verifyQRCode = async (req, res) => {
         status: booking.reservationStatus,
         isConfirmed,
         isPast,
-        canConfirm: !isConfirmed, // Can confirm if not already confirmed
+        canConfirm: !isConfirmed,
       },
     });
   } catch (error) {
@@ -1163,20 +1133,93 @@ export const verifyQRCode = async (req, res) => {
   }
 };
 
-// @desc    Manual confirmation by vendor from dashboard
-// @route   POST /api/bookings/:id/confirm
-// @access  Private (Vendor, Admin)
 export const confirmReservation = async (req, res) => {
   try {
     const { id } = req.params;
-    const { vendorId } = req.body; // Vendor confirming the reservation
+    const { vendorId } = req.body;
+    const effectiveVendorId = vendorId || req.user?._id;
 
-    const booking = await Booking.findById(id);
+    const booking = await Booking.findById(id).populate({
+      path: 'paymentRef',
+      model: 'Payment'
+    }).populate('vendor');
     if (!booking) {
       return res.status(404).json({ message: "Booking not found" });
     }
 
-    // Check if already confirmed
+    console.log('📋 Booking details:', {
+      _id: booking._id,
+      resId: booking.resId,
+      type: booking.reservationType,
+      status: booking.reservationStatus,
+      paymentRef: booking.paymentRef?._id,
+      vendor: booking.vendor?._id
+    });
+
+    let payment = booking.paymentRef;
+    console.log('💳 Payment lookup #1 (from booking.paymentRef):', payment?._id || 'MISSING');
+
+    if (!payment) {
+      if (booking.resId) {
+        payment = await Payment.findOne({ booking: booking.resId });
+        console.log('💳 Fallback #1 (by resId):', payment?._id || 'NOT FOUND');
+      }
+      
+      if (!payment && booking._id) {
+        payment = await Payment.findOne({ booking: booking._id.toString() });
+        console.log('💳 Fallback #2 (by booking ID):', payment?._id || 'NOT FOUND');
+      }
+    }
+    
+    if (!payment) {
+      return res.status(400).json({
+        success: false,
+        message: 'No payment found for this booking. Check payments collection.',
+        bookingId: booking._id,
+        bookingResId: booking.resId,
+        debug: [
+          `db.payments.find({ $or: [{booking: "${booking.resId || 'MISSING'}"}, {booking: ObjectId("${booking._id}")}] })`
+        ]
+      });
+    }
+
+
+
+
+
+    // Validate payment exists & successful
+    const isPaymentValid = payment.status === 'success' && 
+                          payment.amountPaid >= (payment.amount * 0.95);
+
+    if (!isPaymentValid) {
+      console.log('🚫 Payment validation failed:', {
+        bookingId: id,
+        resId: effectiveResId,
+        paymentId: payment?._id,
+        paymentStatus: payment?.status,
+        amountDue: payment?.amount,
+        amountPaid: payment?.amountPaid,
+        isSuccessStatus: payment?.status === 'success',
+        isFullyPaid: payment?.amountPaid >= payment?.amount,
+        rawPayment: payment
+      });
+      
+      return res.status(400).json({
+        success: false,
+        message: `Payment validation failed for booking ${effectiveResId}. Expected status="success". Current: "${payment?.status || 'MISSING'}"`,
+        paymentStatus: payment?.status || 'MISSING',
+        paymentId: payment?._id,
+        amountDue: payment?.amount || 0,
+        amountPaid: payment?.amountPaid || 0,
+        bookingPaymentRef: booking.paymentRef?._id,
+        effectiveResId,
+        debug: '1. Check if payment exists: db.payments.findOne({booking: "' + effectiveResId + '"})',
+        fix: '2. Set status: db.payments.updateOne({_id: ObjectId("PAYMENT_ID")}, {$set: {status: "success"}})\n3. Add to booking: db.reservations.updateOne({_id: ObjectId("' + id + '")}, {$set: {paymentRef: ObjectId("PAYMENT_ID")}})'
+      });
+    }
+
+    console.log('✅ Payment validation passed:', {paymentId: payment._id, status: payment.status});
+
     if (booking.confirmedAt) {
       return res.status(400).json({
         message: "Reservation already confirmed",
@@ -1186,35 +1229,27 @@ export const confirmReservation = async (req, res) => {
       });
     }
 
-    // Verify vendor owns this booking (if vendor is confirming)
-    if (vendorId && booking.vendor.toString() !== vendorId) {
-      // Admin can confirm any booking
+    if (booking.vendor.toString() !== effectiveVendorId) {
       const userRole = req.user?.role;
       if (userRole !== "superadmin" && userRole !== "admin") {
         return res.status(403).json({ message: "Not authorized to confirm this reservation" });
       }
     }
 
-    // Update confirmation
     booking.confirmedAt = new Date();
     booking.confirmedBy = vendorId || req.user?._id;
     booking.confirmationMethod = "manual";
+    booking.reservationStatus = "confirmed";
     await booking.save();
 
-    // Record audit log
-    await recordAuditLog(
-      vendorId || req.user?._id,
-      "RESERVATION_CONFIRMED",
-      "Booking",
-      booking._id,
-      {
-        confirmedBy: vendorId || req.user?._id,
-        confirmationMethod: "manual",
-        previousStatus: booking.reservationStatus,
-      }
-    );
+    await recordAuditLog(effectiveVendorId, "RESERVATION_CONFIRMED", "Booking", booking._id, {
+      confirmedBy: effectiveVendorId,
+      confirmationMethod: "manual",
+      previousStatus: booking.reservationStatus,
+      effectiveResId,
+      effectivePaymentId
+    });
 
-    // Emit real-time update
     const vendorSocket = getVendorSocket(booking.vendor);
     if (vendorSocket && vendorSocket.readyState === 1) {
       vendorSocket.send(
@@ -1231,12 +1266,38 @@ export const confirmReservation = async (req, res) => {
       );
     }
 
+    const userSocket = getUserSocket(booking.customerId.toString());
+    if (userSocket && userSocket.readyState === 1) {
+      userSocket.send(
+        JSON.stringify({
+          type: "reservation_confirmed",
+          data: {
+            bookingId: booking._id,
+            bookingCode: booking.bookingCode,
+            customerName: booking.customerName,
+            confirmedAt: booking.confirmedAt,
+            confirmationMethod: booking.confirmationMethod,
+            message: "Your reservation has been confirmed by the vendor!",
+          },
+        })
+      );
+    }
+
+    try {
+      const vendorType = booking.reservationType?.replace("Reservation", "").toLowerCase() || "booking";
+      await sendBookingConfirmationEmail(booking.customerEmail, booking, vendorType);
+    } catch (emailError) {
+      console.error("Email notification failed:", emailError);
+    }
+
     res.status(200).json({
       success: true,
-      message: "Reservation confirmed successfully",
+      message: "Hotel reservation confirmed successfully",
       data: {
         bookingId: booking._id,
         bookingCode: booking.bookingCode,
+        resId: effectiveResId,
+        paymentId: effectivePaymentId,
         confirmedAt: booking.confirmedAt,
         confirmedBy: booking.confirmedBy,
         confirmationMethod: booking.confirmationMethod,
@@ -1248,12 +1309,10 @@ export const confirmReservation = async (req, res) => {
   }
 };
 
-// @desc    QR code confirmation - vendor scans user's QR code
-// @route   POST /api/bookings/confirm-by-qr
-// @access  Private (Vendor, Admin)
 export const confirmByQRCode = async (req, res) => {
   try {
-    const { token, vendorId } = req.body;
+    const { token, vendorId: bodyVendorId } = req.body;
+    const vendorId = bodyVendorId || req.user._id;
 
     if (!token) {
       return res.status(400).json({ message: "QR token is required" });
@@ -1265,7 +1324,6 @@ export const confirmByQRCode = async (req, res) => {
       return res.status(404).json({ message: "Invalid QR code - booking not found" });
     }
 
-    // Check if already confirmed
     if (booking.confirmedAt) {
       return res.status(400).json({
         success: false,
@@ -1280,7 +1338,6 @@ export const confirmByQRCode = async (req, res) => {
       });
     }
 
-    // Verify vendor owns this booking (if vendor is confirming)
     if (vendorId && booking.vendor.toString() !== vendorId) {
       const userRole = req.user?.role;
       if (userRole !== "superadmin" && userRole !== "admin") {
@@ -1288,26 +1345,18 @@ export const confirmByQRCode = async (req, res) => {
       }
     }
 
-    // Update confirmation via QR
     booking.confirmedAt = new Date();
     booking.confirmedBy = vendorId || req.user?._id;
     booking.confirmationMethod = "qr_code";
+    booking.reservationStatus = "confirmed";
     await booking.save();
 
-    // Record audit log
-    await recordAuditLog(
-      vendorId || req.user?._id,
-      "RESERVATION_CONFIRMED_VIA_QR",
-      "Booking",
-      booking._id,
-      {
-        confirmedBy: vendorId || req.user?._id,
-        confirmationMethod: "qr_code",
-        previousStatus: booking.reservationStatus,
-      }
-    );
+    await recordAuditLog(vendorId || req.user?._id, "RESERVATION_CONFIRMED_VIA_QR", "Booking", booking._id, {
+      confirmedBy: vendorId || req.user?._id,
+      confirmationMethod: "qr_code",
+      previousStatus: booking.reservationStatus,
+    });
 
-    // Emit real-time update
     const vendorSocket = getVendorSocket(booking.vendor);
     if (vendorSocket && vendorSocket.readyState === 1) {
       vendorSocket.send(
@@ -1323,6 +1372,30 @@ export const confirmByQRCode = async (req, res) => {
           },
         })
       );
+    }
+
+    const userSocket = getUserSocket(booking.customerId.toString());
+    if (userSocket && userSocket.readyState === 1) {
+      userSocket.send(
+        JSON.stringify({
+          type: "reservation_confirmed",
+          data: {
+            bookingId: booking._id,
+            bookingCode: booking.bookingCode,
+            customerName: booking.customerName,
+            confirmedAt: booking.confirmedAt,
+            confirmationMethod: booking.confirmationMethod,
+            message: "Your reservation has been confirmed by the vendor via QR code!",
+          },
+        })
+      );
+    }
+
+    try {
+      const vendorType = booking.reservationType?.replace("Reservation", "").toLowerCase() || "booking";
+      await sendBookingConfirmationEmail(booking.customerEmail, booking, vendorType);
+    } catch (emailError) {
+      console.error("QR confirmation email failed:", emailError);
     }
 
     res.status(200).json({
@@ -1343,45 +1416,33 @@ export const confirmByQRCode = async (req, res) => {
   }
 };
 
-// @desc    Create a multi-table club reservation
-// @route   POST /api/bookings/create-multi-table
-// @access  Private
 export const createMultiTableReservation = async (req, res) => {
   try {
     const {
-      vendor,
-      customerName,
-      customerId,
-      customerEmail,
-      location,
-      date,
-      time,
-      guests,
-      tables,
-      drinks,
-      combos,
-      specialRequest,
-      partPaid,
-      payLater,
+      vendor, customerName, customerId, customerEmail,
+      location, date, time, guests, tables,
+      drinks, combos, specialRequest, partPaid, payLater,
+      resId: bodyResId, paymentRef: bodyPaymentRef,
     } = req.body;
 
-    // Validate required fields
     if (!vendor || !location || !date || !time || !tables || tables.length === 0) {
-      return res.status(400).json({ 
-        message: "Fill required fields: vendor, location, date, time, and at least one table" 
-      });
+      const missing = [];
+      if (!vendor) missing.push("vendor");
+      if (!location) missing.push("location");
+      if (!date) missing.push("date");
+      if (!time) missing.push("time");
+      if (!tables || tables.length === 0) missing.push("tables");
+      return res.status(400).json({ message: `Missing required fields: ${missing.join(", ")}` });
     }
 
-    // Validate each table in the array
     for (const tableItem of tables) {
       if (!tableItem.tableType || !tableItem.quantity || !tableItem.pricePerTable) {
-        return res.status(400).json({ 
-          message: "Each table must have tableType, quantity, and pricePerTable" 
+        return res.status(400).json({
+          message: "Each table must have tableType, quantity, and pricePerTable",
         });
       }
     }
 
-    // Calculate total amount
     let totalAmount = 0;
     let totalTables = 0;
     for (const tableItem of tables) {
@@ -1389,26 +1450,86 @@ export const createMultiTableReservation = async (req, res) => {
       totalTables += tableItem.quantity;
     }
 
+    const generateUniqueResId = async () => {
+      let candidate = `RES${Date.now()}${Math.random().toString(36).substr(2, 9)}`.toUpperCase();
+      while (
+        (await Payment.findOne({ booking: candidate })) ||
+        (await Booking.findOne({ resId: candidate }))
+      ) {
+        candidate = `RES${Date.now()}${Math.random().toString(36).substr(2, 9)}`.toUpperCase();
+      }
+      return candidate;
+    };
+
+    let effectiveResId = bodyResId;
+    let effectivePaymentRef = bodyPaymentRef;
+
+    if (!effectiveResId && effectivePaymentRef) {
+      const pem = await Payment.findById(effectivePaymentRef);
+      if (pem) effectiveResId = pem.booking;
+    }
+
+    if (!effectiveResId) {
+      effectiveResId = await generateUniqueResId();
+    }
+
+    if (!effectivePaymentRef) {
+      const existingPayment = await Payment.findOne({ booking: effectiveResId });
+      if (existingPayment) {
+        effectivePaymentRef = existingPayment._id;
+      }
+    }
+
+    // FIX: auto-create payment if still missing
+    if (!effectivePaymentRef) {
+      const createdPayment = await Payment.create({
+        vendor,
+        booking: effectiveResId,
+        user: customerId || req.user._id,
+        email: customerEmail,
+        customerName,
+        amount: totalAmount,
+        amountPaid: payLater ? 0 : partPaid ? totalAmount / 2 : totalAmount,
+        status: payLater ? "pending" : partPaid ? "partly_paid" : "success",
+        payLater,
+        partPaid,
+        booked: !payLater,
+        metadata: {
+          vendorId: vendor,
+          reservationType: "club",
+          location,
+          date,
+          time,
+          guests,
+          drinks,
+          combos,
+          table: tables,
+          specialRequest,
+        },
+      });
+      effectivePaymentRef = createdPayment._id;
+    }
+
     const bookingCode = generateBookingCode();
     const qrConfirmationToken = crypto.randomBytes(32).toString("hex");
 
     const initialData = {
+      resId: effectiveResId,
+      bookingCode,
+      paymentRef: effectivePaymentRef,   // ✅ always set
       customerName,
       customerId,
       customerEmail,
       vendor,
       reservationType: "clubReservation",
-      reservationStatus: "Upcoming",
+      reservationStatus: "upcoming",
       location,
       totalAmount,
-      paymentStatus: partPaid ? "Part Paid" : !payLater ? "Paid" : "Not Paid",
+      paymentStatus: partPaid ? "partly_paid" : payLater ? "not_paid" : "paid",
       payLater,
-      paidFor: true,
-      bookingCode,
       qrConfirmationToken,
     };
 
-    // Create multi-table club reservation
     const club = await clubReservation.create({
       ...initialData,
       date,
@@ -1421,21 +1542,14 @@ export const createMultiTableReservation = async (req, res) => {
       totalTables,
     });
 
-    // Send notification via WebSocket
     const vendorSocket = getVendorSocket(vendor);
     if (vendorSocket && vendorSocket.readyState === 1) {
       const clubRes = await clubReservation
         .findById(club._id)
-        .populate({
-          path: "vendor",
-        })
-        .populate({
-          path: "tables.tableType",
-        })
-        .populate({
-          path: "drinks.drink",
-        });
-      
+        .populate({ path: "vendor" })
+        .populate({ path: "tables.tableType" })
+        .populate({ path: "drinks.drink" });
+
       vendorSocket.send(
         JSON.stringify({
           type: "new_multi_table_reservation",
@@ -1447,19 +1561,14 @@ export const createMultiTableReservation = async (req, res) => {
       );
     }
 
-    // Populate the result
-    const reservation = await clubReservation.findById(club._id)
+    const reservation = await clubReservation
+      .findById(club._id)
       .populate("vendor", "businessName vendorType")
       .populate("tables.tableType", "name price")
       .populate("drinks.drink", "name price")
       .populate("combos");
 
-    // Send confirmation email
-    await sendBookingConfirmationEmail(
-      customerEmail,
-      reservation,
-      "club",
-    );
+    await sendBookingConfirmationEmail(customerEmail, reservation, "club");
 
     return res.status(201).json({
       message: "Created Multi-Table Reservation successfully",
@@ -1470,25 +1579,20 @@ export const createMultiTableReservation = async (req, res) => {
         time,
         totalTables,
         totalAmount,
-        tables: tables.map(t => ({
+        tables: tables.map((t) => ({
           tableType: t.tableType,
           quantity: t.quantity,
           pricePerTable: t.pricePerTable,
-          subtotal: t.pricePerTable * t.quantity
-        }))
-      }
+          subtotal: t.pricePerTable * t.quantity,
+        })),
+      },
     });
   } catch (error) {
     console.error("Error creating multi-table reservation:", error);
-    return res.status(500).json({
-      message: error.message,
-    });
+    return res.status(500).json({ message: error.message });
   }
 };
 
-// @desc    Get confirmation status for a booking
-// @route   GET /api/bookings/:id/confirmation-status
-// @access  Private
 export const getConfirmationStatus = async (req, res) => {
   try {
     const { id } = req.params;

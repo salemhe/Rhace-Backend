@@ -1,6 +1,5 @@
 import dotenv from "dotenv";
 import http from "http";
-import { Server } from "socket.io";
 import express from "express";
 import cors from "cors";
 import app from "./app.js";
@@ -18,27 +17,8 @@ const PORT = process.env.PORT || 5000;
 
 const server = http.createServer(app);
 
-// UNIVERSAL SOCKET.IO CORS
-const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: "*",
-    allowedHeaders: "*"
-  }
-});
-
-// Pass socket instance to manager (NOT server!)
-setupWebSocket(io);
-
-io.on("connection", (socket) => {
-  console.log("Client connected:", socket.id);
-
-  socket.on("disconnect", () => {
-    console.log("Client disconnected:", socket.id);
-  });
-});
-
-global.io = io;
+// Pass http server to WebSocket manager
+setupWebSocket(server);
 
 // Start server
 server.listen(PORT, () => {
@@ -48,3 +28,4 @@ server.listen(PORT, () => {
 
 // ngrok.connect({ addr: PORT, authtoken_from_env: true })
 // 	.then(listener => console.log(`Ingress established at: ${listener.url()}`));
+

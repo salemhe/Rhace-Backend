@@ -2,6 +2,7 @@ import { Vendor } from "../models/vendor.model.js";
 import Payment from "../models/payment.model.js";
 import moment from "moment";
 import { Booking } from "../models/booking.model.js";
+import Reservation from "../models/reservation.model.js";
 import { getVendorSocket } from "../websockets/socketManager.js";
 import { MenuItem } from "../models/menu.model.js";
 import RoomType from "../models/roomtype.model.js";
@@ -84,7 +85,7 @@ export const getAdminTotalEarnings = async (req, res) => {
     // Get all successful payments with vendor info
     const payments = await Payment.find({
       ...dateFilter,
-      status: "Paid",
+      status: "success",
       isSplitPayment: true
     }).populate({
       path: "vendor",
@@ -208,7 +209,7 @@ export const getTotalSuccessfulPayments = async (req, res) => {
     // Get total successful payments count
     const totalSuccessful = await Payment.countDocuments({
       ...dateFilter,
-      status: "Paid"
+      status: "success"
     });
 
     // Get total failed payments count
@@ -220,7 +221,7 @@ export const getTotalSuccessfulPayments = async (req, res) => {
     // Get total pending payments count
     const totalPending = await Payment.countDocuments({
       ...dateFilter,
-      status: "Pending"
+      status: "pending"
     });
 
     // Get total cancelled payments count
@@ -749,17 +750,23 @@ export const initializePayment = async (req, res) => {
         message: "Missing restaurant required fields",
       });
     }
-    if (
-      reservationType === "hotel" &&
-      (!checkInDate || !checkOutDate || !guests || !roomId)
-    ) {
+    // Hotel fields optional for partPaid/deposits
+    if (reservationType === "hotel" && !partPaid && (!checkInDate || !checkOutDate || !guests || !roomId)) {
       return res.status(400).json({
-        message: "Missing hotel required fields",
+        message: "Hotel full payment requires: checkInDate, checkOutDate, guests, roomId",
+        missing: ["checkInDate", "checkOutDate", "guests", "roomId"],
+        fix: "Use partPaid: true for deposits"
       });
     }
-    if (reservationType === "club" && (!date || !time || !guests || !drinks)) {
+    if (reservationType === "club" && (!date || !time || !guests || !drinks || !Array.isArray(drinks) || drinks.length === 0)) {
       return res.status(400).json({
-        message: "Missing club required fields",
+        message: "Club requires: date(Date), time(HH:MM format), guests(number), drinks(non-empty array of {drink: ObjectId, quantity: number})",
+        missing: {
+          date: !!date,
+          time: !!time,
+          guests: !!guests,
+          drinks: Array.isArray(drinks) ? drinks.length > 0 : false
+        }
       });
     }
 
@@ -779,17 +786,23 @@ export const initializePayment = async (req, res) => {
         }, 0);
       }
 
-      if (reservationType === "hotel" && roomId) {
-        const room = await RoomType.findById(roomId);
-        if (!room) throw new Error("Room not found");
+      if (reservationType === "hotel") {
+        if (!roomId) {
+          // Default deposit amount for hotel without room details
+          totalAmount = 25000; // NGN 25k default deposit
+          console.log("Using default hotel deposit amount: 25000");
+        } else {
+          const room = await RoomType.findById(roomId);
+          if (!room) throw new Error("Room not found");
 
-        const nights = Math.ceil(
-          (new Date(checkOutDate) - new Date(checkInDate)) /
-            (1000 * 60 * 60 * 24),
-        );
-        totalAmount =
-          (room.pricePerNight - room.pricePerNight * (room.discount / 100)) *
-          nights;
+          const nights = Math.ceil(
+            (new Date(checkOutDate) - new Date(checkInDate)) /
+              (1000 * 60 * 60 * 24),
+          );
+          totalAmount =
+            (room.pricePerNight - room.pricePerNight * (room.discount / 100)) *
+            nights;
+        }
       }
 
       if (reservationType === "club" && drinks && table) {
@@ -1005,6 +1018,94 @@ export const getVendorsEarnings = async (req, res) => {
   }
 };
 
+export const getPaystackBalance = async (req, res) => {
+  try {
+    if (req.user.role !== "admin" && req.user.role !== "superadmin") {
+      return res.status(403).json({ message: "Access denied. Admin only." });
+    }
+
+    const response = await fetch("https://api.paystack.co/balance", {
+      headers: {
+        Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Paystack API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return res.json({
+      balance: data.data,
+      currency: data.data.currency || 'NGN'
+    });
+  } catch (error) {
+    console.error("Error fetching Paystack balance:", error);
+    return res.status(500).json({ error: "Failed to fetch balance" });
+  }
+};
+
+export const getPaystackTransactions = async (req, res) => {
+  try {
+    if (req.user.role !== "admin" && req.user.role !== "superadmin") {
+      return res.status(403).json({ message: "Access denied. Admin only." });
+    }
+
+    const { page = 1, per_page = 50, status } = req.query;
+    const params = new URLSearchParams({ page, per_page });
+    if (status) params.append('status', status);
+
+    const response = await fetch(`https://api.paystack.co/transaction?${params}`, {
+      headers: {
+        Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Paystack API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return res.json(data);
+  } catch (error) {
+    console.error("Error fetching Paystack transactions:", error);
+    return res.status(500).json({ error: "Failed to fetch transactions" });
+  }
+};
+
+export const getPaystackSuccessfulCount = async (req, res) => {
+  try {
+    if (req.user.role !== "admin" && req.user.role !== "superadmin") {
+      return res.status(403).json({ message: "Access denied. Admin only." });
+    }
+
+    const { from, to } = req.query;
+    const params = new URLSearchParams();
+    if (from) params.append('from', from);
+    if (to) params.append('to', to);
+
+    const response = await fetch(`https://api.paystack.co/statistics?${params}`, {
+      headers: {
+        Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Paystack API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return res.json({
+      successful: data.data?.success?.count || 0,
+      total: data.data?.total || 0,
+      stats: data.data
+    });
+  } catch (error) {
+    console.error("Error fetching Paystack stats:", error);
+    return res.status(500).json({ error: "Failed to fetch stats" });
+  }
+};
+
 export const verifyPayment = async (req, res) => {
   const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
   const userId = req.user?._id;
@@ -1078,6 +1179,34 @@ export const verifyPayment = async (req, res) => {
     const existingTransaction = await Payment.findOne({ reference });
     const amount = transaction.amount / 100;
 
+    // ✅ TASK 2: Idempotency check - skip if already webhook-processed success
+    if (existingTransaction && existingTransaction.status === "success" && existingTransaction.webhookProcessed) {
+      console.log("⏭️ Payment already processed via webhook:", existingTransaction._id);
+      
+      // Update reservations paymentStatus (safety net)
+      await Promise.all([
+        Booking.updateMany(
+          { resId: existingTransaction.booking },
+          { $set: { paymentStatus: "paid" } }
+        ),
+        Reservation.updateMany(
+          { payment: existingTransaction._id },
+          { $set: { paymentStatus: "paid" } }
+        )
+      ]);
+
+      const booking = await Booking.findOne({ resId: existingTransaction.booking });
+
+      return res.status(200).json({
+        success: true,
+        alreadyProcessed: true,
+        payment: existingTransaction,
+        bookingId: existingTransaction.booking,
+        booked: !!booking,
+        message: "Payment already verified and processed via webhook"
+      });
+    }
+
     if (!existingTransaction) {
       // Save the payment
       const newTransaction = new Payment({
@@ -1092,7 +1221,8 @@ export const verifyPayment = async (req, res) => {
         amountPaid: transaction.amount / 100,
         reference,
         payLater: transaction.metadata.payLater,
-        status: "Paid",
+        status: "success", // ✅ Consistent with payment model enum
+        webhookProcessed: true, // ✅ Mark as processed
       });
 
       await newTransaction.save();
@@ -1124,10 +1254,34 @@ export const verifyPayment = async (req, res) => {
         vendorId: vendorId,
         amount: amount,
         reference: reference,
-        status: "Paid",
+        status: "success",
         createdAt: newTransaction.createdAt,
       });
+    } else {
+      // Update existing transaction
+      await Payment.updateOne(
+        { _id: existingTransaction._id },
+        {
+          status: "success",
+          webhookProcessed: true,
+          paidAt: transaction.paid_at,
+          amountPaid: amount,
+          paymentMethod: transaction.channel,
+        }
+      );
     }
+
+    // ✅ Update reservations paymentStatus
+    await Promise.all([
+      Booking.updateMany(
+        { resId: transaction.metadata.bookingId },
+        { $set: { paymentStatus: "paid" } }
+      ),
+      Reservation.updateMany(
+        { payment: existingTransaction?._id || reference },
+        { $set: { paymentStatus: "paid" } }
+      )
+    ]);
 
     // Update booking payment status
     console.log("Booking ID from metadata:", transaction.metadata.bookingId);

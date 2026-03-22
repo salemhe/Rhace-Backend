@@ -55,7 +55,7 @@ const bookingSchema = new mongoose.Schema({
     },
     paymentStatus: { 
         type: String,
-        enum: ['pending', 'paid', 'partly_paid', 'refunded', 'failed', 'not_paid'],
+        enum: ['pending', 'paid', 'partly_paid', 'refunded', 'failed', 'not_paid', 'pay_ater'],
         default: 'pending',
         required: true,
         index: true
@@ -63,7 +63,7 @@ const bookingSchema = new mongoose.Schema({
     partPaid: Boolean,
     reservationStatus: { 
         type: String,
-        enum: ['upcoming', 'completed', 'cancelled', 'no_show'],
+        enum: ['upcoming', 'confirmed', 'completed', 'cancelled', 'no_show'],
         default: 'upcoming',
         required: true,
         index: true

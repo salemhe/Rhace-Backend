@@ -34,6 +34,9 @@ availabilityRoutes } from "./routes/index.js"
 
 const app = express();
 
+// Paystack webhook must be registered BEFORE body parsing middleware
+app.use("/api/paystack", paystackRoutes);
+
 app.use(cookieParser());
 app.use(express.json());
 app.use(cors({
@@ -71,8 +74,6 @@ app.use("/api/payments/payouts", payoutRoutes);
 app.use("/api/search", searchRoutes)
 app.use("/api/staff", staffRoutes)
 app.use("/api/reports", reportRoutes);
-
-app.use("/api/paystack/webhook", paystackRoutes);
 
 app.use("/api/availability", availabilityRoutes);
 

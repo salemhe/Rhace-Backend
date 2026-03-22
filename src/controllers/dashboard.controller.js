@@ -6,12 +6,7 @@ import RoomType from "../models/roomtype.model.js";
 import { Vendor } from "../models/vendor.model.js";
 import Reservation from "../models/reservation.model.js";
 
-// Emit real-time updates
-const emitDashboardUpdate = (userId, data) => {
-  if (global.io) {
-    global.io.to(`dashboard_${userId}`).emit('dashboard_update', data);
-  }
-};
+
 
 // @desc    Get dashboard KPIs
 // @route   GET /api/dashboard/kpis
@@ -132,19 +127,40 @@ export const getKPIs = async (req, res) => {
 
     const totalBookingsTwoWeeksAgo = totalHotelBookingsTwoWeeksAgo + totalReservationsTwoWeeksAgo;
 
-    // Total Revenue from hotels
-    const hotelRevenueAgg = await PaymentTransaction.aggregate([
+    // 🆕 FIX: Total Revenue from hotels (PaymentTransaction OR fallback to Payment.success)
+    let hotelRevenueAgg = await PaymentTransaction.aggregate([
       { $lookup: { from: "bookings", localField: "booking", foreignField: "_id", as: "booking" } },
       { $unwind: "$booking" },
       { $match: { "booking.hotel": { $in: hotelIds }, status: "succeeded" } },
       { $group: { _id: null, total: { $sum: "$amount" } } }
     ]);
-    const hotelRevenue = hotelRevenueAgg.length > 0 ? hotelRevenueAgg[0].total : 0;
+    let hotelRevenue = hotelRevenueAgg.length > 0 ? hotelRevenueAgg[0].total : 0;
+
+    // Fallback: Include Paystack Payment.success records
+    const paymentRevenueAgg = await Payment.aggregate([
+      { $lookup: { from: "bookings", localField: "reservationId", foreignField: "_id", as: "booking" } },
+      { $unwind: "$booking" },
+      { $match: { 
+          "booking.hotel": { $in: hotelIds }, 
+          status: "success",
+          metadata: { $elemMatch: { reservationType: "hotel" } }
+        } 
+      },
+      { $group: { _id: null, total: { $sum: "$amount" } } }
+    ]);
+    const paymentRevenue = paymentRevenueAgg.length > 0 ? paymentRevenueAgg[0].total : 0;
+
+    hotelRevenue += paymentRevenue;
+    console.log("🧾 Hotel Revenue - PaymentTransaction:", hotelRevenueAgg[0]?.total || 0, "Payment fallback:", paymentRevenue);
 
     // Total Revenue from reservations (assuming deposit or payment amount)
+    // ✅ FIX: Use paymentStatus="paid" (webhook standard)
     const reservationRevenueAgg = await Reservation.aggregate([
-      { $match: { vendor: { $in: [...clubIds, ...restaurantIds] }, payment_status: "Paid" } },
-      { $group: { _id: null, total: { $sum: "$deposit" } } } // Assuming deposit is the revenue
+      { $match: { 
+        vendor: { $in: [...clubIds, ...restaurantIds] }, 
+        $or: [{ paymentStatus: "paid" }, { payment_status: "Paid" }] 
+      } },
+      { $group: { _id: null, total: { $sum: "$deposit" } } }
     ]);
     const reservationRevenue = reservationRevenueAgg.length > 0 ? reservationRevenueAgg[0].total : 0;
 
@@ -160,7 +176,11 @@ export const getKPIs = async (req, res) => {
     const hotelRevenueLastWeek = hotelRevenueLastWeekAgg.length > 0 ? hotelRevenueLastWeekAgg[0].total : 0;
 
     const reservationRevenueLastWeekAgg = await Reservation.aggregate([
-      { $match: { vendor: { $in: [...clubIds, ...restaurantIds] }, payment_status: "Paid", createdAt: { $gte: lastWeek, $lt: today } } },
+      { $match: { 
+        vendor: { $in: [...clubIds, ...restaurantIds] }, 
+        $or: [{ paymentStatus: "paid" }, { payment_status: "Paid" }],
+        createdAt: { $gte: lastWeek, $lt: today } 
+      } },
       { $group: { _id: null, total: { $sum: "$deposit" } } }
     ]);
     const reservationRevenueLastWeek = reservationRevenueLastWeekAgg.length > 0 ? reservationRevenueLastWeekAgg[0].total : 0;
@@ -177,21 +197,34 @@ export const getKPIs = async (req, res) => {
     const hotelRevenueTwoWeeksAgo = hotelRevenueTwoWeeksAgoAgg.length > 0 ? hotelRevenueTwoWeeksAgoAgg[0].total : 0;
 
     const reservationRevenueTwoWeeksAgoAgg = await Reservation.aggregate([
-      { $match: { vendor: { $in: [...clubIds, ...restaurantIds] }, payment_status: "Paid", createdAt: { $gte: twoWeeksAgo, $lt: lastWeek } } },
+      { $match: { 
+        vendor: { $in: [...clubIds, ...restaurantIds] }, 
+        $or: [{ paymentStatus: "paid" }, { payment_status: "Paid" }],
+        createdAt: { $gte: twoWeeksAgo, $lt: lastWeek } 
+      } },
       { $group: { _id: null, total: { $sum: "$deposit" } } }
     ]);
     const reservationRevenueTwoWeeksAgo = reservationRevenueTwoWeeksAgoAgg.length > 0 ? reservationRevenueTwoWeeksAgoAgg[0].total : 0;
 
     const revenueTwoWeeksAgo = hotelRevenueTwoWeeksAgo + reservationRevenueTwoWeeksAgo;
 
-    // Pending Payments from hotels
-    const hotelPendingPaymentsAgg = await PaymentTransaction.aggregate([
+    // 🆕 FIX: Pending Payments from hotels (PaymentTransaction.pending OR Payment not success)
+    let hotelPendingPaymentsAgg = await PaymentTransaction.aggregate([
       { $lookup: { from: "bookings", localField: "booking", foreignField: "_id", as: "booking" } },
       { $unwind: "$booking" },
       { $match: { "booking.hotel": { $in: hotelIds }, status: "pending" } },
       { $count: "count" }
     ]);
-    const hotelPendingPayments = hotelPendingPaymentsAgg.length > 0 ? hotelPendingPaymentsAgg[0].count : 0;
+    let hotelPendingPayments = hotelPendingPaymentsAgg.length > 0 ? hotelPendingPaymentsAgg[0].count : 0;
+
+    // Fallback: Count Payments for hotels that are NOT success
+    const pendingPaymentCount = await Payment.countDocuments({
+      metadata: { $elemMatch: { reservationType: "hotel" } },
+      status: { $ne: "success" }
+    });
+    hotelPendingPayments += pendingPaymentCount;
+
+    console.log("📊 Hotel Pending - PaymentTransaction:", hotelPendingPaymentsAgg[0]?.count || 0, "Payment fallback:", pendingPaymentCount);
 
     // Pending Payments from reservations
     const reservationPendingPayments = await Reservation.countDocuments({
@@ -224,8 +257,7 @@ export const getKPIs = async (req, res) => {
       revenueDelta,
     };
 
-    // Emit real-time update
-    emitDashboardUpdate(req.user._id, kpiData);
+
 
     res.status(200).json(kpiData);
   } catch (error) {
@@ -474,8 +506,8 @@ export const getRevenueTrends = async (req, res) => {
     ]);
 
     // Group vendor payments by month
-    const vendorTrends = await Payment.aggregate([
-      { $match: { vendor: { $in: vendorIds }, status: "Paid" } },
+        vendorTrends = await Payment.aggregate([
+      { $match: { vendor: { $in: vendorIds }, status: "success" } },
       {
         $group: {
           _id: {
@@ -641,7 +673,7 @@ export const getTopVendors = async (req, res) => {
       {
         $match: {
           createdAt: { $gte: currentMonth, $lt: nextMonth },
-          status: "Paid",
+          status: "success",
         },
       },
       {
@@ -715,7 +747,7 @@ export const getVendorsEarnings = async (req, res) => {
 
     const earnings = await Payment.aggregate([
       {
-        $match: { status: "Paid" }
+        $match: { status: "success" }
       },
       {
         $group: {
@@ -756,7 +788,7 @@ export const getVendorsEarnings = async (req, res) => {
       }
     ]);
 
-    const totalVendors = await Payment.distinct("vendor", { status: "Paid" }).then(vendors => vendors.length);
+    const totalVendors = await Payment.distinct("vendor", { status: "success" }).then(vendors => vendors.length);
 
     return res.json({
       earnings,
@@ -792,7 +824,7 @@ export const getRecentTransactions = async (req, res) => {
       });
 
     // Fetch recent vendor payments (clubs and restaurants)
-    const vendorPayments = await Payment.find({ status: "Paid" })
+    const vendorPayments = await Payment.find({ status: { $in: ["success", "pending"] } })
       .sort({ createdAt: -1 })
       .limit(10)
       .populate("vendor", "businessName");
