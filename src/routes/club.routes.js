@@ -7,6 +7,7 @@ import {
   updateClub,
   deleteClub,
   updateClubStatus,
+  publishClub,
   createTableType,
   getTableTypes,
   getTableTypeById,
