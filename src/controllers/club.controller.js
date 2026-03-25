@@ -232,6 +232,42 @@ export const updateClubStatus = async (req, res) => {
   }
 };
 
+// @desc    Publish club (validate prerequisites)
+// @route   PATCH /api/clubs/:id/publish
+// @access  Private/Admin/Vendor
+export const publishClub = async (req, res) => {
+  try {
+    const club = await Club.findById(req.params.id).populate('paymentSettingsId');
+    
+    if (!club) {
+      return res.status(404).json({ message: "Club not found" });
+    }
+    
+    if (club.status === "published") {
+      return res.status(400).json({ message: "Club already published" });
+    }
+
+    // Validation checks
+    const tableTypes = await TableType.countDocuments({ clubId: club._id });
+    if (tableTypes === 0) {
+      return res.status(400).json({ message: "Club needs at least one table type before publishing" });
+    }
+
+    if (!club.paymentSettingsId) {
+      return res.status(400).json({ message: "Club must have payment settings configured (/vendors/:id/payment-settings)" });
+    }
+
+    club.status = "published";
+    const publishedClub = await club.save();
+    
+    recordAuditLog(req.user._id, "PUBLISH_CLUB", "Club", publishedClub._id);
+    res.json(publishedClub);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
+
 // Table Types
 
 // @desc    Create a new table type for a club
