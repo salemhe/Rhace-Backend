@@ -48,4 +48,6 @@ router.route("/:clubId/booking-rules")
   .get(authorize(["admin", "vendor", "staff"]), getBookingRules)
   .put(authorize(["admin"]), updateBookingRules);
 
+router.patch("/:id/publish", authorize(["admin", "vendor"]), publishClub);
+
 export default router;

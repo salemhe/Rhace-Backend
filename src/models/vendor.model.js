@@ -66,6 +66,10 @@ const VendorBaseSchema = new Schema(
     specialCategory: { type: String },
     contactPerson: { type: String, default: "Not specified" },
     acceptsOnlineBooking: { type: Boolean, default: true },
+    paymentSettingsId: { 
+      type: mongoose.Schema.Types.ObjectId, 
+      ref: "PaymentSettings" 
+    },
   },
   options
 );

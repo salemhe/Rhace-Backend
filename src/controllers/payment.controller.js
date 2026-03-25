@@ -900,24 +900,44 @@ export const initializePayment = async (req, res) => {
     });
 
     const vendor = await Vendor.findById(vendorId);
+    if (!vendor) {
+      return res.status(404).json({ message: "Vendor not found" });
+    }
+
+    console.log("🧾 Vendor payment details:", {
+      hasSubaccount: !!vendor.paymentDetails?.subaccountCode,
+      subaccountCode: vendor.paymentDetails?.subaccountCode || "MISSING",
+      vendorType: vendor.vendorType,
+      vendorId: vendor._id
+    });
+
+    // Build Paystack payload with subaccount fallback
+    const paystackPayload = {
+      email: customerEmail,
+      amount: totalAmount * 100,
+      reference: payment._id.toString(),
+      callback_url: `${process.env.FRONTEND_URL}/${reservationType.split("R")[0]}s/confirmation/${payment._id}`,
+      metadata: {
+        paymentId: payment._id,
+        customerId: req.user._id,
+        reservationType,
+        payLater,
+        vendorType: vendor.vendorType,
+        vendorSubaccount: vendor.paymentDetails?.subaccountCode || null
+      }
+    };
+
+    // Only add subaccount if !payLater AND valid subaccountCode exists
+    if (!payLater && vendor.paymentDetails?.subaccountCode) {
+      paystackPayload.subaccount = vendor.paymentDetails.subaccountCode;
+      console.log("✅ Using subaccount:", vendor.paymentDetails.subaccountCode);
+    } else {
+      console.log("⚠️ Skipping subaccount (payLater or missing code) - using main account");
+    }
 
     const paystackResponse = await axios.post(
       "https://api.paystack.co/transaction/initialize",
-      {
-        email: customerEmail,
-        amount: totalAmount * 100,
-        reference: payment._id.toString(),
-        callback_url: `${process.env.FRONTEND_URL}/${reservationType.split("R")[0]}s/confirmation/${payment._id}`,
-        metadata: {
-          paymentId: payment._id,
-          customerId: req.user._id,
-          reservationType,
-          payLater,
-        },
-        ...(!payLater && {
-          subaccount: vendor.paymentDetails.subaccountCode,
-        }),
-      },
+      paystackPayload,
       {
         headers: {
           Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
@@ -926,14 +946,34 @@ export const initializePayment = async (req, res) => {
       },
     );
 
+    // Enhanced error handling
+    if (paystackResponse.data.status === false) {
+      console.error("❌ Paystack init failed:", paystackResponse.data.message, {
+        vendorSubaccount: vendor.paymentDetails?.subaccountCode,
+        amount: totalAmount,
+        vendorType: vendor.vendorType
+      });
+      return res.status(400).json({ 
+        message: "Payment initialization failed", 
+        paystackError: paystackResponse.data.message,
+        debug: {
+          hasSubaccount: !!vendor.paymentDetails?.subaccountCode,
+          vendorType: vendor.vendorType,
+          fix: "Vendor needs Paystack subaccount configured in paymentDetails.subaccountCode"
+        }
+      });
+    }
+
     await Payment.updateOne(
       { _id: payment._id },
       { paystackReference: paystackResponse.data.data.reference },
     );
 
-    if (paystackResponse.status === false) {
-      return res.status(500).json({ message: paystackResponse.message });
-    }
+    console.log("✅ Payment initialized successfully:", {
+      ref: paystackResponse.data.data.reference,
+      url: paystackResponse.data.data.authorization_url,
+      usedSubaccount: !!paystackPayload.subaccount
+    });
 
     res.status(200).json({
       message: "success",

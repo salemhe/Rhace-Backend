@@ -55,4 +55,12 @@ router.delete("/:id", protect, deleteVendor)
 router.post("/bookings/:id/confirm", protect, confirmReservation);
 router.post("/bookings/confirm-by-qr", protect, confirmByQRCode);
 
+// Payment settings routes
+router.route("/:id/payment-settings")
+  .post(protect, createOrUpdatePaymentSettings)
+  .get(protect, getPaymentSettings)
+  .delete(protect, deletePaymentSettings);
+
+router.post("/:id/payment-settings/subaccount", protect, createPaystackSubaccount);
+
 export default router;
