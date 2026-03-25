@@ -170,6 +170,8 @@ const clubReservation = Booking.discriminator(
         table: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "Table",
+            required: false,  // 🔧 FIXED: Made optional to support table[] array (multi-table)
+            // Note: Prefer using tables[] array for multi-table bookings
         },
         // Support for multiple tables booking
         tables: [{
