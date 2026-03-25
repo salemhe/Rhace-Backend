@@ -3,6 +3,12 @@ import {protect} from "../middlewares/auth.middleware.js"
 import { getVendor, forgotVendorPassword, loginVendor, onboardVendor, updateVendor, registerVendor, resendVendorOTP, resetPassword, verifyVendorOTP } from "../controllers/auth.controller.js";
 import { getVendorById, getOffers, getNearest, getTopRated, getVendorStats, deleteVendor } from "../controllers/vendor.controller.js";
 import { confirmReservation, confirmByQRCode } from "../controllers/booking.controller.js";
+import {
+  createOrUpdatePaymentSettings,
+  getPaymentSettings,
+  deletePaymentSettings,
+  createPaystackSubaccount
+} from "../controllers/paymentsettings.controller.js";
 
 
 const router = express.Router();
