@@ -445,11 +445,43 @@ export const createReservation = async (req, res) => {
     }
 
     if (reservationType === "club") {
+      // 🔧 FIX: Normalize table input (array → single ObjectId) + validate
+      console.log("🪑 Club table input:", { table, tableType: Array.isArray(table) ? "array" : "single" });
+      
+      let normalizedTable = null;
+      let tables = [];
+      
+      if (table) {
+        if (Array.isArray(table)) {
+          if (table.length === 0) {
+            return res.status(400).json({ 
+              message: "Club reservation requires at least one table (table array cannot be empty)",
+              table 
+            });
+          }
+          // Take first table ID for legacy single-table field, populate tables[] for multi
+          normalizedTable = new mongoose.Types.ObjectId(table[0]);
+          tables = table.map(id => ({
+            tableType: new mongoose.Types.ObjectId(id),
+            quantity: 1,
+            pricePerTable: 0 // Will be populated later via atomic service if needed
+          }));
+        } else {
+          normalizedTable = new mongoose.Types.ObjectId(table);
+          tables = [{
+            tableType: new mongoose.Types.ObjectId(table),
+            quantity: 1,
+            pricePerTable: 0
+          }];
+        }
+      }
+      
       const club = await clubReservation.create({
         ...initialData,
         date,
         time,
-        table,
+        table: normalizedTable,
+        tables,
         guests,
         drinks,
         combos,
@@ -462,7 +494,9 @@ export const createReservation = async (req, res) => {
         const clubRes = await clubReservation
           .findById(club._id)
           .populate({ path: "vendor" })
-          .populate({ path: "drinks.drink" });
+          .populate({ path: "drinks.drink" })
+          .populate({ path: "tables.tableType" })
+          .populate({ path: "table" });
         vendorSocket.send(
           JSON.stringify({
             type: "new_reservation",
