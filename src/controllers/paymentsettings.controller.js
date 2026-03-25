@@ -1,5 +1,5 @@
 import PaymentSettings from "../models/paymentsettings.model.js";
-import Vendor from "../models/vendor.model.js";
+import { Vendor } from "../models/vendor.model.js";
 import axios from "axios";
 import { recordAuditLog } from "../utils/auditLogger.js";
 
