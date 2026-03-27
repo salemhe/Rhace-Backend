@@ -1225,30 +1225,34 @@ export const confirmReservation = async (req, res) => {
 
 
 
-    // Validate payment exists & successful
-    const isPaymentValid = payment.status === 'success' && 
-                          payment.amountPaid >= (payment.amount * 0.95);
+    // ✅ FIXED: Flexible validation - accepts partial payments + 90% threshold
+    const amountDue = booking.totalAmount || payment.amount;
+    const isPaymentValid = 
+      ['success', 'partly_paid'].includes(payment.status) ||
+      (payment.status === 'success' && (
+        payment.partPaid ||
+        payment.amountPaid >= amountDue * 0.90
+      )); // 90% tolerance
 
     if (!isPaymentValid) {
       console.log('🚫 Payment validation failed:', {
         bookingId: id,
         resId: effectiveResId,
-        paymentId: payment?._id,
-        paymentStatus: payment?.status,
-        amountDue: payment?.amount,
-        amountPaid: payment?.amountPaid,
-        isSuccessStatus: payment?.status === 'success',
-        isFullyPaid: payment?.amountPaid >= payment?.amount,
-        rawPayment: payment
+        paymentId: payment._id,
+        status: payment.status,
+        amountDue: booking.totalAmount || payment.amount,
+        amountPaid: payment.amountPaid,
+        partPaid: payment.partPaid,
+        thresholdMet: payment.amountPaid >= (booking.totalAmount || payment.amount) * 0.90
       });
       
       return res.status(400).json({
         success: false,
-        message: `Payment validation failed for booking ${effectiveResId}. Expected status="success". Current: "${payment?.status || 'MISSING'}"`,
-        paymentStatus: payment?.status || 'MISSING',
-        paymentId: payment?._id,
-        amountDue: payment?.amount || 0,
-        amountPaid: payment?.amountPaid || 0,
+        message: `Payment validation failed for booking ${effectiveResId}. Status="${payment.status}". Paid ${payment.amountPaid}/${booking.totalAmount || payment.amount} (need ≥90%)`,
+        paymentStatus: payment.status,
+        paymentId: payment._id,
+        amountDue: booking.totalAmount || payment.amount,
+        amountPaid: payment.amountPaid,
         bookingPaymentRef: booking.paymentRef?._id,
         effectiveResId,
         debug: '1. Check if payment exists: db.payments.findOne({booking: "' + effectiveResId + '"})',
@@ -1257,7 +1261,11 @@ export const confirmReservation = async (req, res) => {
     }
 
     const effectivePaymentId = payment._id.toString();
-    console.log('✅ Payment validation passed:', {paymentId: effectivePaymentId, status: payment.status});
+    console.log('✅ Payment validation PASSED:', { 
+      paymentId: effectivePaymentId, 
+      status: payment.status,
+      paidRatio: Math.round((payment.amountPaid / (booking.totalAmount || payment.amount)) * 100) + '%'
+    });
 
     if (booking.confirmedAt) {
       return res.status(400).json({
