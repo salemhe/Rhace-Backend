@@ -1258,7 +1258,7 @@ export const verifyPayment = async (req, res) => {
         booking: transaction.metadata.bookingId,
         paymentMethod: transaction.channel,
         amount: amount,
-        amountPaid: transaction.amount / 100,
+        amountPaid: amount,  // ✅ Full Paystack amount (consistent)
         reference,
         payLater: transaction.metadata.payLater,
         status: "success", // ✅ Consistent with payment model enum
@@ -1305,10 +1305,19 @@ export const verifyPayment = async (req, res) => {
           status: "success",
           webhookProcessed: true,
           paidAt: transaction.paid_at,
-          amountPaid: amount,
+          amount: amount,  // ✅ Ensure amount matches Paystack
+          amountPaid: amount,  // ✅ Full amount from Paystack (overrides initial estimate)
           paymentMethod: transaction.channel,
         }
       );
+      
+      // ✅ DEBUG: Log amount sync
+      console.log('💰 Webhook amount sync:', {
+        paymentId: existingTransaction._id,
+        paystackAmount: amount,
+        wasUpdated: true,
+        discrepancyFixed: true
+      });
     }
 
     // ✅ Update reservations paymentStatus
