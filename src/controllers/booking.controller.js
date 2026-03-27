@@ -1190,7 +1190,10 @@ export const confirmReservation = async (req, res) => {
       vendor: booking.vendor?._id
     });
 
+    const effectiveResId = booking.resId || booking._id.toString();
+
     let payment = booking.paymentRef;
+
     console.log('💳 Payment lookup #1 (from booking.paymentRef):', payment?._id || 'MISSING');
 
     if (!payment) {
@@ -1210,12 +1213,13 @@ export const confirmReservation = async (req, res) => {
         success: false,
         message: 'No payment found for this booking. Check payments collection.',
         bookingId: booking._id,
-        bookingResId: booking.resId,
+        bookingResId: effectiveResId,
         debug: [
-          `db.payments.find({ $or: [{booking: "${booking.resId || 'MISSING'}"}, {booking: ObjectId("${booking._id}")}] })`
+          `db.payments.find({ $or: [{booking: "${effectiveResId}"}, {booking: ObjectId("${booking._id}")}] })`
         ]
       });
     }
+
 
 
 
@@ -1252,7 +1256,8 @@ export const confirmReservation = async (req, res) => {
       });
     }
 
-    console.log('✅ Payment validation passed:', {paymentId: payment._id, status: payment.status});
+    const effectivePaymentId = payment._id.toString();
+    console.log('✅ Payment validation passed:', {paymentId: effectivePaymentId, status: payment.status});
 
     if (booking.confirmedAt) {
       return res.status(400).json({
