@@ -296,6 +296,13 @@ export const createReservation = async (req, res) => {
       payLater,
     } = req.body;
 
+    // FIX: User must be the vendor they are booking for
+    if (req.user.vendorId !== vendor) {
+      return res.status(403).json({
+        message: `You are not authorized to create a booking for vendor ${vendor}`,
+      });
+    }
+
     console.log("Received body:", req.body);
 
     // Validate required base fields
@@ -1170,8 +1177,7 @@ export const verifyQRCode = async (req, res) => {
 export const confirmReservation = async (req, res) => {
   try {
     const { id } = req.params;
-    const { vendorId } = req.body;
-    const effectiveVendorId = vendorId || req.user?._id;
+    // Removed vendorId body param - use req.user._id directly for vendor auth
 
     const booking = await Booking.findById(id).populate({
       path: 'paymentRef',
@@ -1276,9 +1282,17 @@ export const confirmReservation = async (req, res) => {
       });
     }
 
-    if (booking.vendor.toString() !== effectiveVendorId) {
+    // 🔍 Ownership check with debug logging (FIXED)
+    console.log('🔍 Ownership check:', {
+      bookingVendorId: booking.vendor._id?.toString(),
+      userVendorId: req.user._id.toString(),
+      match: booking.vendor._id?.toString() === req.user._id.toString()
+    });
+
+    if (booking.vendor._id?.toString() !== req.user._id.toString()) {
       const userRole = req.user?.role;
       if (userRole !== "superadmin" && userRole !== "admin") {
+        console.log('❌ Auth failed - vendor mismatch');
         return res.status(403).json({ message: "Not authorized to confirm this reservation" });
       }
     }
