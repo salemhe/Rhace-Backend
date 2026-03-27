@@ -1,5 +1,5 @@
 import express from "express";
-import { getBanks, verifyAccount, getPayments, getPaymentStats, getTrends, getPaymentInfo, initializePayment, verifyPayment, getVendorsEarnings, getAdminTotalEarnings, getTotalSuccessfulPayments, getPaystackTransactions, getPaystackBalance, getPaystackSuccessfulCount } from "../controllers/payment.controller.js";
+import { getBanks, verifyAccount, getPayments, getPaymentStats, getTrends, getPaymentInfo, initializePayment, verifyPayment, confirmVendorPayment, getVendorsEarnings, getAdminTotalEarnings, getTotalSuccessfulPayments, getPaystackTransactions, getPaystackBalance, getPaystackSuccessfulCount } from "../controllers/payment.controller.js";
 import {protect} from "../middlewares/auth.middleware.js"
 
 const router = express.Router();
@@ -17,5 +17,6 @@ router.get("/admin-earnings", protect, getAdminTotalEarnings)
 router.get("/successful-count", protect, getTotalSuccessfulPayments)
 router.post("/initialize", protect, initializePayment)
 router.post("/verify", protect, verifyPayment)
+router.post("/vendor/confirm", protect, confirmVendorPayment)
 
 export default router;
