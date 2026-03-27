@@ -1365,3 +1365,59 @@ export const verifyPayment = async (req, res) => {
     });
   }
 };
+
+export const confirmVendorPayment = async (req, res) => {
+  try {
+    const { paymentId, resId, vendorId } = req.body;
+
+    if (!paymentId || !resId || !vendorId) {
+      return res.status(400).json({ message: "paymentId, resId, and vendorId required" });
+    }
+
+    // Vendor auth check
+    if (req.user.role !== 'vendor' || req.user._id.toString() !== vendorId) {
+      return res.status(403).json({ message: "Unauthorized: Vendor mismatch" });
+    }
+
+    // Find matching payment
+    const payment = await Payment.findOne({
+      _id: paymentId,
+      booking: resId,
+      vendor: vendorId,
+      status: { $in: ['success', 'pending'] }
+    }).populate('user vendor');
+
+    if (!payment) {
+      return res.status(404).json({ message: "Payment not found or not authorized" });
+    }
+
+    if (payment.vendorConfirmed) {
+      return res.status(200).json({ 
+        message: "Payment already confirmed by vendor",
+        payment 
+      });
+    }
+
+    // Confirm
+    payment.vendorConfirmed = true;
+    payment.vendorConfirmedAt = new Date();
+    payment.vendorConfirmedBy = req.user._id;
+    await payment.save();
+
+    // Emit real-time update
+emitPaymentUpdate(payment.booking, 'vendor_confirmed');
+
+    res.status(200).json({ 
+      success: true, 
+      message: "Payment confirmed by vendor successfully",
+      paymentId: payment._id,
+      resId: payment.booking
+    });
+  } catch (error) {
+    console.error("Error confirming vendor payment:", error);
+    res.status(500).json({ 
+      message: "Server error confirming payment",
+      error: error.message 
+    });
+  }
+};

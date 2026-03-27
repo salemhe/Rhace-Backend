@@ -126,6 +126,12 @@ const paymentSchema = new mongoose.Schema({
         index: true
     },
     webhookProcessedAt: Date,
+    vendorConfirmed: {
+        type: Boolean,
+        default: false,
+        index: true
+    },
+    vendorConfirmedAt: Date,
     webhookAttempts: {
         type: Number,
         default: 0
