@@ -1,4 +1,4 @@
-import { verifyAccessToken, verifyToken } from "../utils/jwt.js";
+import { verifyAccessToken } from "../utils/jwt.js";
 import User from "../models/user.model.js";
 import { Vendor } from "../models/vendor.model.js";
 
@@ -11,41 +11,44 @@ export const protect = async (req, res, next) => {
   ) {
     try {
       // Get token from header
-      token = req.headers.authorization.split(" ")[1];
+      if (req.headers.authorization.startsWith("Bearer")) {
+        token = req.headers.authorization.split(" ")[1];
+      }
 
-            // Verify token
+      if (!token) return res.status(401).json({ message: 'Unauthorized' });
+
       const decoded = verifyAccessToken(token);
 
       if (decoded.role === "vendor") {
-        req.user = await Vendor.findById(decoded.id).select("_id role vendorType isOnboarded");
+        req.user = await Vendor.findById(decoded.id).select(
+          "_id role vendorType isOnboarded",
+        );
       } else {
         req.user = await User.findById(decoded.id).select("_id role");
       }
 
       // Ensure user exists
       if (!req.user) {
-        return res.status(401).json({ message: "Not authorized, user not found" });
+        return res
+          .status(401)
+          .json({ message: "Not authorized, user not found" });
       }
 
       // Set the role from the JWT token to ensure correct authorization
       req.user.role = decoded.role;
 
-            // Check if vendor is onboarded
+      // Check if vendor is onboarded
       if (decoded.role === "vendor" && !req.user.isOnboarded) {
-        return res.status(403).json({ 
-          message: "Forbidden: Please complete vendor onboarding before accessing this resource.",
-          isOnboarded: false 
+        return res.status(403).json({
+          message:
+            "Forbidden: Please complete vendor onboarding before accessing this resource.",
+          isOnboarded: false,
         });
       }
 
       next();
     } catch (error) {
-      console.error(error);
-      return res.status(401).json({ message: "Not authorized, token failed" });
+      res.status(401).json({ message: "Not authorized", error: error.message });
     }
-  }
-
-  if (!token) {
-    return res.status(401).json({ message: "Not authorized, no token" });
   }
 };

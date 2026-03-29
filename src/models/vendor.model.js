@@ -15,16 +15,28 @@ const VendorBaseSchema = new Schema(
       type: String,
       validate: {
         validator: (value) =>
-          /^(https?:\/\/.*\.(?:png|jpg|jpeg|gif|svg))$/.test(value) || value === null,
+          /^(https?:\/\/.*\.(?:png|jpg|jpeg|gif|svg))$/.test(value) ||
+          value === null,
         message: "Logo must be a valid URL.",
       },
       default: null,
     },
     businessDescription: { type: String },
-    email: { type: String, required: true, unique: true },
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      trim: true,
+      lowercase: true,
+      match: [/\S+@\S+\.\S+/, "please fill a valid email address"],
+    },
     phone: { type: String },
     address: { type: String },
-    password: { type: String },
+    password: {
+      type: String,
+      required: [true, "Vendor Password is required"],
+      minlength: 8,
+    },
     role: { type: String, default: "vendor" },
     location: {
       type: { type: String, enum: ["Point"], default: "Point" },
@@ -35,7 +47,8 @@ const VendorBaseSchema = new Schema(
         type: String,
         validate: {
           validator: (value) =>
-            /^(https?:\/\/.*\.(?:png|jpg|jpeg|gif|svg))$/.test(value) || value === null,
+            /^(https?:\/\/.*\.(?:png|jpg|jpeg|gif|svg))$/.test(value) ||
+            value === null,
           message: "Profile image must be a valid URL.",
         },
         default: null,
@@ -66,12 +79,12 @@ const VendorBaseSchema = new Schema(
     specialCategory: { type: String },
     contactPerson: { type: String, default: "Not specified" },
     acceptsOnlineBooking: { type: Boolean, default: true },
-    paymentSettingsId: { 
-      type: mongoose.Schema.Types.ObjectId, 
-      ref: "PaymentSettings" 
+    paymentSettingsId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "PaymentSettings",
     },
   },
-  options
+  options,
 );
 
 VendorBaseSchema.methods.comparePassword = async function (enteredPassword) {
@@ -114,20 +127,48 @@ const HotelVendor = Vendor.discriminator(
     starRating: { type: Number, enum: [1, 2, 3, 4, 5], default: 3 },
     propertyType: {
       type: String,
-      enum: ["hotel", "boutique", "resort", "serviced-apartment", "motel", "guesthouse"],
+      enum: [
+        "hotel",
+        "boutique",
+        "resort",
+        "serviced-apartment",
+        "motel",
+        "guesthouse",
+      ],
       default: "hotel",
     },
-    amenities: [{
-      type: String,
-      enum: [
-        "wifi", "pool", "gym", "spa", "parking", "restaurant", "bar",
-        "airport-shuttle", "ac", "hot-tub", "room-service", "laundry",
-        "business-center", "kids-club", "ev-charging", "beach-access",
-      ],
-    }],
+    amenities: [
+      {
+        type: String,
+        enum: [
+          "wifi",
+          "pool",
+          "gym",
+          "spa",
+          "parking",
+          "restaurant",
+          "bar",
+          "airport-shuttle",
+          "ac",
+          "hot-tub",
+          "room-service",
+          "laundry",
+          "business-center",
+          "kids-club",
+          "ev-charging",
+          "beach-access",
+        ],
+      },
+    ],
     mealPlan: {
       type: String,
-      enum: ["room-only", "breakfast", "half-board", "full-board", "all-inclusive"],
+      enum: [
+        "room-only",
+        "breakfast",
+        "half-board",
+        "full-board",
+        "all-inclusive",
+      ],
       default: "room-only",
     },
     cancellationPolicy: {
@@ -138,19 +179,41 @@ const HotelVendor = Vendor.discriminator(
     instantBook: { type: Boolean, default: false },
     petFriendly: { type: Boolean, default: false },
     payAtProperty: { type: Boolean, default: false },
-    accessibilityFeatures: [{
-      type: String,
-      enum: ["step-free", "elevator", "wheelchair", "grab-bars", "visual-aids", "hearing-loop"],
-    }],
+    accessibilityFeatures: [
+      {
+        type: String,
+        enum: [
+          "step-free",
+          "elevator",
+          "wheelchair",
+          "grab-bars",
+          "visual-aids",
+          "hearing-loop",
+        ],
+      },
+    ],
     checkInTime: { type: String, default: "14:00" },
     checkOutTime: { type: String, default: "11:00" },
-    openingHours: [{
-      day: { type: String, enum: ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"] },
-      open: { type: String },
-      close: { type: String },
-      isClosed: { type: Boolean, default: false },
-    }],
-  })
+    openingHours: [
+      {
+        day: {
+          type: String,
+          enum: [
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+            "sunday",
+          ],
+        },
+        open: { type: String },
+        close: { type: String },
+        isClosed: { type: Boolean, default: false },
+      },
+    ],
+  }),
 );
 
 // ─── Restaurant discriminator ─────────────────────────────────────────────────
@@ -161,34 +224,98 @@ const RestaurantVendor = Vendor.discriminator(
     closingTime: { type: String },
     availableSlots: [{ type: String }],
 
-    cuisines: [{
-      type: String,
-      enum: [
-        "nigerian", "continental", "chinese", "italian", "indian", "japanese",
-        "lebanese", "mexican", "american", "french", "mediterranean",
-        "fast-food", "seafood", "grills", "pastry", "vegetarian", "fusion",
-      ],
-    }],
-    diningStyles: [{
-      type: String,
-      enum: ["dine-in", "takeout", "delivery", "buffet", "fine-dining", "casual"],
-    }],
-    dietaryOptions: [{
-      type: String,
-      enum: ["halal", "vegetarian", "vegan", "gluten-free", "kosher", "dairy-free", "nut-free"],
-    }],
-    seatOptions: [{
-      type: String,
-      enum: ["outdoor", "bar-seating", "private-room", "high-chair", "rooftop", "booth"],
-    }],
-    occasionTags: [{
-      type: String,
-      enum: ["romantic", "birthday", "business", "group", "date-night", "family", "brunch", "celebrations"],
-    }],
-    mealTimes: [{
-      type: String,
-      enum: ["breakfast", "brunch", "lunch", "dinner", "late-night", "all-day"],
-    }],
+    cuisines: [
+      {
+        type: String,
+        enum: [
+          "nigerian",
+          "continental",
+          "chinese",
+          "italian",
+          "indian",
+          "japanese",
+          "lebanese",
+          "mexican",
+          "american",
+          "french",
+          "mediterranean",
+          "fast-food",
+          "seafood",
+          "grills",
+          "pastry",
+          "vegetarian",
+          "fusion",
+        ],
+      },
+    ],
+    diningStyles: [
+      {
+        type: String,
+        enum: [
+          "dine-in",
+          "takeout",
+          "delivery",
+          "buffet",
+          "fine-dining",
+          "casual",
+        ],
+      },
+    ],
+    dietaryOptions: [
+      {
+        type: String,
+        enum: [
+          "halal",
+          "vegetarian",
+          "vegan",
+          "gluten-free",
+          "kosher",
+          "dairy-free",
+          "nut-free",
+        ],
+      },
+    ],
+    seatOptions: [
+      {
+        type: String,
+        enum: [
+          "outdoor",
+          "bar-seating",
+          "private-room",
+          "high-chair",
+          "rooftop",
+          "booth",
+        ],
+      },
+    ],
+    occasionTags: [
+      {
+        type: String,
+        enum: [
+          "romantic",
+          "birthday",
+          "business",
+          "group",
+          "date-night",
+          "family",
+          "brunch",
+          "celebrations",
+        ],
+      },
+    ],
+    mealTimes: [
+      {
+        type: String,
+        enum: [
+          "breakfast",
+          "brunch",
+          "lunch",
+          "dinner",
+          "late-night",
+          "all-day",
+        ],
+      },
+    ],
     reservationPolicy: {
       type: String,
       enum: ["free", "deposit", "prepay", "walk-in-only"],
@@ -196,13 +323,26 @@ const RestaurantVendor = Vendor.discriminator(
     },
     hasParking: { type: Boolean, default: false },
     hasOutdoorSeating: { type: Boolean, default: false },
-    openingHours: [{
-      day: { type: String, enum: ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"] },
-      open: { type: String },
-      close: { type: String },
-      isClosed: { type: Boolean, default: false },
-    }],
-  })
+    openingHours: [
+      {
+        day: {
+          type: String,
+          enum: [
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+            "sunday",
+          ],
+        },
+        open: { type: String },
+        close: { type: String },
+        isClosed: { type: Boolean, default: false },
+      },
+    ],
+  }),
 );
 
 // ─── Club discriminator ───────────────────────────────────────────────────────
@@ -217,17 +357,42 @@ const ClubVendor = Vendor.discriminator(
 
     venueType: {
       type: String,
-      enum: ["club", "lounge", "rooftop", "sports-bar", "cocktail-bar", "karaoke", "jazz-bar", "pool-bar"],
+      enum: [
+        "club",
+        "lounge",
+        "rooftop",
+        "sports-bar",
+        "cocktail-bar",
+        "karaoke",
+        "jazz-bar",
+        "pool-bar",
+      ],
       default: "club",
     },
-    musicGenres: [{
-      type: String,
-      enum: ["afrobeats", "house", "rnb", "hiphop", "edm", "reggae", "highlife", "dancehall", "amapiano", "mixed", "live-band"],
-    }],
-    livePerformanceTypes: [{
-      type: String,
-      enum: ["dj", "live-band", "standup", "karaoke", "spoken-word"],
-    }],
+    musicGenres: [
+      {
+        type: String,
+        enum: [
+          "afrobeats",
+          "house",
+          "rnb",
+          "hiphop",
+          "edm",
+          "reggae",
+          "highlife",
+          "dancehall",
+          "amapiano",
+          "mixed",
+          "live-band",
+        ],
+      },
+    ],
+    livePerformanceTypes: [
+      {
+        type: String,
+        enum: ["dj", "live-band", "standup", "karaoke", "spoken-word"],
+      },
+    ],
     dressCode: [{ type: String }],
     agePolicy: {
       type: String,
@@ -244,16 +409,42 @@ const ClubVendor = Vendor.discriminator(
     happyHour: {
       start: { type: String },
       end: { type: String },
-      days: [{ type: String, enum: ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"] }],
+      days: [
+        {
+          type: String,
+          enum: [
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+            "sunday",
+          ],
+        },
+      ],
       description: { type: String, trim: true },
     },
-    openingHours: [{
-      day: { type: String, enum: ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"] },
-      open: { type: String },
-      close: { type: String },
-      isClosed: { type: Boolean, default: false },
-    }],
-  })
+    openingHours: [
+      {
+        day: {
+          type: String,
+          enum: [
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+            "sunday",
+          ],
+        },
+        open: { type: String },
+        close: { type: String },
+        isClosed: { type: Boolean, default: false },
+      },
+    ],
+  }),
 );
 
 VendorBaseSchema.index({ location: "2dsphere" });
@@ -272,15 +463,20 @@ VendorBaseSchema.index(
       address: 1,
     },
     name: "vendor_text_index",
-  }
+  },
 );
 VendorBaseSchema.index({ isVerified: 1, isVisible: 1, rating: -1 });
-VendorBaseSchema.index({ isVerified: 1, isVisible: 1, vendorType: 1, rating: -1 });
-VendorBaseSchema.index({ "cuisines": 1 });
-VendorBaseSchema.index({ "dietaryOptions": 1 });
-VendorBaseSchema.index({ "musicGenres": 1 });
-VendorBaseSchema.index({ "amenities": 1 });
-VendorBaseSchema.index({ "starRating": 1 });
-VendorBaseSchema.index({ "entryFee": 1 });
+VendorBaseSchema.index({
+  isVerified: 1,
+  isVisible: 1,
+  vendorType: 1,
+  rating: -1,
+});
+VendorBaseSchema.index({ cuisines: 1 });
+VendorBaseSchema.index({ dietaryOptions: 1 });
+VendorBaseSchema.index({ musicGenres: 1 });
+VendorBaseSchema.index({ amenities: 1 });
+VendorBaseSchema.index({ starRating: 1 });
+VendorBaseSchema.index({ entryFee: 1 });
 
 export { Vendor, HotelVendor, RestaurantVendor, ClubVendor };

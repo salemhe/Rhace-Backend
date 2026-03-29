@@ -4,7 +4,7 @@ export const generateAccessToken = (id, role, isOnboarded, vendorType) => {
   return jwt.sign(
     { id, role, isOnboarded, vendorType },
     process.env.JWT_ACCESS_SECRET,
-    { expiresIn: '15m' }
+    { expiresIn: '20m' }
   );
 };
 

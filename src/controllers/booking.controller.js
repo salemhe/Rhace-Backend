@@ -942,6 +942,7 @@ export async function createReservationFromPayment(payment) {
       guests: metadata.guests,
       room: metadata.roomId,
       specialRequest: metadata.specialRequest,
+      quantity: metadata.quantity || 1,
     }]);
     reservation = created;
   }
@@ -952,7 +953,11 @@ export async function createReservationFromPayment(payment) {
       date: metadata.date,
       time: metadata.time,
       guests: metadata.guests,
-      table: metadata.table,
+      tables: metadata.table.map((t) => ({
+        tableType: t._id,
+        quantity: t.quantity,
+        pricePerTable: t.price || 0,
+      })),  
       drinks: metadata.drinks.map((d) => ({
         drink: d.drink,
         quantity: d.quantity,
@@ -986,7 +991,7 @@ export async function completePayment(req, res) {
         .populate("menus.menu")
         .populate("room")
         .populate("drinks.drink")
-        .populate("table")
+        .populate("tables.tableType")
         .populate("combos");
 
       return res.json({
@@ -1040,7 +1045,7 @@ export async function completePayment(req, res) {
         ? "menus.menu"
         : reservation.reservationType === "hotelReservation"
         ? "room"
-        : "drinks.drink combos table";
+        : "drinks.drink combos tables.tableType";
 
     await reservation.populate(`vendor ${populate}`);
 

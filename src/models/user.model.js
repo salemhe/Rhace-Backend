@@ -6,8 +6,18 @@ const UserSchema = new Schema(
   {
     firstName: { type: String, required: true },
     lastName: { type: String, required: true },
-    email: { type: String, required: true, unique: true },
-    password: { type: String },
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      trim: true,
+      lowercase: true,
+      match: [/\S+@\S+\.\S+/, "please fill a valid email address"],
+    },
+    password: {
+      type: String,
+      minlength: 8,
+    },
     phone: { type: String },
     googleId: { type: String },
     profilePic: { type: String },
@@ -20,7 +30,7 @@ const UserSchema = new Schema(
     isVerified: { type: Boolean, default: false },
     createdAt: { type: Date, default: Date.now },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 UserSchema.plugin(mongoosePaginate);

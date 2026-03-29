@@ -6,7 +6,6 @@ import {
   verifyRefreshToken,
 } from "../utils/jwt.js";
 import crypto from "crypto";
-import bcrypt from "bcrypt";
 import * as otpService from "../services/otp.service.js"; // New import
 import { sendPasswordResetEmail } from "../services/mail.service.js";
 import { OAuth2Client } from "google-auth-library";
@@ -114,11 +113,11 @@ export const loginVendor = async (req, res) => {
 
     const isMatch = await user.comparePassword(password);
     if (!isMatch) {
-      return res.status(400).json({ message: "Invalid email or password." });
+      return res.status(406).json({ message: "Invalid email or password." });
     }
 
     if (!user.isVerified) {
-      return res.status(401).json({
+      return res.status(406).json({
         message: "Please verify your email with the OTP sent to your inbox.",
       });
     }
@@ -134,7 +133,7 @@ export const loginVendor = async (req, res) => {
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
+      sameSite: 'None',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
@@ -317,6 +316,14 @@ export const onboardVendor = async (req, res) => {
         return res.status(400).json({ message: "Invalid vendor type." });
     }
 
+    const paymentDetails = {
+        bankCode,
+        accountNumber,
+        subaccountCode: recipientData.data.subaccount_code,
+        bankName,
+        accountName,
+      }
+
     // Basic updates
     vendor.profileImages = profileImages || vendor.profileImages;
     vendor.address = address || vendor.address;
@@ -326,14 +333,7 @@ export const onboardVendor = async (req, res) => {
     vendor.website = website || vendor.website;
     vendor.priceRange = priceRange || vendor.priceRange;
     vendor.isOnboarded = true;
-    vendor.paymentDetails =
-      {
-        bankCode,
-        accountNumber,
-        subaccountCode: recipientData.data.subaccount_code,
-        bankName,
-        accountName,
-      } || vendor.paymentDetails;
+    vendor.paymentDetails = paymentDetails || vendor.paymentDetails;
     vendor.vendorType = vendorType || vendor.vendorType;
 
     console.log(vendor);
@@ -564,7 +564,7 @@ export const registerGoogle = async (req, res) => {
       res.cookie("refreshToken", refreshToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
-        sameSite: "strict",
+        sameSite: 'None',
         maxAge: 7 * 24 * 60 * 60 * 1000,
       });
 
@@ -589,7 +589,7 @@ export const registerGoogle = async (req, res) => {
       res.cookie("refreshToken", refreshToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
-        sameSite: "strict",
+        sameSite: 'None',
         maxAge: 7 * 24 * 60 * 60 * 1000,
       });
 
@@ -621,11 +621,11 @@ export const login = async (req, res) => {
     }
 
     if (!(await user.comparePassword(password))) {
-      return res.status(401).json({ message: "Invalid email or password" });
+      return res.status(406).json({ message: "Invalid email or password" });
     }
 
     if (!user.isVerified) {
-      return res.status(401).json({
+      return res.status(406).json({
         message: "Please verify your email with the OTP sent to your inbox.",
       });
     }
@@ -639,7 +639,7 @@ export const login = async (req, res) => {
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
+      sameSite: 'None',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
@@ -707,7 +707,7 @@ export const loginGoogle = async (req, res) => {
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
+      sameSite: 'None',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
     return res.status(200).json({
@@ -731,7 +731,7 @@ export const verifyOTP = async (req, res) => {
     const isOTPValid = await otpService.verifyOTP(email, otp);
 
     if (!isOTPValid) {
-      return res.status(400).json({ message: "Invalid or expired OTP." });
+      return res.status(406).json({ message: "Invalid or expired OTP." });
     }
 
     const user = await User.findOne({ email });
@@ -743,27 +743,11 @@ export const verifyOTP = async (req, res) => {
     user.isVerified = true;
     await user.save();
 
-    const accessToken = generateAccessToken(
-      user._id,
-      user.role,
-      user.isOnboarded,
-      user.vendorType,
-    );
-    const refreshToken = generateRefreshToken(user._id, user.role);
-
-    res.cookie("refreshToken", refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
-
     return res.status(200).json({
-      message: "Email verified successfully.",
+      message: "Email verified successfully. Proceed to Login!",
       _id: user._id,
       email: user.email,
       vendorType: user.vendorType,
-      accessToken,
     });
   } catch (error) {
     return res.status(500).json({ message: error.message });
@@ -841,27 +825,11 @@ export const verifyVendorOTP = async (req, res) => {
     user.isVerified = true;
     await user.save();
 
-    const accessToken = generateAccessToken(
-      user._id,
-      user.role,
-      user.isOnboarded,
-      user.vendorType,
-    );
-    const refreshToken = generateRefreshToken(user._id, user.role);
-
-    res.cookie("refreshToken", refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
-
     return res.status(200).json({
-      message: "Email verified successfully.",
+      message: "Email verified successfully. Proceed to Login!",
       _id: user._id,
       email: user.email,
       vendorType: user.vendorType,
-      accessToken,
     });
   } catch (error) {
     return res.status(500).json({ message: error.message });
@@ -971,7 +939,7 @@ export const refreshAccessToken = async (req, res) => {
       decoded = verifyRefreshToken(refreshToken);
     } catch (jwtError) {
       console.error('[AUTH] Refresh token verification failed:', jwtError.message);
-      return res.status(401).json({ message: "Invalid refresh token" });
+      return res.status(406).json({ message: "Invalid refresh token" });
     }
 
     // Try User first, then Vendor (vendors login via loginVendor)
@@ -986,28 +954,17 @@ export const refreshAccessToken = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    console.log('[AUTH] Refresh successful for user:', user._id, 'role:', decoded.role);
-
-    // Generate tokens (use decoded values + model data where needed)
     const newAccessToken = generateAccessToken(
       user._id, 
       decoded.role, 
       user.isOnboarded, 
       user.vendorType
     );
-    const newRefreshToken = generateRefreshToken(user._id, decoded.role);
-
-    res.cookie("refreshToken", newRefreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
 
     return res.status(200).json({ accessToken: newAccessToken });
   } catch (error) {
     console.error('[AUTH] RefreshAccessToken error:', error);
-    return res.status(401).json({ message: "Refresh failed" });
+    return res.status(406).json({ message: "Refresh failed" });
   }
 };
 

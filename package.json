@@ -45,6 +45,9 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.1.0",
+    "globals": "^17.4.0",
     "nodemon": "^3.1.10"
   }
 }

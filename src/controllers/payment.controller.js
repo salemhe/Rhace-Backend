@@ -726,6 +726,7 @@ export const initializePayment = async (req, res) => {
       specialRequest,
       checkInDate,
       checkOutDate,
+      quantity,
       roomId,
       drinks,
       combos,
@@ -802,6 +803,7 @@ export const initializePayment = async (req, res) => {
           totalAmount =
             (room.pricePerNight - room.pricePerNight * (room.discount / 100)) *
             nights;
+          totalAmount *= quantity || 1;
         }
       }
 

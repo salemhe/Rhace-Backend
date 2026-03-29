@@ -48,16 +48,15 @@ export const getTables = async (req, res) => {
     sort[sortBy] = sortOrder === "asc" ? 1 : -1;
 
     const tables = await Table.find(query)
-      .populate('tableType', 'quantityAvailable seatingCapacity name')
+      .populate('quantityAvailable seatingCapacity name')
       .sort(sort)
       .skip((page - 1) * limit)
       .limit(parseInt(limit));
 
     const tablesWithCapacity = tables.map(table => ({
       ...table.toObject(),
-      seatingCapacity: table.tableType?.seatingCapacity || 0,
-      quantityAvailable: table.tableType?.quantityAvailable || 0,
-      tableTypeName: table.tableType?.name || 'Legacy Table'
+      seatingCapacity: table?.seatingCapacity || 0,
+      quantityAvailable: table?.quantityAvailable || 0,
     }));
 
     res.status(200).json({
@@ -74,15 +73,14 @@ export const getTables = async (req, res) => {
 export const getTableById = async (req, res) => {
   try {
     const { id } = req.params;
-    const table = await Table.findById(id).populate('tableType', 'quantityAvailable seatingCapacity name');
+    const table = await Table.findById(id).populate('quantityAvailable seatingCapacity name');
     if (!table) {
       return res.status(404).json({ message: "Table not found" });
     }
     const tableWithCapacity = {
       ...table.toObject(),
-      seatingCapacity: table.tableType?.seatingCapacity || 0,
-      quantityAvailable: table.tableType?.quantityAvailable || 0,
-      tableTypeName: table.tableType?.name || 'Legacy Table'
+      seatingCapacity: table?.seatingCapacity || 0,
+      quantityAvailable: table?.quantityAvailable || 0,
     };
     res.status(200).json(tableWithCapacity);
   } catch (error) {
@@ -105,7 +103,7 @@ export const updateTable = async (req, res) => {
       }
     }
 
-    const { clubId, tableType, name, price, addOns } = req.body;
+    const { clubId, name, price, addOns } = req.body;
 
     if (addOns.length < 4) {
       return res.status(401).json({
@@ -114,12 +112,11 @@ export const updateTable = async (req, res) => {
     }
 
 
-    const updatedTable = await Table.findByIdAndUpdate(id, { clubId, tableType, name, price, addOns }, { new: true }).populate('tableType', 'quantityAvailable seatingCapacity name');
+    const updatedTable = await Table.findByIdAndUpdate(id, { clubId, name, price, addOns }, { new: true }).populate( 'quantityAvailable seatingCapacity name');
     const updatedTableWithCapacity = {
       ...updatedTable.toObject(),
-      seatingCapacity: updatedTable.tableType?.seatingCapacity || 0,
-      quantityAvailable: updatedTable.tableType?.quantityAvailable || 0,
-      tableTypeName: updatedTable.tableType?.name || 'Legacy Table'
+      seatingCapacity: updatedTable?.seatingCapacity || 0,
+      quantityAvailable: updatedTable?.quantityAvailable || 0,
     };
     res.status(200).json(updatedTableWithCapacity);
   } catch (error) {
