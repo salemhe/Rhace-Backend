@@ -256,6 +256,24 @@ const ClubVendor = Vendor.discriminator(
   })
 );
 
+// Virtuals for enhanced search
+VendorBaseSchema.virtual("menuItems", {
+  ref: "MenuItem",
+  localField: "_id",
+  foreignField: "vendor",
+  justOne: false
+});
+
+VendorBaseSchema.virtual("menus", {
+  ref: "Menu",
+  localField: "_id",
+  foreignField: "vendor",
+  justOne: false
+});
+
+VendorBaseSchema.set("toObject", { virtuals: true });
+VendorBaseSchema.set("toJSON", { virtuals: true });
+
 VendorBaseSchema.index({ location: "2dsphere" });
 VendorBaseSchema.index(
   {

@@ -201,102 +201,29 @@ export const search = async (req, res) => {
     const model    = getModel(type);
 
     // ── Base filter ───────────────────────────────────────────────
-    const filter = { isVerified: true };
+    let match = { isVerified: true };
 
-// ── Text search + menu item matching (ENHANCED) ─────────────────────────
     if (q && q.trim()) {
-      const words = splitQueryWords(q);
-      const wordRegexes = words.map(word => new RegExp(word, 'i'));
-      
-      // Parallel enhanced product searches
-      const [menuVendorIds, menuItemVendorIds, bottleSetClubIds, drinkClubIds] = await Promise.all([
-        Menu.find({ name: { $in: wordRegexes } }).distinct("vendor").catch(() => []),
-        MenuItem.find({ name: { $in: wordRegexes } }).distinct("vendor").catch(() => []),
-        BottleSet.find({ name: { $in: wordRegexes } }).distinct("clubId").catch(() => []),
-        Drink.find({ name: { $in: wordRegexes } }).distinct("clubId").catch(() => []),
-      ]);
-
-      const productVendorIds = [
-        ...menuVendorIds, 
-        ...menuItemVendorIds, 
-        ...bottleSetClubIds,    // clubId = ClubVendor._id
-        ...drinkClubIds
-      ].filter(Boolean);
-
-      // Base OR clauses with word matching
-      const orClauses = [
-        { businessName: { $in: wordRegexes } },
-        { vendorTypeCategory: { $in: wordRegexes } },
-        { businessDescription: { $in: wordRegexes } },
-        { address: { $in: wordRegexes } },
-      ];
-
-      // Type-specific boosts
-      if (!resolvedType || resolvedType === "restaurant") {
-        orClauses.push({ cuisines: { $in: wordRegexes } });
-      }
-      if (!resolvedType || resolvedType === "club") {
-        orClauses.push({ categories: { $in: wordRegexes } });
-        orClauses.push({ musicGenres: { $in: wordRegexes } });
-        // Table boost for "table" searches
-        if (words.some(w => w.includes('table'))) {
-          filter.hasVIPTables = true;
-          filter.hasParking = true;  // Often has tables
-        }
-      }
-      if (!resolvedType || resolvedType === "hotel") {
-        orClauses.push({ amenities: { $in: wordRegexes } });
-        orClauses.push({ propertyType: { $in: wordRegexes } });
-      }
-
-      // Product ID boost (highest priority)
-      if (productVendorIds.length) {
-        orClauses.unshift({ _id: { $in: productVendorIds } });
-      }
-
-      filter.$or = orClauses;
-
-      // Club time-based filter (e.g., q="2pm")
-      const now = new Date();
-      const days = ["sunday","monday","tuesday","wednesday","thursday","friday","saturday"];
-      const day = days[now.getDay()];
-      
-      if ((!resolvedType || resolvedType === "club") && words.some(w => /[0-9]?(am|pm)/i.test(w))) {
-        const timeInfo = parseTimeQuery(q, day);
-        if (timeInfo) {
-          filter.openingHours = {
-            $elemMatch: {
-              day,
-              isClosed: { $ne: true },
-              $expr: {
-                $and: [
-                  { $lte: [{ $add: [{ $multiply: [{ $toInt: { $substr: ["$open", 0, 2] } }, 60] }, { $toInt: { $substr: ["$open", 3, 2] } }] }, timeInfo.currentMinutes] },
-                  { $gte: [{ $add: [{ $multiply: [{ $toInt: { $substr: ["$close", 0, 2] } }, 60] }, { $toInt: { $substr: ["$close", 3, 2] } }] }, timeInfo.currentMinutes] }
-                ]
-              }
-            }
-          };
-        }
-      }
+      match.$text = { $search: q.trim() };
     }
 
-    // ── Shared filters ────────────────────────────────────────────
+    // Apply shared filters to pipelineMatch
     if (city && city.trim()) {
-      filter.address = { $regex: city.trim(), $options: "i" };
+      pipelineMatch.address = { $regex: city.trim(), $options: "i" };
     }
 
     if (minRating) {
-      filter.rating = { $gte: toFloat(minRating, 0) };
+      pipelineMatch.rating = { $gte: toFloat(minRating, 0) };
     }
 
     if (minPrice || maxPrice) {
-      filter.priceRange = {};
-      if (minPrice) filter.priceRange.$gte = toInt(minPrice, 1);
-      if (maxPrice) filter.priceRange.$lte = toInt(maxPrice, 4);
+      pipelineMatch.priceRange = {};
+      if (minPrice) pipelineMatch.priceRange.$gte = toInt(minPrice, 1);
+      if (maxPrice) pipelineMatch.priceRange.$lte = toInt(maxPrice, 4);
     }
 
     if (latitude && longitude) {
-      filter.location = {
+      pipelineMatch.location = {
         $near: {
           $geometry: { type: "Point", coordinates: [toFloat(longitude), toFloat(latitude)] },
           $maxDistance: 10000,
@@ -305,7 +232,7 @@ export const search = async (req, res) => {
     }
 
     if (openNow === "true") {
-      Object.assign(filter, buildOpenNowFilter());
+      Object.assign(pipelineMatch, buildOpenNowFilter());
     }
 
     // ── Restaurant-specific filters ───────────────────────────────
@@ -313,25 +240,25 @@ export const search = async (req, res) => {
 
     if (!resolvedType || resolvedType === "restaurant") {
       const cuisinesArr = toArr(cuisines);
-      if (cuisinesArr.length) filter.cuisines = { $in: cuisinesArr };
+      if (cuisinesArr.length) pipelineMatch.cuisines = { $in: cuisinesArr };
 
       const dietaryArr = toArr(dietaryOptions);
-      if (dietaryArr.length) filter.dietaryOptions = { $all: dietaryArr };
+      if (dietaryArr.length) pipelineMatch.dietaryOptions = { $all: dietaryArr };
 
-      if (diningStyle) filter.diningStyles = diningStyle.toLowerCase();
+      if (diningStyle) pipelineMatch.diningStyles = diningStyle.toLowerCase();
 
       const seatArr = toArr(seatOptions);
-      if (seatArr.length) filter.seatOptions = { $in: seatArr };
+      if (seatArr.length) pipelineMatch.seatOptions = { $in: seatArr };
 
       const occasionArr = toArr(occasionTags);
-      if (occasionArr.length) filter.occasionTags = { $in: occasionArr };
+      if (occasionArr.length) pipelineMatch.occasionTags = { $in: occasionArr };
 
       const mealTimesArr = toArr(mealTimes);
-      if (mealTimesArr.length) filter.mealTimes = { $in: mealTimesArr };
+      if (mealTimesArr.length) pipelineMatch.mealTimes = { $in: mealTimesArr };
 
-      if (reservationPolicy) filter.reservationPolicy = reservationPolicy.toLowerCase();
-      if (hasParking === "true") filter.hasParking = true;
-      if (hasOutdoorSeating === "true") filter.hasOutdoorSeating = true;
+      if (reservationPolicy) pipelineMatch.reservationPolicy = reservationPolicy.toLowerCase();
+      if (hasParking === "true") pipelineMatch.hasParking = true;
+      if (hasOutdoorSeating === "true") pipelineMatch.hasOutdoorSeating = true;
     }
 
     // ── Hotel-specific filters ────────────────────────────────────
@@ -385,17 +312,48 @@ export const search = async (req, res) => {
       }
     }
 
-    // ── Query + count in parallel ─────────────────────────────────
-    const [vendors, totalCount] = await Promise.all([
-      model
-        .find(filter)
-        .select(buildSelect(resolvedType))
-        .sort(sortObj)
-        .skip(skip)
-        .limit(limitNum)
-        .lean(),
-      model.countDocuments(filter),
-    ]);
+    // ── Aggregation pipeline with $text score + menu boost ──────
+    const pipeline = [
+      { $match: pipelineMatch },
+      { $addFields: { textScore: { $meta: "textScore" } } },
+      {
+        $lookup: {
+          from: "menuitems",
+          localField: "_id",
+          foreignField: "vendor",
+          as: "menuItems"
+        }
+      },
+      {
+        $addFields: {
+          menuMatchCount: {
+            $size: {
+              $filter: {
+                input: "$menuItems",
+                cond: { $regexMatch: { input: "$$this.name", regex: q ? new RegExp(q.trim(), "i") : /^$/ } }
+              }
+            }
+          }
+        }
+      },
+      {
+        $addFields: {
+          totalScore: { $add: [ "$textScore", { $multiply: [ "$menuMatchCount", 10 ] } ] }
+        }
+      },
+      { $sort: { totalScore: -1, rating: -1, reviews: -1 } },
+      { $skip: skip },
+      { $limit: limitNum },
+      { $project: buildSelect(resolvedType).split(" ").reduce((obj, field) => ({ ...obj, [field]: 1 }), {}) }
+    ];
+
+    const vendors = await model.aggregate(pipeline);
+
+    const countPipeline = [
+      { $match: pipelineMatch }
+    ];
+    const countResult = await model.aggregate([...countPipeline, { $count: "total" } ]);
+    const totalCount = countResult[0]?.total || 0;
 
     const totalPages = Math.ceil(totalCount / limitNum);
 
