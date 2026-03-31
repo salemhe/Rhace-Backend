@@ -172,6 +172,10 @@ export const getSearchSuggestions = async (req, res) => {
 //    Club:       venueType, musicGenres, livePerformanceTypes, dressCode, agePolicy, entryFee, hasVIPTables, hasGuestlist, hasOutdoorArea
 // ─────────────────────────────────────────────────────────────────
 export const search = async (req, res) => {
+  let model;
+  let match = {};
+  let finalQ = '';
+
   try {
     const {
       q: queryQ, search, type, city,
@@ -198,12 +202,12 @@ export const search = async (req, res) => {
     const pageNum  = Math.max(1, toInt(page, 1));
     const limitNum = Math.min(50, Math.max(1, toInt(limit, 12)));
     const skip     = (pageNum - 1) * limitNum;
-    const model    = getModel(type);
+    model = getModel(type);
 
     // ── Base filter ───────────────────────────────────────────────
-    let match = { isVerified: true };
+    match = { isVerified: true };
     
-    const finalQ = (queryQ || search || '').trim();
+    finalQ = (queryQ || search || '').trim();
     if (finalQ) {
       try {
         // Try text search first (faster, ranked)
@@ -432,8 +436,8 @@ export const search = async (req, res) => {
       message: error.message,
       stack: error.stack,
       query: finalQ,
-      model: model.modelName,
-      match: match
+      model: model?.modelName || null,
+      match
     });
     
     // Graceful degradation - return empty results instead of 500
