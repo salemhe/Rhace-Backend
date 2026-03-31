@@ -247,14 +247,7 @@ export const search = async (req, res) => {
       if (maxPrice) fullMatch.priceRange.$lte = toInt(maxPrice, 4);
     }
 
-    if (latitude && longitude) {
-      fullMatch.location = {
-        $near: {
-          $geometry: { type: "Point", coordinates: [toFloat(longitude), toFloat(latitude)] },
-          $maxDistance: 10000,
-        },
-      };
-    }
+    let geoNearStage;
 
     if (openNow === "true") {
       Object.assign(fullMatch, buildOpenNowFilter());
@@ -325,6 +318,22 @@ export const search = async (req, res) => {
       if (hasOutdoorArea === "true") fullMatch.hasOutdoorArea = true;
     }
 
+    if (latitude && longitude) {
+      const coords = [toFloat(longitude), toFloat(latitude)];
+      const geoQuery = { ...fullMatch };
+      delete geoQuery.location;
+      geoNearStage = {
+        $geoNear: {
+          near: { type: "Point", coordinates: coords },
+          distanceField: "distance",
+          spherical: true,
+          query: geoQuery,
+          maxDistance: 10000,
+        },
+      };
+      delete fullMatch.location;
+    }
+
     // ── Sort ──────────────────────────────────────────────────────
     let sortObj = {};
     if (!latitude || !longitude) {
@@ -339,7 +348,7 @@ export const search = async (req, res) => {
 
     // ── Aggregation pipeline with $text score + menu boost ──────
     const pipeline = [
-      { $match: fullMatch },
+      ...(geoNearStage ? [geoNearStage] : [{ $match: fullMatch }]),
       // Only add textScore if we used $text search
       ...(match.$text ? [{ $addFields: { textScore: { $meta: "textScore" } } }] : []),
       {
@@ -365,7 +374,7 @@ export const search = async (req, res) => {
       },
       {
         $addFields: {
-          totalScore: { $add: [ "$textScore", { $multiply: [ "$menuMatchCount", 10 ] } ] }
+          totalScore: { $add: [ { $ifNull: ["$textScore", 0] }, { $multiply: [ "$menuMatchCount", 10 ] } ] }
         }
       },
       { $sort: { totalScore: -1, rating: -1, reviews: -1 } },
