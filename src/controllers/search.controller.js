@@ -222,6 +222,9 @@ export const search = async (req, res) => {
     }
     console.log("[search] Query:", finalQ, "Model:", model.modelName, "Match:", JSON.stringify(match).slice(0, 200) + '...');
 
+    // Pre-compute regex for pipeline (MongoDB can't access JS vars)
+    const regexPattern = finalQ ? new RegExp(finalQ, 'i') : /^$/;
+
     // Build complete match filter (was pipelineMatch - rename to match for consistency)
     const fullMatch = { ...match };
 
@@ -349,7 +352,8 @@ export const search = async (req, res) => {
             $size: {
         $filter: {
                 input: "$menuItems",
-                cond: { $regexMatch: { input: "$$this.name", regex: finalQ ? new RegExp(finalQ, "i") : /^$/ } }
+                cond: { $regexMatch: { input: "$$this.name", regex: regexPattern } }
+
               }
             }
           }
