@@ -21,6 +21,32 @@ const getModel = (type) => {
   }
 };
 
+// Helper to split query into words for better matching
+const splitQueryWords = (q) => {
+  return q.toLowerCase().trim().split(/\s+/).filter(word => word.length > 1);
+};
+
+// Helper to check if query looks like time for clubs
+const parseTimeQuery = (q, day) => {
+  const timeMatch = q.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
+  if (timeMatch) {
+    const hour = parseInt(timeMatch[1]);
+    const min = timeMatch[2] ? parseInt(timeMatch[2]) : 0;
+    const isPM = timeMatch[3].toLowerCase() === 'pm';
+    let totalMin = (hour % 12) * 60 + min;
+    if (isPM && hour !== 12) totalMin += 12 * 60;
+    if (!isPM && hour === 12) totalMin = min;
+    
+    return {
+      day,
+      currentMinutes: totalMin,
+      isTimeQuery: true
+    };
+  }
+  return null;
+};
+
+
 const toInt = (val, fallback) => {
   const n = parseInt(val, 10);
   return isNaN(n) ? fallback : n;
@@ -177,41 +203,81 @@ export const search = async (req, res) => {
     // ── Base filter ───────────────────────────────────────────────
     const filter = { isVerified: true };
 
-    // ── Text search + menu item matching ─────────────────────────
+// ── Text search + menu item matching (ENHANCED) ─────────────────────────
     if (q && q.trim()) {
-      const regex = new RegExp(q.trim(), "i");
-
-      const [menuVendorIds, menuItemVendorIds, bottleSetVendorIds, drinkVendorIds] = await Promise.all([
-        Menu.find({ name: regex }).distinct("vendor").catch(() => []),
-        MenuItem.find({ name: regex }).distinct("vendor").catch(() => []),
-        BottleSet.find({ name: regex }).distinct("vendor").catch(() => []),
-        Drink.find({ name: regex }).distinct("vendor").catch(() => []),
+      const words = splitQueryWords(q);
+      const wordRegexes = words.map(word => new RegExp(word, 'i'));
+      
+      // Parallel enhanced product searches
+      const [menuVendorIds, menuItemVendorIds, bottleSetClubIds, drinkClubIds] = await Promise.all([
+        Menu.find({ name: { $in: wordRegexes } }).distinct("vendor").catch(() => []),
+        MenuItem.find({ name: { $in: wordRegexes } }).distinct("vendor").catch(() => []),
+        BottleSet.find({ name: { $in: wordRegexes } }).distinct("clubId").catch(() => []),
+        Drink.find({ name: { $in: wordRegexes } }).distinct("clubId").catch(() => []),
       ]);
 
-      const relatedIds = [
-        ...new Set([...menuVendorIds, ...menuItemVendorIds, ...bottleSetVendorIds, ...drinkVendorIds]),
+      const productVendorIds = [
+        ...menuVendorIds, 
+        ...menuItemVendorIds, 
+        ...bottleSetClubIds,    // clubId = ClubVendor._id
+        ...drinkClubIds
       ].filter(Boolean);
 
+      // Base OR clauses with word matching
       const orClauses = [
-        { businessName: regex },
-        { vendorTypeCategory: regex },
-        { businessDescription: regex },
-        { address: regex },
+        { businessName: { $in: wordRegexes } },
+        { vendorTypeCategory: { $in: wordRegexes } },
+        { businessDescription: { $in: wordRegexes } },
+        { address: { $in: wordRegexes } },
       ];
 
-      if (!type || type.toLowerCase() === "restaurant") {
-        orClauses.push({ cuisines: regex });
+      // Type-specific boosts
+      if (!resolvedType || resolvedType === "restaurant") {
+        orClauses.push({ cuisines: { $in: wordRegexes } });
       }
-      if (!type || type.toLowerCase() === "club") {
-        orClauses.push({ categories: regex });
-        orClauses.push({ musicGenres: regex });
+      if (!resolvedType || resolvedType === "club") {
+        orClauses.push({ categories: { $in: wordRegexes } });
+        orClauses.push({ musicGenres: { $in: wordRegexes } });
+        // Table boost for "table" searches
+        if (words.some(w => w.includes('table'))) {
+          filter.hasVIPTables = true;
+          filter.hasParking = true;  // Often has tables
+        }
+      }
+      if (!resolvedType || resolvedType === "hotel") {
+        orClauses.push({ amenities: { $in: wordRegexes } });
+        orClauses.push({ propertyType: { $in: wordRegexes } });
       }
 
-      if (relatedIds.length) {
-        orClauses.push({ _id: { $in: relatedIds } });
+      // Product ID boost (highest priority)
+      if (productVendorIds.length) {
+        orClauses.unshift({ _id: { $in: productVendorIds } });
       }
 
       filter.$or = orClauses;
+
+      // Club time-based filter (e.g., q="2pm")
+      const now = new Date();
+      const days = ["sunday","monday","tuesday","wednesday","thursday","friday","saturday"];
+      const day = days[now.getDay()];
+      
+      if ((!resolvedType || resolvedType === "club") && words.some(w => /[0-9]?(am|pm)/i.test(w))) {
+        const timeInfo = parseTimeQuery(q, day);
+        if (timeInfo) {
+          filter.openingHours = {
+            $elemMatch: {
+              day,
+              isClosed: { $ne: true },
+              $expr: {
+                $and: [
+                  { $lte: [{ $add: [{ $multiply: [{ $toInt: { $substr: ["$open", 0, 2] } }, 60] }, { $toInt: { $substr: ["$open", 3, 2] } }] }, timeInfo.currentMinutes] },
+                  { $gte: [{ $add: [{ $multiply: [{ $toInt: { $substr: ["$close", 0, 2] } }, 60] }, { $toInt: { $substr: ["$close", 3, 2] } }] }, timeInfo.currentMinutes] }
+                ]
+              }
+            }
+          };
+        }
+      }
     }
 
     // ── Shared filters ────────────────────────────────────────────

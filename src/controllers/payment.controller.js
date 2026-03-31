@@ -395,7 +395,7 @@ export const getPaymentStats = async (req, res) => {
         $match: {
           ...vendorFilter,
           createdAt: { $gte: startOfThisYear.toDate() },
-          status: "Paid",
+          status: { $in: ["Paid", "success", "paid"] },
         },
       },
       { $group: { _id: null, total: { $sum: "$amount" } } },
