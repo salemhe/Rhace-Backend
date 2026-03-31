@@ -207,6 +207,9 @@ export const search = async (req, res) => {
     // ── Base filter ───────────────────────────────────────────────
     match = { isVerified: true };
     
+    // Build complete match filter first
+    const fullMatch = { ...match };
+
     finalQ = (queryQ || search || '').trim();
     if (finalQ) {
       // Always use reliable regex matching (no text index dependency)
@@ -222,9 +225,6 @@ export const search = async (req, res) => {
 
     // regexPattern now always available
     const regexPattern = finalQ ? new RegExp(finalQ, 'i') : /^$/;
-
-    // Build complete match filter (was pipelineMatch - rename to match for consistency)
-    const fullMatch = { ...match };
 
     // Apply shared filters
     if (city && city.trim()) {
