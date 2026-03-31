@@ -328,6 +328,7 @@ export const search = async (req, res) => {
           distanceField: "distance",
           spherical: true,
           query: geoQuery,
+          key: "location",
           maxDistance: 10000,
         },
       };

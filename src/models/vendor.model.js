@@ -28,7 +28,7 @@ const VendorBaseSchema = new Schema(
     role: { type: String, default: "vendor" },
     location: {
       type: { type: String, enum: ["Point"], default: "Point" },
-      coordinates: { type: [Number], index: "2dsphere", default: [0, 0] },
+      coordinates: { type: [Number], default: [0, 0] },
     },
     profileImages: [
       {
@@ -274,7 +274,7 @@ VendorBaseSchema.virtual("menus", {
 VendorBaseSchema.set("toObject", { virtuals: true });
 VendorBaseSchema.set("toJSON", { virtuals: true });
 
-VendorBaseSchema.index({ location: "2dsphere" });
+VendorBaseSchema.index({ location: "2dsphere" }, { name: "vendors_location_2dsphere" });
 VendorBaseSchema.index(
   {
     businessName: "text",
