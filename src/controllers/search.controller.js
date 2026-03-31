@@ -1,4 +1,4 @@
-import { Vendor, HotelVendor, RestaurantVendor, ClubVendor } from "../models/vendor.model.js";
+ import { Vendor, HotelVendor, RestaurantVendor, ClubVendor } from "../models/vendor.model.js";
 import { Menu, MenuItem } from "../models/menu.model.js";
 import BottleSet from "../models/bottleSet.model.js";
 import Drink from "../models/drink.model.js";
@@ -174,7 +174,7 @@ export const getSearchSuggestions = async (req, res) => {
 export const search = async (req, res) => {
   try {
     const {
-      q, type, city,
+      q: queryQ, search, type, city,
       minRating, minPrice, maxPrice,
       sort = "rating", page = 1, limit = 12,
       latitude, longitude, openNow,
@@ -202,10 +202,25 @@ export const search = async (req, res) => {
 
     // ── Base filter ───────────────────────────────────────────────
     let match = { isVerified: true };
-
-    if (q && q.trim()) {
-      match.$text = { $search: q.trim() };
+    
+    const finalQ = (queryQ || search || '').trim();
+    if (finalQ) {
+      try {
+        // Try text search first (faster, ranked)
+        match.$text = { $search: finalQ };
+      } catch (textError) {
+        console.warn("[search] Text index unavailable, falling back to regex:", textError.message);
+        // Fallback: regex on key fields
+        const regex = new RegExp(finalQ, 'i');
+        match.$or = [
+          { businessName: regex },
+          { vendorTypeCategory: regex },
+          { address: { $regex: regex } },
+          { businessDescription: { $regex: regex } }
+        ];
+      }
     }
+    console.log("[search] Query:", finalQ, "Model:", model.modelName, "Match:", JSON.stringify(match).slice(0, 200) + '...');
 
     // Apply shared filters to pipelineMatch
     if (city && city.trim()) {
@@ -314,8 +329,9 @@ export const search = async (req, res) => {
 
     // ── Aggregation pipeline with $text score + menu boost ──────
     const pipeline = [
-      { $match: pipelineMatch },
-      { $addFields: { textScore: { $meta: "textScore" } } },
+      { $match: match },
+      // Only add textScore if we used $text search
+      ...(match.$text ? [{ $addFields: { textScore: { $meta: "textScore" } } }] : []),
       {
         $lookup: {
           from: "menuitems",
@@ -350,7 +366,7 @@ export const search = async (req, res) => {
     const vendors = await model.aggregate(pipeline);
 
     const countPipeline = [
-      { $match: pipelineMatch }
+      { $match: match }
     ];
     const countResult = await model.aggregate([...countPipeline, { $count: "total" } ]);
     const totalCount = countResult[0]?.total || 0;
@@ -405,8 +421,31 @@ export const search = async (req, res) => {
       meta: { q, type: resolvedType, sort, city },
     });
   } catch (error) {
-    console.error("[search]", error);
-    return res.status(500).json({ success: false, message: "Search failed" });
+    console.error("[search] FULL ERROR:", {
+      message: error.message,
+      stack: error.stack,
+      query: finalQ,
+      model: model.modelName,
+      match: match
+    });
+    
+    // Graceful degradation - return empty results instead of 500
+    if (error.message.includes('text index') || error.message.includes('$text')) {
+      console.warn("[search] Text search failed, consider creating text index on vendors collection");
+      return res.status(200).json({
+        success: true, 
+        data: [],
+        pagination: { currentPage: pageNum, totalPages: 0, totalCount: 0, limit: limitNum },
+        facets: {},
+        meta: { warning: "Text index missing - using regex fallback recommended" }
+      });
+    }
+    
+    return res.status(500).json({ 
+      success: false, 
+      message: `Search failed: ${error.message}`,
+      ...(process.env.NODE_ENV === 'development' && { error: error.message, stack: error.stack })
+    });
   }
 };
 
