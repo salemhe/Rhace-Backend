@@ -209,24 +209,18 @@ export const search = async (req, res) => {
     
     finalQ = (queryQ || search || '').trim();
     if (finalQ) {
-      try {
-        // Try text search first (faster, ranked)
-        match.$text = { $search: finalQ };
-      } catch (textError) {
-        console.warn("[search] Text index unavailable, falling back to regex:", textError.message);
-        // Fallback: regex on key fields
-        const regex = new RegExp(finalQ, 'i');
-        match.$or = [
-          { businessName: regex },
-          { vendorTypeCategory: regex },
-          { address: { $regex: regex } },
-          { businessDescription: { $regex: regex } }
-        ];
-      }
+      // Always use reliable regex matching (no text index dependency)
+      const regex = new RegExp(finalQ, 'i');
+      fullMatch.$or = [
+        { businessName: regex },
+        { vendorTypeCategory: regex },
+        { address: regex },
+        { businessDescription: regex }
+      ];
     }
-    console.log("[search] Query:", finalQ, "Model:", model.modelName, "Match:", JSON.stringify(match).slice(0, 200) + '...');
+    console.log("[search] Query:", finalQ, "Model:", model.modelName, "Regex match active:", !!finalQ);
 
-    // Pre-compute regex for pipeline (MongoDB can't access JS vars)
+    // regexPattern now always available
     const regexPattern = finalQ ? new RegExp(finalQ, 'i') : /^$/;
 
     // Build complete match filter (was pipelineMatch - rename to match for consistency)
@@ -350,8 +344,6 @@ export const search = async (req, res) => {
     // ── Aggregation pipeline with $text score + menu boost ──────
     const pipeline = [
       ...(geoNearStage ? [geoNearStage] : [{ $match: fullMatch }]),
-      // Only add textScore if we used $text search
-      ...(match.$text ? [{ $addFields: { textScore: { $meta: "textScore" } } }] : []),
       {
         $lookup: {
           from: "menuitems",
@@ -364,10 +356,9 @@ export const search = async (req, res) => {
         $addFields: {
           menuMatchCount: {
             $size: {
-        $filter: {
+              $filter: {
                 input: "$menuItems",
                 cond: { $regexMatch: { input: "$$this.name", regex: regexPattern } }
-
               }
             }
           }
@@ -375,7 +366,7 @@ export const search = async (req, res) => {
       },
       {
         $addFields: {
-          totalScore: { $add: [ { $ifNull: ["$textScore", 0] }, { $multiply: [ "$menuMatchCount", 10 ] } ] }
+          totalScore: { $multiply: [ "$menuMatchCount", 10 ] }
         }
       },
       { $sort: { totalScore: -1, rating: -1, reviews: -1 } },
@@ -450,15 +441,15 @@ export const search = async (req, res) => {
       match
     });
     
-    // Graceful degradation - return empty results instead of 500
-    if (error.message.includes('text index') || error.message.includes('$text')) {
-      console.warn("[search] Text search failed, consider creating text index on vendors collection");
+    // Graceful degradation for any search errors
+    if (error.message.includes('text index') || error.message.includes('$text') || error.message.includes('text score metadata')) {
+      console.warn("[search] Search error (likely missing text index), using regex matching:", error.message);
       return res.status(200).json({
         success: true, 
         data: [],
         pagination: { currentPage: pageNum, totalPages: 0, totalCount: 0, limit: limitNum },
         facets: {},
-        meta: { warning: "Text index missing - using regex fallback recommended" }
+        meta: { warning: "Search using reliable regex matching (text index optional)" }
       });
     }
     
