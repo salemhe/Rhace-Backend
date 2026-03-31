@@ -106,8 +106,10 @@ const paymentSchema = new mongoose.Schema({
         
         checkInDate: Date,
         checkOutDate: Date,
-        roomId: mongoose.Schema.Types.ObjectId,
-        quantity: Number,
+        rooms: [{
+            roomId: {type: mongoose.Schema.Types.ObjectId, ref: "Room"},
+            quantity: Number
+        }],
         
         drinks: [{
             drink: {type: mongoose.Schema.Types.ObjectId, ref: "Drink"},
@@ -117,7 +119,8 @@ const paymentSchema = new mongoose.Schema({
         table: [
             {
                 _id: { type: mongoose.Schema.Types.ObjectId, ref: "Table" },
-                quantity: Number
+                quantity: Number,
+                price: Number
             }
         ]
     },

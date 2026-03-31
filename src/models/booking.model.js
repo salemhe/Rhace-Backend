@@ -169,17 +169,14 @@ const hotelReservation = Booking.discriminator(
       },
     },
     guests: { type: Number },
-    room: { type: mongoose.Schema.Types.ObjectId, ref: "RoomType" },
-    // Support for multiple rooms booking
     rooms: [
       {
-        roomType: {
+        roomId: {
           type: mongoose.Schema.Types.ObjectId,
           ref: "RoomType",
           required: true,
         },
         quantity: { type: Number, default: 1, min: 1 },
-        pricePerNight: { type: Number, required: true },
       },
     ],
     specialRequest: { type: String },
@@ -202,7 +199,6 @@ const clubReservation = Booking.discriminator(
           required: true,
         },
         quantity: { type: Number, default: 1, min: 1 },
-        pricePerTable: { type: Number, required: true },
       },
     ],
     combos: [

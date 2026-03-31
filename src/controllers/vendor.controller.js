@@ -7,7 +7,7 @@ import { recordAuditLog } from "../utils/auditLogger.js";
 import pkg from "json-2-csv";
 import * as XLSX from "xlsx";
 import { Menu } from "../models/menu.model.js";
-import { filterVendorData } from "../utils/vendor.js";
+import Favorites from "../models/favorites.model.js";
 
 const { AsyncParser } = pkg;
 
@@ -54,80 +54,9 @@ export const getPublicVendors = async (req, res) => {
         "businessName vendorType email phone address profileImages rating reviews website priceRange vendorTypeCategory createdAt", // Only public fields
     };
 
-    const vendors = await Vendor.paginate(query, options);
+    const vendors = await Vendor.find(query, options);
 
     res.status(200).json(vendors);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// @desc    Get all vendors with search, filter, sort, pagination
-// @route   GET /api/vendors
-// @access  Private (Admin, Manager)
-export const getVendors = async (req, res) => {
-  try {
-    const {
-      page = 1,
-      limit = 10,
-      search,
-      status,
-      vendorType,
-      isVerified,
-      sortBy,
-      sortOrder,
-    } = req.query;
-
-    const query = {};
-
-    if (search) {
-      query.$or = [
-        { businessName: { $regex: search, $options: "i" } },
-        { email: { $regex: search, $options: "i" } },
-      ];
-    }
-
-    if (status) query.status = status;
-    if (vendorType) query.vendorType = vendorType;
-    if (isVerified !== undefined) query.isVerified = isVerified === "true";
-
-    const sort = {};
-    if (sortBy) {
-      sort[sortBy] = sortOrder === "desc" ? -1 : 1;
-    } else {
-      sort.createdAt = -1;
-    }
-
-    const options = {
-      page: parseInt(page, 10),
-      limit: parseInt(limit, 10),
-      sort,
-    };
-
-    const vendors = await Vendor.paginate(query, options);
-
-    // Add derived reservation counts
-    const vendorIds = vendors.docs.map((v) => v._id);
-    const reservationCounts = await Reservation.aggregate([
-      {
-        $match: { vendor: { $in: vendorIds }, status: { $nin: ["cancelled"] } },
-      },
-      { $group: { _id: "$vendor", count: { $sum: 1 } } },
-    ]);
-
-    // Map counts to vendors
-    const countMap = Object.fromEntries(
-      reservationCounts.map((r) => [r._id.toString(), r.count]),
-    );
-    const vendorsWithCounts = vendors.docs.map((vendor) => ({
-      ...vendor.toObject(),
-      reservationCount: countMap[vendor._id.toString()] || 0,
-    }));
-
-    res.status(200).json({
-      ...vendors,
-      docs: filterVendorData(vendorsWithCounts),
-    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -562,53 +491,6 @@ export const getOffers = async (req, res) => {
   }
 };
 
-// @desc    Update vendor details
-// @route   PUT /api/vendors/:id
-// @access  Private (Admin)
-export const updateVendor = async (req, res) => {
-  try {
-    const vendor = await Vendor.findById(req.params.id);
-    if (!vendor) {
-      return res.status(404).json({ message: "Vendor not found" });
-    }
-
-    const allowedFields = [
-      "businessName",
-      "businessDescription",
-      "email",
-      "phone",
-      "address",
-      "website",
-      "priceRange",
-      "vendorTypeCategory",
-      "profileImages",
-      "percentageCharge",
-      "status",
-      "isVisible",
-      "contactPerson",
-    ];
-
-    allowedFields.forEach((field) => {
-      if (req.body[field] !== undefined) {
-        vendor[field] = req.body[field];
-      }
-    });
-
-    await vendor.save();
-
-    await recordAuditLog(req.user._id, "VENDOR_UPDATE", "Vendor", vendor._id, {
-      changedBy: req.user._id,
-      updatedFields: allowedFields.filter(
-        (field) => req.body[field] !== undefined,
-      ),
-    });
-
-    res.status(200).json(vendor);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
 // @desc    Delete vendor
 // @route   DELETE /api/vendors/:id
 // @access  Private (Admin)
@@ -716,5 +598,249 @@ export const getTopRated = async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: error.message });
+  }
+};
+
+export const updateVendor = async (req, res) => {
+  try {
+    const id = req.user._id;
+
+    const {
+      businessName,
+      vendorType,
+      profileImages,
+      address,
+      phone,
+      website,
+      priceRange,
+      businessDescription,
+      logo,
+      accountName,
+      accountNumber,
+      bankName,
+      bankCode,
+      openingTime,
+      closingTime,
+      cuisines,
+      availableSlots,
+      categories,
+      slots,
+      dressCode,
+      ageLimit,
+      offer,
+    } = req.body;
+
+    // Find vendor
+    let vendorDetails = await Vendor.findById(id);
+    if (!vendorDetails) {
+      return res.status(404).json({ message: "Vendor not found." });
+    }
+
+    let vendor = await vendorDetails.constructor.findById(id);
+    if (!vendor) {
+      return res.status(404).json({ message: "Vendor not found." });
+    }
+
+    // Update payment details only if all fields provided
+    if (accountName && accountNumber && bankName && bankCode) {
+      const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
+      if (!PAYSTACK_SECRET_KEY) {
+        return res
+          .status(500)
+          .json({ message: "Paystack key not configured." });
+      }
+
+      const recipientPayload = {
+        type: "nuban",
+        business_name: vendorDetails.businessName,
+        account_number: accountNumber,
+        settlement_bank: bankCode,
+        currency: "NGN",
+        percentage_charge: 8,
+      };
+
+      const recipientResponse = await fetch(
+        "https://api.paystack.co/subaccount",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(recipientPayload),
+        },
+      );
+
+      const recipientData = await recipientResponse.json();
+      if (!recipientResponse.ok || !recipientData.status) {
+        return res
+          .status(500)
+          .json({ message: "Paystack error", error: recipientData.message });
+      }
+
+      vendor.paymentDetails = {
+        bankCode,
+        accountNumber,
+        subaccountCode: recipientData.data.subaccount_code,
+        bankName,
+        accountName,
+      };
+    }
+
+    // Handle vendorType-specific updates
+    if (vendorType) {
+      switch (vendorType) {
+        case "hotel":
+          if (offer) vendor.offer = offer;
+          break;
+
+        case "restaurant":
+          if (openingTime) vendor.openingTime = openingTime;
+          if (closingTime) vendor.closingTime = closingTime;
+          if (cuisines) vendor.cuisines = cuisines;
+          if (availableSlots) vendor.availableSlots = availableSlots;
+          break;
+
+        case "club":
+          if (openingTime) vendor.openingTime = openingTime;
+          if (closingTime) vendor.closingTime = closingTime;
+          if (slots !== undefined) vendor.slots = Number(slots);
+          if (categories) vendor.categories = categories;
+          if (offer) vendor.offer = offer;
+          if (dressCode) vendor.dressCode = dressCode;
+          if (ageLimit !== undefined) {
+            vendor.ageLimit = String(ageLimit).replace(/[^0-9]/g, "");
+          }
+          break;
+      }
+    }
+
+    // Basic updates (settings page compatible)
+    if (profileImages) vendor.profileImages = profileImages;
+    if (logo) vendor.logo = logo;
+    if (businessName) vendor.businessName = businessName;
+    if (address) vendor.address = address;
+    if (businessDescription) vendor.businessDescription = businessDescription;
+    if (phone) vendor.phone = phone;
+    if (website) vendor.website = website;
+    if (priceRange) vendor.priceRange = priceRange;
+
+    console.log(vendor, businessName);
+    await vendor.save();
+    return res.status(200).json({
+      message: "Update completed successfully.",
+      vendor,
+    });
+  } catch (error) {
+    console.error(error);
+    return res
+      .status(500)
+      .json({ message: "Update failed.", error: error.message });
+  }
+};
+
+export const getVendors = async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 10,
+      search,
+      status,
+      type,
+      isVerified,
+      sortBy,
+      user,
+      sortOrder,
+    } = req.query;
+
+    const query = {};
+
+    if (search) {
+      query.$or = [
+        { businessName: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    if (status) query.status = status;
+    if (type) query.vendorType = type;
+    if (isVerified !== undefined) query.isVerified = isVerified === "true";
+
+    const sort = {};
+    if (sortBy) {
+      sort[sortBy] = sortOrder === "desc" ? -1 : 1;
+    } else {
+      sort.createdAt = -1;
+    }
+
+    const vendors = await Vendor.find(query)
+      .sort(sort)
+      .skip((parseInt(page) - 1) * limit)
+      .limit(parseInt(limit));
+
+    const favorites = await Favorites.find({
+      userId: user ? user : null,
+    });
+
+    const vendorsWithFavorites = vendors.map((vendor) => ({
+      ...vendor.toObject(),
+      favorite: favorites.some(
+        (f) => f.vendor.toString() === vendor._id.toString(),
+      ),
+    }));
+
+    const total = await Vendor.countDocuments(query);
+
+    return res.json({
+      status: "active",
+      message: `Fetched ${type || "all"} vendor Succesfully!`,
+      data: vendorsWithFavorites,
+      total,
+      page: parseInt(page),
+      pages: Math.ceil(total / limit),
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({
+      message: "Error fetching vendor.",
+      error: err.message,
+    });
+  }
+};
+
+export const getVendor = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const vendor = await Vendor.findOne({ _id: id });
+
+    if (!vendor) return res.status(404).json({ message: "Vendor not found" });
+
+    const favorite = await Favorites.findOne({
+      userId: req.user ? req.user._id : null,
+      vendor: id,
+    });
+
+    const query = {
+      vendorType: vendor.vendorType,
+      rating: { $gt: 3 },
+    };
+
+    const recommendations = await Vendor.find(query).limit(10);
+    const vendorWithFavorite = {
+      ...vendor.toObject(),
+      favorite: !!favorite,
+    };
+
+    return res.json({
+      status: "active",
+      data: vendorWithFavorite,
+      recommendations,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({
+      message: "Error fetching vendor.",
+      error: err.message,
+    });
   }
 };

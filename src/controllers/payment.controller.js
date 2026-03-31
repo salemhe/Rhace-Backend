@@ -12,16 +12,14 @@ import Table from "../models/table.model.js";
 import BottleSet from "../models/bottleSet.model.js";
 
 // Emit real-time updates for payments
-export const emitPaymentUpdate = (reservationId, status) => {
-  if (global.io) {
-    
-    console.log('Emitting payment_update event:', { reservationId, status });
-    global.io.emit('payment_update', { reservationId, status });
-    console.log("Emitting payment_update event:", data);
-    global.io.to("admin_payments").emit("payment_update", data);
-  }
-};
-
+// export const emitPaymentUpdate = (reservationId, status) => {
+//   if (global.io) {
+//     console.log("Emitting payment_update event:", { reservationId, status });
+//     global.io.emit("payment_update", { reservationId, status });
+//     console.log("Emitting payment_update event:", data);
+//     global.io.to("admin_payments").emit("payment_update", data);
+//   }
+// };
 
 const percentChange = (current, previous) => {
   if (previous === 0) return current === 0 ? 0 : 100;
@@ -54,17 +52,17 @@ export const getAdminTotalEarnings = async (req, res) => {
     }
 
     const { period = "all", startDate, endDate } = req.query;
-    
+
     // Build date filter
     let dateFilter = {};
     const now = new Date();
-    
+
     if (startDate && endDate) {
       dateFilter = {
         createdAt: {
           $gte: new Date(startDate),
-          $lte: new Date(endDate)
-        }
+          $lte: new Date(endDate),
+        },
       };
     } else if (period === "week") {
       const lastWeek = new Date(now.setDate(now.getDate() - 7));
@@ -86,10 +84,10 @@ export const getAdminTotalEarnings = async (req, res) => {
     const payments = await Payment.find({
       ...dateFilter,
       status: "success",
-      isSplitPayment: true
+      isSplitPayment: true,
     }).populate({
       path: "vendor",
-      select: "percentageCharge businessName"
+      select: "percentageCharge businessName",
     });
 
     // Calculate admin earnings for each payment
@@ -105,10 +103,10 @@ export const getAdminTotalEarnings = async (req, res) => {
 
     const vendorBreakdown = {};
 
-    payments.forEach(payment => {
+    payments.forEach((payment) => {
       const grossAmount = payment.amount || 0;
       const vendorPercentage = payment.vendor?.percentageCharge || 0;
-      
+
       // Calculate commissions
       const vendorCommission = grossAmount * (vendorPercentage / 100);
       const paystackCommission = grossAmount * PAYSTACK_COMMISSION;
@@ -132,7 +130,7 @@ export const getAdminTotalEarnings = async (req, res) => {
             vendorCommission: 0,
             paystackCommission: 0,
             adminEarnings: 0,
-            paymentCount: 0
+            paymentCount: 0,
           };
         }
         vendorBreakdown[vendorId].grossAmount += grossAmount;
@@ -149,18 +147,21 @@ export const getAdminTotalEarnings = async (req, res) => {
       summary: {
         totalGrossAmount: Math.round(totalGrossAmount * 100) / 100,
         totalVendorCommission: Math.round(totalVendorCommission * 100) / 100,
-        totalPaystackCommission: Math.round(totalPaystackCommission * 100) / 100,
+        totalPaystackCommission:
+          Math.round(totalPaystackCommission * 100) / 100,
         totalAdminEarnings: Math.round(totalAdminEarnings * 100) / 100,
         totalPayments,
-        averagePaymentAmount: totalPayments > 0 
-          ? Math.round((totalGrossAmount / totalPayments) * 100) / 100 
-          : 0
+        averagePaymentAmount:
+          totalPayments > 0
+            ? Math.round((totalGrossAmount / totalPayments) * 100) / 100
+            : 0,
       },
       vendorBreakdown: Object.values(vendorBreakdown),
       calculations: {
         paystackCommissionRate: `${PAYSTACK_COMMISSION * 100}%`,
-        formula: "Admin Earnings = (Gross Amount × Vendor %) - (Gross Amount × 9.5%)"
-      }
+        formula:
+          "Admin Earnings = (Gross Amount × Vendor %) - (Gross Amount × 9.5%)",
+      },
     });
   } catch (error) {
     console.error("Error fetching admin earnings:", error);
@@ -178,17 +179,17 @@ export const getTotalSuccessfulPayments = async (req, res) => {
     }
 
     const { period = "all", startDate, endDate } = req.query;
-    
+
     // Build date filter
     let dateFilter = {};
     const now = new Date();
-    
+
     if (startDate && endDate) {
       dateFilter = {
         createdAt: {
           $gte: new Date(startDate),
-          $lte: new Date(endDate)
-        }
+          $lte: new Date(endDate),
+        },
       };
     } else if (period === "week") {
       const lastWeek = new Date(now.setDate(now.getDate() - 7));
@@ -209,25 +210,25 @@ export const getTotalSuccessfulPayments = async (req, res) => {
     // Get total successful payments count
     const totalSuccessful = await Payment.countDocuments({
       ...dateFilter,
-      status: "success"
+      status: "success",
     });
 
     // Get total failed payments count
     const totalFailed = await Payment.countDocuments({
       ...dateFilter,
-      status: "failed"
+      status: "failed",
     });
 
     // Get total pending payments count
     const totalPending = await Payment.countDocuments({
       ...dateFilter,
-      status: "pending"
+      status: "pending",
     });
 
     // Get total cancelled payments count
     const totalCancelled = await Payment.countDocuments({
       ...dateFilter,
-      status: "cancelled"
+      status: "cancelled",
     });
 
     // Get all payments for additional stats
@@ -235,14 +236,21 @@ export const getTotalSuccessfulPayments = async (req, res) => {
     const totalAllPayments = allPayments.length;
 
     // Calculate success rate
-    const successRate = totalAllPayments > 0 
-      ? Math.round((totalSuccessful / totalAllPayments) * 10000) / 100 
-      : 0;
+    const successRate =
+      totalAllPayments > 0
+        ? Math.round((totalSuccessful / totalAllPayments) * 10000) / 100
+        : 0;
 
     // Get by payment method
     const byPaymentMethod = await Payment.aggregate([
       { $match: { ...dateFilter, status: "Paid" } },
-      { $group: { _id: "$paymentMethod", count: { $sum: 1 }, total: { $sum: "$amount" } } }
+      {
+        $group: {
+          _id: "$paymentMethod",
+          count: { $sum: 1 },
+          total: { $sum: "$amount" },
+        },
+      },
     ]);
 
     // Get by vendor type (through vendor lookup)
@@ -253,11 +261,17 @@ export const getTotalSuccessfulPayments = async (req, res) => {
           from: "vendors",
           localField: "vendor",
           foreignField: "_id",
-          as: "vendorInfo"
-        }
+          as: "vendorInfo",
+        },
       },
       { $unwind: "$vendorInfo" },
-      { $group: { _id: "$vendorInfo.vendorType", count: { $sum: 1 }, total: { $sum: "$amount" } } }
+      {
+        $group: {
+          _id: "$vendorInfo.vendorType",
+          count: { $sum: 1 },
+          total: { $sum: "$amount" },
+        },
+      },
     ]);
 
     // Get daily/weekly/monthly breakdown
@@ -268,14 +282,14 @@ export const getTotalSuccessfulPayments = async (req, res) => {
           _id: {
             year: { $year: "$createdAt" },
             month: { $month: "$createdAt" },
-            day: { $dayOfMonth: "$createdAt" }
+            day: { $dayOfMonth: "$createdAt" },
           },
           count: { $sum: 1 },
-          total: { $sum: "$amount" }
-        }
+          total: { $sum: "$amount" },
+        },
       },
       { $sort: { "_id.year": -1, "_id.month": -1, "_id.day": -1 } },
-      { $limit: 30 }
+      { $limit: 30 },
     ]);
 
     return res.json({
@@ -287,23 +301,23 @@ export const getTotalSuccessfulPayments = async (req, res) => {
         totalPending,
         totalCancelled,
         totalAllPayments,
-        successRate: `${successRate}%`
+        successRate: `${successRate}%`,
       },
-      byPaymentMethod: byPaymentMethod.map(item => ({
+      byPaymentMethod: byPaymentMethod.map((item) => ({
         method: item._id || "unknown",
         count: item.count,
-        total: item.total || 0
+        total: item.total || 0,
       })),
-      byVendorType: byVendorType.map(item => ({
+      byVendorType: byVendorType.map((item) => ({
         vendorType: item._id || "unknown",
         count: item.count,
-        total: item.total || 0
+        total: item.total || 0,
       })),
-      timeBreakdown: timeBreakdown.map(item => ({
-        date: `${item._id.year}-${String(item._id.month).padStart(2, '0')}-${String(item._id.day).padStart(2, '0')}`,
+      timeBreakdown: timeBreakdown.map((item) => ({
+        date: `${item._id.year}-${String(item._id.month).padStart(2, "0")}-${String(item._id.day).padStart(2, "0")}`,
         count: item.count,
-        total: item.total || 0
-      }))
+        total: item.total || 0,
+      })),
     });
   } catch (error) {
     console.error("Error fetching successful payments count:", error);
@@ -374,7 +388,6 @@ export const getPayments = async (req, res) => {
 export const getPaymentStats = async (req, res) => {
   const userId = req.user._id;
   const isAdmin = req.user.role === "admin";
-  const now = moment();
 
   // Weekly Ranges
   const startOfThisWeek = moment().startOf("isoWeek");
@@ -726,8 +739,7 @@ export const initializePayment = async (req, res) => {
       specialRequest,
       checkInDate,
       checkOutDate,
-      quantity,
-      roomId,
+      rooms,
       drinks,
       combos,
       partPaid,
@@ -752,22 +764,36 @@ export const initializePayment = async (req, res) => {
       });
     }
     // Hotel fields optional for partPaid/deposits
-    if (reservationType === "hotel" && !partPaid && (!checkInDate || !checkOutDate || !guests || !roomId)) {
+    if (
+      reservationType === "hotel" &&
+      !partPaid &&
+      (!checkInDate || !checkOutDate || !guests || !rooms)
+    ) {
       return res.status(400).json({
-        message: "Hotel full payment requires: checkInDate, checkOutDate, guests, roomId",
+        message:
+          "Hotel full payment requires: checkInDate, checkOutDate, guests, roomId",
         missing: ["checkInDate", "checkOutDate", "guests", "roomId"],
-        fix: "Use partPaid: true for deposits"
+        fix: "Use partPaid: true for deposits",
       });
     }
-    if (reservationType === "club" && (!date || !time || !guests || !drinks || !Array.isArray(drinks) || drinks.length === 0)) {
+    if (
+      reservationType === "club" &&
+      (!date ||
+        !time ||
+        !guests ||
+        !drinks ||
+        !Array.isArray(drinks) ||
+        drinks.length === 0)
+    ) {
       return res.status(400).json({
-        message: "Club requires: date(Date), time(HH:MM format), guests(number), drinks(non-empty array of {drink: ObjectId, quantity: number})",
+        message:
+          "Club requires: date(Date), time(HH:MM format), guests(number), drinks(non-empty array of {drink: ObjectId, quantity: number})",
         missing: {
           date: !!date,
           time: !!time,
           guests: !!guests,
-          drinks: Array.isArray(drinks) ? drinks.length > 0 : false
-        }
+          drinks: Array.isArray(drinks) ? drinks.length > 0 : false,
+        },
       });
     }
 
@@ -788,22 +814,27 @@ export const initializePayment = async (req, res) => {
       }
 
       if (reservationType === "hotel") {
-        if (!roomId) {
+        if (rooms.length < 1) {
           // Default deposit amount for hotel without room details
           totalAmount = 25000; // NGN 25k default deposit
           console.log("Using default hotel deposit amount: 25000");
         } else {
-          const room = await RoomType.findById(roomId);
-          if (!room) throw new Error("Room not found");
+          const roomIds = rooms.map((r) => r.roomId);
+          const room = await RoomType.find({ _id: { $in: roomIds } });
 
           const nights = Math.ceil(
             (new Date(checkOutDate) - new Date(checkInDate)) /
               (1000 * 60 * 60 * 24),
           );
-          totalAmount =
-            (room.pricePerNight - room.pricePerNight * (room.discount / 100)) *
-            nights;
-          totalAmount *= quantity || 1;
+          totalAmount = rooms.reduce((sum, item) => {
+            const rooms = room.find((d) => d._id.toString() === item.roomId);
+            if (!rooms) throw new Error(`Room ${item.drink} not found`);
+            return (sum +
+              (rooms.pricePerNight -
+                rooms.pricePerNight * (rooms.discount / 100)) *
+              nights * item.quantity
+            );
+          }, 0);
         }
       }
 
@@ -833,7 +864,7 @@ export const initializePayment = async (req, res) => {
         }
       }
       if (partPaid) {
-        totalAmount /= 2
+        totalAmount /= 2;
       }
     }
 
@@ -885,7 +916,7 @@ export const initializePayment = async (req, res) => {
           checkInDate,
           checkOutDate,
           guests,
-          roomId,
+          rooms,
           specialRequest,
         }),
 
@@ -910,7 +941,7 @@ export const initializePayment = async (req, res) => {
       hasSubaccount: !!vendor.paymentDetails?.subaccountCode,
       subaccountCode: vendor.paymentDetails?.subaccountCode || "MISSING",
       vendorType: vendor.vendorType,
-      vendorId: vendor._id
+      vendorId: vendor._id,
     });
 
     // Build Paystack payload with subaccount fallback
@@ -925,8 +956,8 @@ export const initializePayment = async (req, res) => {
         reservationType,
         payLater,
         vendorType: vendor.vendorType,
-        vendorSubaccount: vendor.paymentDetails?.subaccountCode || null
-      }
+        vendorSubaccount: vendor.paymentDetails?.subaccountCode || null,
+      },
     };
 
     // Only add subaccount if !payLater AND valid subaccountCode exists
@@ -934,7 +965,9 @@ export const initializePayment = async (req, res) => {
       paystackPayload.subaccount = vendor.paymentDetails.subaccountCode;
       console.log("✅ Using subaccount:", vendor.paymentDetails.subaccountCode);
     } else {
-      console.log("⚠️ Skipping subaccount (payLater or missing code) - using main account");
+      console.log(
+        "⚠️ Skipping subaccount (payLater or missing code) - using main account",
+      );
     }
 
     const paystackResponse = await axios.post(
@@ -953,16 +986,16 @@ export const initializePayment = async (req, res) => {
       console.error("❌ Paystack init failed:", paystackResponse.data.message, {
         vendorSubaccount: vendor.paymentDetails?.subaccountCode,
         amount: totalAmount,
-        vendorType: vendor.vendorType
+        vendorType: vendor.vendorType,
       });
-      return res.status(400).json({ 
-        message: "Payment initialization failed", 
+      return res.status(400).json({
+        message: "Payment initialization failed",
         paystackError: paystackResponse.data.message,
         debug: {
           hasSubaccount: !!vendor.paymentDetails?.subaccountCode,
           vendorType: vendor.vendorType,
-          fix: "Vendor needs Paystack subaccount configured in paymentDetails.subaccountCode"
-        }
+          fix: "Vendor needs Paystack subaccount configured in paymentDetails.subaccountCode",
+        },
       });
     }
 
@@ -974,7 +1007,7 @@ export const initializePayment = async (req, res) => {
     console.log("✅ Payment initialized successfully:", {
       ref: paystackResponse.data.data.reference,
       url: paystackResponse.data.data.authorization_url,
-      usedSubaccount: !!paystackPayload.subaccount
+      usedSubaccount: !!paystackPayload.subaccount,
     });
 
     res.status(200).json({
@@ -1079,7 +1112,7 @@ export const getPaystackBalance = async (req, res) => {
     const data = await response.json();
     return res.json({
       balance: data.data,
-      currency: data.data.currency || 'NGN'
+      currency: data.data.currency || "NGN",
     });
   } catch (error) {
     console.error("Error fetching Paystack balance:", error);
@@ -1095,13 +1128,16 @@ export const getPaystackTransactions = async (req, res) => {
 
     const { page = 1, per_page = 50, status } = req.query;
     const params = new URLSearchParams({ page, per_page });
-    if (status) params.append('status', status);
+    if (status) params.append("status", status);
 
-    const response = await fetch(`https://api.paystack.co/transaction?${params}`, {
-      headers: {
-        Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+    const response = await fetch(
+      `https://api.paystack.co/transaction?${params}`,
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+        },
       },
-    });
+    );
 
     if (!response.ok) {
       throw new Error(`Paystack API error: ${response.status}`);
@@ -1123,14 +1159,17 @@ export const getPaystackSuccessfulCount = async (req, res) => {
 
     const { from, to } = req.query;
     const params = new URLSearchParams();
-    if (from) params.append('from', from);
-    if (to) params.append('to', to);
+    if (from) params.append("from", from);
+    if (to) params.append("to", to);
 
-    const response = await fetch(`https://api.paystack.co/statistics?${params}`, {
-      headers: {
-        Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+    const response = await fetch(
+      `https://api.paystack.co/statistics?${params}`,
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+        },
       },
-    });
+    );
 
     if (!response.ok) {
       throw new Error(`Paystack API error: ${response.status}`);
@@ -1140,7 +1179,7 @@ export const getPaystackSuccessfulCount = async (req, res) => {
     return res.json({
       successful: data.data?.success?.count || 0,
       total: data.data?.total || 0,
-      stats: data.data
+      stats: data.data,
     });
   } catch (error) {
     console.error("Error fetching Paystack stats:", error);
@@ -1222,22 +1261,31 @@ export const verifyPayment = async (req, res) => {
     const amount = transaction.amount / 100;
 
     // ✅ TASK 2: Idempotency check - skip if already webhook-processed success
-    if (existingTransaction && existingTransaction.status === "success" && existingTransaction.webhookProcessed) {
-      console.log("⏭️ Payment already processed via webhook:", existingTransaction._id);
-      
+    if (
+      existingTransaction &&
+      existingTransaction.status === "success" &&
+      existingTransaction.webhookProcessed
+    ) {
+      console.log(
+        "⏭️ Payment already processed via webhook:",
+        existingTransaction._id,
+      );
+
       // Update reservations paymentStatus (safety net)
       await Promise.all([
         Booking.updateMany(
           { resId: existingTransaction.booking },
-          { $set: { paymentStatus: "paid" } }
+          { $set: { paymentStatus: "paid" } },
         ),
         Reservation.updateMany(
           { payment: existingTransaction._id },
-          { $set: { paymentStatus: "paid" } }
-        )
+          { $set: { paymentStatus: "paid" } },
+        ),
       ]);
 
-      const booking = await Booking.findOne({ resId: existingTransaction.booking });
+      const booking = await Booking.findOne({
+        resId: existingTransaction.booking,
+      });
 
       return res.status(200).json({
         success: true,
@@ -1245,7 +1293,7 @@ export const verifyPayment = async (req, res) => {
         payment: existingTransaction,
         bookingId: existingTransaction.booking,
         booked: !!booking,
-        message: "Payment already verified and processed via webhook"
+        message: "Payment already verified and processed via webhook",
       });
     }
 
@@ -1290,15 +1338,15 @@ export const verifyPayment = async (req, res) => {
       }
 
       // Emit real-time update for new payment
-      emitPaymentUpdate({
-        type: "new_payment",
-        paymentId: newTransaction._id,
-        vendorId: vendorId,
-        amount: amount,
-        reference: reference,
-        status: "success",
-        createdAt: newTransaction.createdAt,
-      });
+      // emitPaymentUpdate({
+      //   type: "new_payment",
+      //   paymentId: newTransaction._id,
+      //   vendorId: vendorId,
+      //   amount: amount,
+      //   reference: reference,
+      //   status: "success",
+      //   createdAt: newTransaction.createdAt,
+      // });
     } else {
       // Update existing transaction
       await Payment.updateOne(
@@ -1309,7 +1357,7 @@ export const verifyPayment = async (req, res) => {
           paidAt: transaction.paid_at,
           amountPaid: amount,
           paymentMethod: transaction.channel,
-        }
+        },
       );
     }
 
@@ -1317,12 +1365,12 @@ export const verifyPayment = async (req, res) => {
     await Promise.all([
       Booking.updateMany(
         { resId: transaction.metadata.bookingId },
-        { $set: { paymentStatus: "paid" } }
+        { $set: { paymentStatus: "paid" } },
       ),
       Reservation.updateMany(
         { payment: existingTransaction?._id || reference },
-        { $set: { paymentStatus: "paid" } }
-      )
+        { $set: { paymentStatus: "paid" } },
+      ),
     ]);
 
     // Update booking payment status

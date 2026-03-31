@@ -546,10 +546,10 @@ export const getReservations = async (req, res) => {
       .populate({ path: "menus.menu" })
       .populate({ path: "vendor" })
       .populate({ path: "paymentRef" })
-      .populate({ path: "room" })
+      .populate({ path: "rooms.roomId" })
       .populate({ path: "drinks.drink" })
       .populate({ path: "combos" })
-      .populate({ path: "table" })
+      .populate({ path: "tables.tableType" })
       .populate({ path: "rooms.roomType" })
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
@@ -933,6 +933,7 @@ export async function createReservationFromPayment(payment) {
     }]);
     reservation = created;
   }
+  console.log(metadata.rooms);
 
   if (rawType === "hotel") {
     const [created] = await hotelReservation.create([{
@@ -940,7 +941,7 @@ export async function createReservationFromPayment(payment) {
       checkInDate: metadata.checkInDate,
       checkOutDate: metadata.checkOutDate,
       guests: metadata.guests,
-      room: metadata.roomId,
+      rooms: metadata.rooms,
       specialRequest: metadata.specialRequest,
       quantity: metadata.quantity || 1,
     }]);
@@ -956,7 +957,6 @@ export async function createReservationFromPayment(payment) {
       tables: metadata.table.map((t) => ({
         tableType: t._id,
         quantity: t.quantity,
-        pricePerTable: t.price || 0,
       })),  
       drinks: metadata.drinks.map((d) => ({
         drink: d.drink,
@@ -989,7 +989,7 @@ export async function completePayment(req, res) {
       const reservation = await Booking.findById(payment.reservationId)
         .populate("vendor")
         .populate("menus.menu")
-        .populate("room")
+        .populate("rooms.roomId")
         .populate("drinks.drink")
         .populate("tables.tableType")
         .populate("combos");

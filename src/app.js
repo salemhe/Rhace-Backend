@@ -4,30 +4,22 @@ import morgan from "morgan";
 import cookieParser from 'cookie-parser';
 import { authRoutes,
   adminRoutes,
-  branchRoutes,
 menuRoutes,
 bookingRoutes,
 hotelRoutes,
-amenityRoutes,
-guestRoutes,
 dashboardRoutes,
 drinkRoutes,
 tableRoutes,
 addOnRouter,
 bottleSetRoutes,
-clubRoutes,
 reviewRoutes,
-accountSettingsRoutes,
 userRoutes,
 vendorRoutes,
-reservationRoutes,
 paymentRoutes,
 settingRoutes,
 notificationRoutes,
 payoutRoutes,
-reportRoutes,
 searchRoutes,
-staffRoutes,
 paystackRoutes,
 availabilityRoutes } from "./routes/index.js"
 import errorMiddleWare from "./middlewares/error.middleware.js";
@@ -49,31 +41,41 @@ app.use(morgan("dev"));
 
 
 app.use("/api/v1/auth", authRoutes);
+
 app.use("/api/v1/admin", adminRoutes);
-app.use("/api/v1/branches", branchRoutes);
-app.use("/api/v1/menus", menuRoutes);
-app.use("/api/v1/bookings", bookingRoutes);
-app.use("/api/v1/hotels", hotelRoutes);
-app.use("/api/v1/amenities", amenityRoutes);
-app.use("/api/v1/guests", guestRoutes);
-app.use("/api/v1/dashboard", dashboardRoutes);
-app.use("/api/v1/account-settings", accountSettingsRoutes);
-app.use("/api/v1/clubs", clubRoutes);
-app.use("/api/v1/reviews", reviewRoutes);
-app.use("/api/v1/tables", tableRoutes);
-app.use("/api/v1/drinks", drinkRoutes);
-app.use("/api/v1/addons", addOnRouter);
-app.use("/api/v1/bottle-sets", bottleSetRoutes);
+
 app.use("/api/v1/users", userRoutes);
+
 app.use("/api/v1/vendors", vendorRoutes);
-app.use("/api/v1/reservations", reservationRoutes);
+
+app.use("/api/v1/menus", menuRoutes);
+
+app.use("/api/v1/bookings", bookingRoutes);
+
+app.use("/api/v1/hotels", hotelRoutes);
+
+app.use("/api/v1/dashboard", dashboardRoutes);
+
+app.use("/api/v1/reviews", reviewRoutes);
+
+app.use("/api/v1/tables", tableRoutes);
+
+app.use("/api/v1/drinks", drinkRoutes);
+
+app.use("/api/v1/addons", addOnRouter);
+
+app.use("/api/v1/bottle-sets", bottleSetRoutes);
+
 app.use("/api/v1/payments", paymentRoutes);
+
 app.use("/api/v1/settings", settingRoutes);
+
 app.use("/api/v1/notifications", notificationRoutes);
+
 app.use("/api/v1/payments/payouts", payoutRoutes);
+
 app.use("/api/v1/search", searchRoutes)
-app.use("/api/v1/staff", staffRoutes)
-app.use("/api/v1/reports", reportRoutes);
+
 app.use("/api/v1/availability", availabilityRoutes);
 
 app.use(errorMiddleWare)

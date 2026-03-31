@@ -4,8 +4,6 @@ import { Vendor } from "../models/vendor.model.js";
 
 export const getFavorites = async (req, res) => {
   try {
-    console.log('[FAVORITES] getFavorites called by user:', req.user?._id, 'role:', req.user?.role);
-
     const { page = 1, limit = 10, search, sortBy = "createdAt", sortOrder = "desc" } = req.query;
 
     const user = req.user._id;
@@ -35,14 +33,15 @@ export const getFavorites = async (req, res) => {
     });
   } catch (error) {
     console.error('[FAVORITES] getFavorites error:', error.message);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ error: error.message, message: "Unknown Error"})
   }
 };
 
 export const deleteFavorites = async (req, res) => {
   try {
     const { vendorId } = req.body;
-    await Favorites.deleteOne({ vendor: vendorId });
+    const deleted = await Favorites.deleteOne({ vendor: vendorId });
+    console.log(deleted)
     res.status(200).json({ message: "Favorite deleted successfully" });
   } catch (error) {
     res.status(500).json({ message: error.message });

@@ -38,6 +38,7 @@
     "nodemailer": "^7.0.6",
     "paystack-api": "^2.0.6",
     "pdfkit": "^0.17.2",
+    "resend": "^6.10.0",
     "sharp": "^0.34.3",
     "socket.io": "^4.8.1",
     "twilio": "^5.10.3",

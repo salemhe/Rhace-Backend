@@ -11,6 +11,7 @@ const tableSchema = new mongoose.Schema({
   minimumSpend: { type: Number, default: 0 },
   images: [{ type: String }],
   tags: [{ type: String }],
+  category: { type: String, enum: ["VIP", "VVIP", "Regular", "Super Regular"], default: "Regular"},
 }, { timestamps: true });
 
 const Table = mongoose.model("Table", tableSchema);

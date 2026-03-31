@@ -15,7 +15,6 @@ import {
   RestaurantVendor,
   ClubVendor,
 } from "../models/vendor.model.js";
-import { filterVendorData } from "../utils/vendor.js";
 
 export const registerAdmin = async (req, res) => {
   const { firstName, lastName, email, password } = req.body;
@@ -47,40 +46,6 @@ export const registerAdmin = async (req, res) => {
     }
   } catch (error) {
     return res.status(500).json({ message: error.message });
-  }
-};
-
-export const getVendor = async (req, res) => {
-  const { type, id, limit = 10, page = 1 } = req.query;
-
-  try {
-    const query = {};
-    if (id) {
-      query._id = id;
-    }
-    if (type) {
-      query.vendorType = type;
-    }
-    const vendor = await Vendor.find(query)
-      .skip((page - 1) * limit)
-      .limit(parseInt(limit));
-
-    const total = await Vendor.countDocuments(query);
-
-    return res.json({
-      status: "active",
-      message: `Fetched ${type || "all"} vendor Succesfully!`,
-      data: filterVendorData(vendor),
-      total,
-      page: parseInt(page),
-      pages: Math.ceil(total / limit),
-    });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({
-      message: "Error fetching vendor.",
-      error: err.message,
-    });
   }
 };
 
@@ -133,7 +98,7 @@ export const loginVendor = async (req, res) => {
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: 'None',
+      sameSite: "None",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
@@ -317,12 +282,12 @@ export const onboardVendor = async (req, res) => {
     }
 
     const paymentDetails = {
-        bankCode,
-        accountNumber,
-        subaccountCode: recipientData.data.subaccount_code,
-        bankName,
-        accountName,
-      }
+      bankCode,
+      accountNumber,
+      subaccountCode: recipientData.data.subaccount_code,
+      bankName,
+      accountName,
+    };
 
     // Basic updates
     vendor.profileImages = profileImages || vendor.profileImages;
@@ -347,143 +312,6 @@ export const onboardVendor = async (req, res) => {
     return res
       .status(500)
       .json({ message: "Onboarding failed.", error: error.message });
-  }
-};
-export const updateVendor = async (req, res) => {
-  try {
-    const id = req.user._id;
-
-    const {
-      businessName,
-      vendorType,
-      profileImages,
-      address,
-      phone,
-      website,
-      priceRange,
-      businessDescription,
-      logo,
-      accountName,
-      accountNumber,
-      bankName,
-      bankCode,
-      openingTime,
-      closingTime,
-      cuisines,
-      availableSlots,
-      categories,
-      slots,
-      dressCode,
-      ageLimit,
-      offer,
-    } = req.body;
-
-    // Find vendor
-    let vendorDetails = await Vendor.findById(id);
-    if (!vendorDetails) {
-      return res.status(404).json({ message: "Vendor not found." });
-    }
-
-    let vendor = await vendorDetails.constructor.findById(id);
-    if (!vendor) {
-      return res.status(404).json({ message: "Vendor not found." });
-    }
-
-    // Update payment details only if all fields provided
-    if (accountName && accountNumber && bankName && bankCode) {
-      const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
-      if (!PAYSTACK_SECRET_KEY) {
-        return res
-          .status(500)
-          .json({ message: "Paystack key not configured." });
-      }
-
-      const recipientPayload = {
-        type: "nuban",
-        business_name: vendorDetails.businessName,
-        account_number: accountNumber,
-        settlement_bank: bankCode,
-        currency: "NGN",
-        percentage_charge: 8,
-      };
-
-      const recipientResponse = await fetch(
-        "https://api.paystack.co/subaccount",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(recipientPayload),
-        },
-      );
-
-      const recipientData = await recipientResponse.json();
-      if (!recipientResponse.ok || !recipientData.status) {
-        return res
-          .status(500)
-          .json({ message: "Paystack error", error: recipientData.message });
-      }
-
-      vendor.paymentDetails = {
-        bankCode,
-        accountNumber,
-        subaccountCode: recipientData.data.subaccount_code,
-        bankName,
-        accountName,
-      };
-    }
-
-    // Handle vendorType-specific updates
-    if (vendorType) {
-      switch (vendorType) {
-        case "hotel":
-          if (offer) vendor.offer = offer;
-          break;
-
-        case "restaurant":
-          if (openingTime) vendor.openingTime = openingTime;
-          if (closingTime) vendor.closingTime = closingTime;
-          if (cuisines) vendor.cuisines = cuisines;
-          if (availableSlots) vendor.availableSlots = availableSlots;
-          break;
-
-        case "club":
-          if (openingTime) vendor.openingTime = openingTime;
-          if (closingTime) vendor.closingTime = closingTime;
-          if (slots !== undefined) vendor.slots = Number(slots);
-          if (categories) vendor.categories = categories;
-          if (offer) vendor.offer = offer;
-          if (dressCode) vendor.dressCode = dressCode;
-          if (ageLimit !== undefined) {
-            vendor.ageLimit = String(ageLimit).replace(/[^0-9]/g, "");
-          }
-          break;
-      }
-    }
-
-    // Basic updates (settings page compatible)
-    if (profileImages) vendor.profileImages = profileImages;
-    if (logo) vendor.logo = logo;
-    if (businessName) vendor.businessName = businessName;
-    if (address) vendor.address = address;
-    if (businessDescription) vendor.businessDescription = businessDescription;
-    if (phone) vendor.phone = phone;
-    if (website) vendor.website = website;
-    if (priceRange) vendor.priceRange = priceRange;
-
-    console.log(vendor, businessName);
-    await vendor.save();
-    return res.status(200).json({
-      message: "Update completed successfully.",
-      vendor,
-    });
-  } catch (error) {
-    console.error(error);
-    return res
-      .status(500)
-      .json({ message: "Update failed.", error: error.message });
   }
 };
 
@@ -545,36 +373,17 @@ export const registerGoogle = async (req, res) => {
       family_name: lastName,
       picture: profilePic,
     } = payload;
-    const userExists = await User.findOne({ email });
+    let user = await User.findOne({ email });
 
-    if (userExists) {
-      if (!userExists.googleId) {
-        userExists.googleId = googleId;
-        userExists.profilePic = profilePic;
-        userExists.isVerified = true;
-        await userExists.save();
+    if (user) {
+      if (!user.googleId) {
+        user.googleId = googleId;
+        user.profilePic = profilePic;
+        user.isVerified = true;
+        await user.save();
       }
-      
-      const accessToken = generateAccessToken(userExists._id, userExists.role);
-      const refreshToken = generateRefreshToken(
-        userExists._id,
-        userExists.role,
-      );
-
-      res.cookie("refreshToken", refreshToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: 'None',
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-      });
-
-      return res.status(200).json({
-        message: "Registered successfully.",
-        user: userExists,
-        accessToken,
-      });
     } else {
-      const user = await User.create({
+      user = await User.create({
         firstName,
         lastName,
         email,
@@ -583,24 +392,26 @@ export const registerGoogle = async (req, res) => {
         role: "user",
         isVerified: true,
       });
-      const accessToken = generateAccessToken(user._id, user.role);
-      const refreshToken = generateRefreshToken(user._id, user.role);
-
-      res.cookie("refreshToken", refreshToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: 'None',
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-      });
-
-      return res.status(200).json({
-        message: "Registered successfully.",
-        user,
-        accessToken,
-      });
     }
+
+    const accessToken = generateAccessToken(user._id, user.role);
+    const refreshToken = generateRefreshToken(user._id, user.role);
+
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "None",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Registered successfully.",
+      user: user,
+      accessToken,
+    });
   } catch (error) {
-    return res.status(500).json({ message: error.message });
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -630,17 +441,15 @@ export const login = async (req, res) => {
       });
     }
 
-    const accessToken = generateAccessToken(
-      user._id,
-      user.role,
-    );
+    const accessToken = generateAccessToken(user._id, user.role);
     const refreshToken = generateRefreshToken(user._id, user.role);
 
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: 'None',
+      sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
       maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: "/",
     });
 
     return res.status(200).json({
@@ -654,17 +463,17 @@ export const login = async (req, res) => {
 };
 
 export const loginGoogle = async (req, res) => {
-  console.log("Headers:", req.headers);
-  console.log("Body:", req.body);
   try {
     const { code } = req.body;
     if (!code) {
-      return res.status(400).json({ message: "Authorization code is missing." });
+      return res
+        .status(400)
+        .json({ message: "Authorization code is missing." });
     }
     const client = new OAuth2Client(
       process.env.GOOGLE_CLIENT_ID,
       process.env.GOOGLE_CLIENT_SECRET,
-      "postmessage"
+      "postmessage",
     );
     const { tokens } = await client.getToken(code);
     const ticket = await client.verifyIdToken({
@@ -707,7 +516,7 @@ export const loginGoogle = async (req, res) => {
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: 'None',
+      sameSite: "None",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
     return res.status(200).json({
@@ -930,7 +739,7 @@ export const refreshAccessToken = async (req, res) => {
   try {
     const refreshToken = req.cookies.refreshToken;
     if (!refreshToken) {
-      console.error('[AUTH] No refresh token cookie found');
+      console.error("[AUTH] No refresh token cookie found");
       return res.status(401).json({ message: "No refresh token provided" });
     }
 
@@ -938,32 +747,39 @@ export const refreshAccessToken = async (req, res) => {
     try {
       decoded = verifyRefreshToken(refreshToken);
     } catch (jwtError) {
-      console.error('[AUTH] Refresh token verification failed:', jwtError.message);
+      console.error(
+        "[AUTH] Refresh token verification failed:",
+        jwtError.message,
+      );
       return res.status(406).json({ message: "Invalid refresh token" });
     }
 
     // Try User first, then Vendor (vendors login via loginVendor)
-    let user = await User.findById(decoded.id).select('_id role isOnboarded vendorType');
+    let user = await User.findById(decoded.id).select(
+      "_id role isOnboarded vendorType",
+    );
     if (!user) {
-      const Vendor = (await import('../models/vendor.model.js')).default;
-      user = await Vendor.findById(decoded.id).select('_id role isOnboarded vendorType');
+      const Vendor = (await import("../models/vendor.model.js")).default;
+      user = await Vendor.findById(decoded.id).select(
+        "_id role isOnboarded vendorType",
+      );
     }
 
     if (!user) {
-      console.error('[AUTH] User/Vendor not found for ID:', decoded.id);
+      console.error("[AUTH] User/Vendor not found for ID:", decoded.id);
       return res.status(404).json({ message: "User not found" });
     }
 
     const newAccessToken = generateAccessToken(
-      user._id, 
-      decoded.role, 
-      user.isOnboarded, 
-      user.vendorType
+      user._id,
+      decoded.role,
+      user.isOnboarded,
+      user.vendorType,
     );
 
     return res.status(200).json({ accessToken: newAccessToken });
   } catch (error) {
-    console.error('[AUTH] RefreshAccessToken error:', error);
+    console.error("[AUTH] RefreshAccessToken error:", error);
     return res.status(406).json({ message: "Refresh failed" });
   }
 };
@@ -972,7 +788,7 @@ export const logout = async (req, res) => {
   res.clearCookie("refreshToken", {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
+    sameSite: "None",
   });
   res.json({ message: "Logged out successfully" });
 };
