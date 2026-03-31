@@ -222,23 +222,26 @@ export const search = async (req, res) => {
     }
     console.log("[search] Query:", finalQ, "Model:", model.modelName, "Match:", JSON.stringify(match).slice(0, 200) + '...');
 
-    // Apply shared filters to pipelineMatch
+    // Build complete match filter (was pipelineMatch - rename to match for consistency)
+    const fullMatch = { ...match };
+
+    // Apply shared filters
     if (city && city.trim()) {
-      pipelineMatch.address = { $regex: city.trim(), $options: "i" };
+      fullMatch.address = { $regex: city.trim(), $options: "i" };
     }
 
     if (minRating) {
-      pipelineMatch.rating = { $gte: toFloat(minRating, 0) };
+      fullMatch.rating = { $gte: toFloat(minRating, 0) };
     }
 
     if (minPrice || maxPrice) {
-      pipelineMatch.priceRange = {};
-      if (minPrice) pipelineMatch.priceRange.$gte = toInt(minPrice, 1);
-      if (maxPrice) pipelineMatch.priceRange.$lte = toInt(maxPrice, 4);
+      fullMatch.priceRange = {};
+      if (minPrice) fullMatch.priceRange.$gte = toInt(minPrice, 1);
+      if (maxPrice) fullMatch.priceRange.$lte = toInt(maxPrice, 4);
     }
 
     if (latitude && longitude) {
-      pipelineMatch.location = {
+      fullMatch.location = {
         $near: {
           $geometry: { type: "Point", coordinates: [toFloat(longitude), toFloat(latitude)] },
           $maxDistance: 10000,
@@ -247,7 +250,7 @@ export const search = async (req, res) => {
     }
 
     if (openNow === "true") {
-      Object.assign(pipelineMatch, buildOpenNowFilter());
+      Object.assign(fullMatch, buildOpenNowFilter());
     }
 
     // ── Restaurant-specific filters ───────────────────────────────
@@ -255,64 +258,64 @@ export const search = async (req, res) => {
 
     if (!resolvedType || resolvedType === "restaurant") {
       const cuisinesArr = toArr(cuisines);
-      if (cuisinesArr.length) pipelineMatch.cuisines = { $in: cuisinesArr };
+      if (cuisinesArr.length) fullMatch.cuisines = { $in: cuisinesArr };
 
       const dietaryArr = toArr(dietaryOptions);
-      if (dietaryArr.length) pipelineMatch.dietaryOptions = { $all: dietaryArr };
+      if (dietaryArr.length) fullMatch.dietaryOptions = { $all: dietaryArr };
 
-      if (diningStyle) pipelineMatch.diningStyles = diningStyle.toLowerCase();
+      if (diningStyle) fullMatch.diningStyles = diningStyle.toLowerCase();
 
       const seatArr = toArr(seatOptions);
-      if (seatArr.length) pipelineMatch.seatOptions = { $in: seatArr };
+      if (seatArr.length) fullMatch.seatOptions = { $in: seatArr };
 
       const occasionArr = toArr(occasionTags);
-      if (occasionArr.length) pipelineMatch.occasionTags = { $in: occasionArr };
+      if (occasionArr.length) fullMatch.occasionTags = { $in: occasionArr };
 
       const mealTimesArr = toArr(mealTimes);
-      if (mealTimesArr.length) pipelineMatch.mealTimes = { $in: mealTimesArr };
+      if (mealTimesArr.length) fullMatch.mealTimes = { $in: mealTimesArr };
 
-      if (reservationPolicy) pipelineMatch.reservationPolicy = reservationPolicy.toLowerCase();
-      if (hasParking === "true") pipelineMatch.hasParking = true;
-      if (hasOutdoorSeating === "true") pipelineMatch.hasOutdoorSeating = true;
+      if (reservationPolicy) fullMatch.reservationPolicy = reservationPolicy.toLowerCase();
+      if (hasParking === "true") fullMatch.hasParking = true;
+      if (hasOutdoorSeating === "true") fullMatch.hasOutdoorSeating = true;
     }
 
     // ── Hotel-specific filters ────────────────────────────────────
     if (!resolvedType || resolvedType === "hotel") {
-      if (starRating) filter.starRating = toInt(starRating, undefined);
+      if (starRating) fullMatch.starRating = toInt(starRating, undefined);
 
-      if (propertyType) filter.propertyType = propertyType.toLowerCase();
+      if (propertyType) fullMatch.propertyType = propertyType.toLowerCase();
 
       const amenitiesArr = toArr(amenities);
-      if (amenitiesArr.length) filter.amenities = { $all: amenitiesArr };
+      if (amenitiesArr.length) fullMatch.amenities = { $all: amenitiesArr };
 
-      if (mealPlan) filter.mealPlan = mealPlan.toLowerCase();
-      if (cancellationPolicy) filter.cancellationPolicy = cancellationPolicy.toLowerCase();
-      if (instantBook === "true") filter.instantBook = true;
-      if (petFriendly === "true") filter.petFriendly = true;
+      if (mealPlan) fullMatch.mealPlan = mealPlan.toLowerCase();
+      if (cancellationPolicy) fullMatch.cancellationPolicy = cancellationPolicy.toLowerCase();
+      if (instantBook === "true") fullMatch.instantBook = true;
+      if (petFriendly === "true") fullMatch.petFriendly = true;
 
       const accessibilityArr = toArr(accessibilityFeatures);
-      if (accessibilityArr.length) filter.accessibilityFeatures = { $all: accessibilityArr };
+      if (accessibilityArr.length) fullMatch.accessibilityFeatures = { $all: accessibilityArr };
     }
 
     // ── Club-specific filters ─────────────────────────────────────
     if (!resolvedType || resolvedType === "club") {
-      if (venueType) filter.venueType = venueType.toLowerCase();
+      if (venueType) fullMatch.venueType = venueType.toLowerCase();
 
       const genresArr = toArr(musicGenres);
-      if (genresArr.length) filter.musicGenres = { $in: genresArr };
+      if (genresArr.length) fullMatch.musicGenres = { $in: genresArr };
 
       const performancesArr = toArr(livePerformanceTypes);
-      if (performancesArr.length) filter.livePerformanceTypes = { $in: performancesArr };
+      if (performancesArr.length) fullMatch.livePerformanceTypes = { $in: performancesArr };
 
-      if (dressCode) filter.dressCode = dressCode.toLowerCase();
-      if (agePolicy) filter.agePolicy = agePolicy;
+      if (dressCode) fullMatch.dressCode = dressCode.toLowerCase();
+      if (agePolicy) fullMatch.agePolicy = agePolicy;
 
-      if (entryFee === "0") filter.entryFee = 0;
-      else if (entryFee === "paid") filter.entryFee = { $gt: 0 };
+      if (entryFee === "0") fullMatch.entryFee = 0;
+      else if (entryFee === "paid") fullMatch.entryFee = { $gt: 0 };
 
-      if (hasVIPTables === "true") filter.hasVIPTables = true;
-      if (hasGuestlist === "true") filter.hasGuestlist = true;
-      if (hasOutdoorArea === "true") filter.hasOutdoorArea = true;
+      if (hasVIPTables === "true") fullMatch.hasVIPTables = true;
+      if (hasGuestlist === "true") fullMatch.hasGuestlist = true;
+      if (hasOutdoorArea === "true") fullMatch.hasOutdoorArea = true;
     }
 
     // ── Sort ──────────────────────────────────────────────────────
@@ -329,7 +332,7 @@ export const search = async (req, res) => {
 
     // ── Aggregation pipeline with $text score + menu boost ──────
     const pipeline = [
-      { $match: match },
+      { $match: fullMatch },
       // Only add textScore if we used $text search
       ...(match.$text ? [{ $addFields: { textScore: { $meta: "textScore" } } }] : []),
       {
@@ -344,9 +347,9 @@ export const search = async (req, res) => {
         $addFields: {
           menuMatchCount: {
             $size: {
-              $filter: {
+        $filter: {
                 input: "$menuItems",
-                cond: { $regexMatch: { input: "$$this.name", regex: q ? new RegExp(q.trim(), "i") : /^$/ } }
+                cond: { $regexMatch: { input: "$$this.name", regex: finalQ ? new RegExp(finalQ, "i") : /^$/ } }
               }
             }
           }
@@ -366,7 +369,7 @@ export const search = async (req, res) => {
     const vendors = await model.aggregate(pipeline);
 
     const countPipeline = [
-      { $match: match }
+      { $match: fullMatch }
     ];
     const countResult = await model.aggregate([...countPipeline, { $count: "total" } ]);
     const totalCount = countResult[0]?.total || 0;
@@ -377,7 +380,7 @@ export const search = async (req, res) => {
     const facetMatch = {
       isVerified: true,
       isVisible: true,
-      ...(q && filter.$or ? { $or: filter.$or } : {}),
+      ...(finalQ && fullMatch.$or ? { $or: fullMatch.$or } : {}),
     };
 
     const facets = await Vendor.aggregate([
@@ -418,7 +421,7 @@ export const search = async (req, res) => {
         hasPrevPage: pageNum > 1,
       },
       facets: facets[0] || {},
-      meta: { q, type: resolvedType, sort, city },
+      meta: { q: finalQ, type: resolvedType, sort, city },
     });
   } catch (error) {
     console.error("[search] FULL ERROR:", {
