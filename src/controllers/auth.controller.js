@@ -54,27 +54,8 @@ export const loginVendor = async (req, res) => {
 
   try {
     // First, try to find a vendor
-    let user = await Vendor.findOne({ email });
+    const user = await Vendor.findOne({ email });
     let isVendor = true;
-
-    if (!user) {
-      // If not a vendor, check if it's an admin user
-      user = await User.findOne({ email });
-      isVendor = false;
-      if (
-        !user ||
-        ![
-          "admin",
-          "superadmin",
-          "finance",
-          "ops",
-          "support",
-          "manager",
-        ].includes(user.role)
-      ) {
-        return res.status(404).json({ message: "User not found" });
-      }
-    }
 
     const isMatch = await user.comparePassword(password);
     if (!isMatch) {
@@ -98,7 +79,8 @@ export const loginVendor = async (req, res) => {
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "None",
+      sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
+      path: "/",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
@@ -400,7 +382,8 @@ export const registerGoogle = async (req, res) => {
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "None",
+      sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
+      path: "/",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
@@ -448,8 +431,8 @@ export const login = async (req, res) => {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
       path: "/",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
     return res.status(200).json({
@@ -516,7 +499,8 @@ export const loginGoogle = async (req, res) => {
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "None",
+      sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
+      path: "/",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
     return res.status(200).json({
@@ -746,6 +730,7 @@ export const refreshAccessToken = async (req, res) => {
     let decoded;
     try {
       decoded = verifyRefreshToken(refreshToken);
+      console.log("[AUTH] Refresh token verified for user ID:", decoded.id, "with role:", decoded.role);
     } catch (jwtError) {
       console.error(
         "[AUTH] Refresh token verification failed:",
@@ -755,12 +740,13 @@ export const refreshAccessToken = async (req, res) => {
     }
 
     // Try User first, then Vendor (vendors login via loginVendor)
-    let user = await User.findById(decoded.id).select(
-      "_id role isOnboarded vendorType",
-    );
-    if (!user) {
-      const Vendor = (await import("../models/vendor.model.js")).default;
+    let user;
+    if (decoded.role !== "user") {
       user = await Vendor.findById(decoded.id).select(
+        "_id role isOnboarded vendorType",
+      );
+    } else {
+      user = await User.findById(decoded.id).select(
         "_id role isOnboarded vendorType",
       );
     }
@@ -788,7 +774,8 @@ export const logout = async (req, res) => {
   res.clearCookie("refreshToken", {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "None",
+    sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
+    path: "/",
   });
   res.json({ message: "Logged out successfully" });
 };

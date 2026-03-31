@@ -4,6 +4,7 @@ import mongoose from "mongoose";
 const tableSchema = new mongoose.Schema({
   clubId: { type: mongoose.Schema.Types.ObjectId, ref: "Club", required: true },
   name: { type: String, required: true, trim: true },
+  description: { type: String, trim: true, required: true },
   price: { type: Number, required: true },
   addOns: [{ type: String }],
   quantityAvailable: { type: Number, required: true, default: 0 },

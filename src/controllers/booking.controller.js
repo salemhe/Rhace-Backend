@@ -889,7 +889,7 @@ export async function createReservationFromPayment(payment) {
     location: metadata.location,
     totalAmount: payment.amount,
     paymentStatus: payment.payLater ? "not_paid" : payment.partPaid ? "partly_paid" : "paid",
-    reservationStatus: payment.payLater ? "upcoming" : "confirmed",
+    reservationStatus: "upcoming",
     payLater: payment.payLater,
     partPaid: payment.partPaid,
     reservationType,

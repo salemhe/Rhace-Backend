@@ -13,15 +13,9 @@ export const createTable = async (req, res) => {
       }
       req.body.clubId = req.user._id.toString();
     }
-    const { clubId, name, price, addOns } = req.body;
+    const { clubId, name, price, addOns, quantityAvailable, seatingCapacity, category, description } = req.body;
 
-    if (addOns.length < 4) {
-      return res.status(401).json({
-        error: "Addons must be 4 or more"
-      })
-    }
-
-    const table = new Table({clubId, name, price, addOns});
+    const table = new Table({clubId, name, price, addOns, quantityAvailable, seatingCapacity, category, description });
     await table.save();
     res.status(201).json(table);
   } catch (error) {
@@ -103,16 +97,9 @@ export const updateTable = async (req, res) => {
       }
     }
 
-    const { clubId, name, price, addOns } = req.body;
+    const { clubId, name, price, addOns, quantityAvailable, seatingCapacity, category, description } = req.body;
 
-    if (addOns.length < 4) {
-      return res.status(401).json({
-        error: "Addons must be 4 or more"
-      })
-    }
-
-
-    const updatedTable = await Table.findByIdAndUpdate(id, { clubId, name, price, addOns }, { new: true }).populate( 'quantityAvailable seatingCapacity name');
+    const updatedTable = await Table.findByIdAndUpdate(id, { clubId, name, price, addOns, quantityAvailable, seatingCapacity, category, description }, { new: true }).populate( 'quantityAvailable seatingCapacity name');
     const updatedTableWithCapacity = {
       ...updatedTable.toObject(),
       seatingCapacity: updatedTable?.seatingCapacity || 0,

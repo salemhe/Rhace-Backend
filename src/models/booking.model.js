@@ -63,7 +63,7 @@ const bookingSchema = new mongoose.Schema(
         "refunded",
         "failed",
         "not_paid",
-        "pay_ater",
+        "pay_later",
       ],
       default: "pending",
       required: true,
@@ -72,7 +72,7 @@ const bookingSchema = new mongoose.Schema(
     partPaid: Boolean,
     reservationStatus: {
       type: String,
-      enum: ["upcoming", "confirmed", "completed", "cancelled", "no_show"],
+      enum: ["upcoming", "confirmed", "completed", "cancelled", "no_show", "pending"],
       default: "upcoming",
       required: true,
       index: true,

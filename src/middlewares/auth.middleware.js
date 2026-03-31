@@ -34,6 +34,8 @@ export const protect = async (req, res, next) => {
           .json({ message: "Not authorized, user not found" });
       }
 
+      console.log(`Authenticated user: ${req.user._id} with role: ${req.user.role} & ${decoded.role}`);
+
       // Set the role from the JWT token to ensure correct authorization
       req.user.role = decoded.role;
 
