@@ -157,18 +157,6 @@ const restaurantReservation = Booking.discriminator(
 const hotelReservation = Booking.discriminator(
   "hotelReservation",
   new mongoose.Schema({
-    checkInDate: { type: Date, required: true },
-    checkOutDate: {
-      type: Date,
-      required: true,
-      validate: {
-        validator: function (value) {
-          return value >= this.checkInDate;
-        },
-        message: "Checkout date must be same or after the Checkin date",
-      },
-    },
-    guests: { type: Number },
     rooms: [
       {
         roomId: {
@@ -177,6 +165,18 @@ const hotelReservation = Booking.discriminator(
           required: true,
         },
         quantity: { type: Number, default: 1, min: 1 },
+        guests: { type: Number },
+        checkInDate: { type: Date, required: true },
+        checkOutDate: {
+          type: Date,
+          required: true,
+          validate: {
+            validator: function (value) {
+              return value >= this.checkInDate;
+            },
+            message: "Checkout date must be same or after the Checkin date",
+          },
+        },
       },
     ],
     specialRequest: { type: String },

@@ -18,6 +18,7 @@ export const protect = async (req, res, next) => {
       if (!token) return res.status(401).json({ message: 'Unauthorized' });
 
       const decoded = verifyAccessToken(token);
+      console.log("User/Vendor Details", decoded)
 
       if (decoded.role === "vendor") {
         req.user = await Vendor.findById(decoded.id).select(
