@@ -822,13 +822,14 @@ export const initializePayment = async (req, res) => {
           const roomIds = rooms.map((r) => r.roomId);
           const room = await RoomType.find({ _id: { $in: roomIds } });
 
-          const nights = Math.ceil(
-            (new Date(checkOutDate) - new Date(checkInDate)) /
-              (1000 * 60 * 60 * 24),
-          );
           totalAmount = rooms.reduce((sum, item) => {
+            const nights = Math.ceil(
+              (new Date(item.checkOutDate) - new Date(item.checkInDate)) /
+                (1000 * 60 * 60 * 24),
+            );
             const rooms = room.find((d) => d._id.toString() === item.roomId);
             if (!rooms) throw new Error(`Room ${item.drink} not found`);
+            console.log(`Calculating room ${rooms.name}: pricePerNight=${rooms.pricePerNight}, discount=${rooms.discount}%, nights=${nights}, quantity=${item.quantity}`);
             return (sum +
               (rooms.pricePerNight -
                 rooms.pricePerNight * (rooms.discount / 100)) *
@@ -913,9 +914,6 @@ export const initializePayment = async (req, res) => {
         }),
 
         ...(reservationType === "hotel" && {
-          checkInDate,
-          checkOutDate,
-          guests,
           rooms,
           specialRequest,
         }),

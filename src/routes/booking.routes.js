@@ -15,6 +15,7 @@ import {
   getConfirmationStatus,
 } from "../controllers/booking.controller.js";
 import { protect } from "../middlewares/auth.middleware.js";
+import { authorize } from "../middlewares/permission.middleware.js";
 
 const router = express.Router();
 
@@ -50,7 +51,7 @@ router.get("/verify-qr/:token", protect, verifyQRCode);
 // @desc    Manual confirmation by vendor from dashboard
 // @route   POST /api/bookings/:id/confirm
 // @access  Private (Vendor, Admin)
-router.post("/:id/confirm", protect, confirmReservation);
+router.post("/:id/confirm", protect, authorize(["vendor", "admin"]), confirmReservation);
 
 // @desc    QR code confirmation - vendor scans user's QR code
 // @route   POST /api/bookings/confirm-by-qr

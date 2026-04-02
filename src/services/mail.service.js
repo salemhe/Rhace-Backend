@@ -31,7 +31,7 @@ export const sendEmail = async (to, subject, htmlContent) => {
 
 // PASSWORD RESET EMAIL
 export const sendPasswordResetEmail = async (to, token, role) => {
-  const resetUrl = `https://www.rhace.co/auth/${role}/reset-password?token=${token}`;
+  const resetUrl = `https://${process.env.FRONTEND_URL}/auth/${role}/reset-password?token=${token}`;
   const htmlContent = `
   <!DOCTYPE html>
   <html lang="en">
@@ -106,7 +106,7 @@ export const sendBookingConfirmationEmail = async (
 
   // Generate QR code URL
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(
-    `https://www.rhace.co/bookings/${_id}`,
+    `${process.env.FRONTEND_URL}/bookings/${_id}`,
   )}&size=150x150`;
 
   // Build details dynamically
