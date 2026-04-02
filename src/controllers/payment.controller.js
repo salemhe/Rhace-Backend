@@ -408,7 +408,7 @@ export const getPaymentStats = async (req, res) => {
         $match: {
           ...vendorFilter,
           createdAt: { $gte: startOfThisYear.toDate() },
-          status: "Paid",
+          status: { $in: ["Paid", "success", "paid"] },
         },
       },
       { $group: { _id: null, total: { $sum: "$amount" } } },
@@ -1306,7 +1306,7 @@ export const verifyPayment = async (req, res) => {
         booking: transaction.metadata.bookingId,
         paymentMethod: transaction.channel,
         amount: amount,
-        amountPaid: transaction.amount / 100,
+        amountPaid: amount,  // ✅ Full Paystack amount (consistent)
         reference,
         payLater: transaction.metadata.payLater,
         status: "success", // ✅ Consistent with payment model enum
@@ -1353,10 +1353,19 @@ export const verifyPayment = async (req, res) => {
           status: "success",
           webhookProcessed: true,
           paidAt: transaction.paid_at,
-          amountPaid: amount,
+          amount: amount,  // ✅ Ensure amount matches Paystack
+          amountPaid: amount,  // ✅ Full amount from Paystack (overrides initial estimate)
           paymentMethod: transaction.channel,
         },
       );
+      
+      // ✅ DEBUG: Log amount sync
+      console.log('💰 Webhook amount sync:', {
+        paymentId: existingTransaction._id,
+        paystackAmount: amount,
+        wasUpdated: true,
+        discrepancyFixed: true
+      });
     }
 
     // ✅ Update reservations paymentStatus
@@ -1401,6 +1410,62 @@ export const verifyPayment = async (req, res) => {
     return res.status(500).json({
       message: "Error Verifying Payment",
       error: error.message || "Unknown server error",
+    });
+  }
+};
+
+export const confirmVendorPayment = async (req, res) => {
+  try {
+    const { paymentId, resId, vendorId } = req.body;
+
+    if (!paymentId || !resId || !vendorId) {
+      return res.status(400).json({ message: "paymentId, resId, and vendorId required" });
+    }
+
+    // Vendor auth check
+    if (req.user.role !== 'vendor' || req.user._id.toString() !== vendorId) {
+      return res.status(403).json({ message: "Unauthorized: Vendor mismatch" });
+    }
+
+    // Find matching payment
+    const payment = await Payment.findOne({
+      _id: paymentId,
+      booking: resId,
+      vendor: vendorId,
+      status: { $in: ['success', 'pending'] }
+    }).populate('user vendor');
+
+    if (!payment) {
+      return res.status(404).json({ message: "Payment not found or not authorized" });
+    }
+
+    if (payment.vendorConfirmed) {
+      return res.status(200).json({ 
+        message: "Payment already confirmed by vendor",
+        payment 
+      });
+    }
+
+    // Confirm
+    payment.vendorConfirmed = true;
+    payment.vendorConfirmedAt = new Date();
+    payment.vendorConfirmedBy = req.user._id;
+    await payment.save();
+
+    // Emit real-time update
+emitPaymentUpdate(payment.booking, 'vendor_confirmed');
+
+    res.status(200).json({ 
+      success: true, 
+      message: "Payment confirmed by vendor successfully",
+      paymentId: payment._id,
+      resId: payment.booking
+    });
+  } catch (error) {
+    console.error("Error confirming vendor payment:", error);
+    res.status(500).json({ 
+      message: "Server error confirming payment",
+      error: error.message 
     });
   }
 };

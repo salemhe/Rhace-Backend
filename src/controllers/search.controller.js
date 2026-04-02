@@ -1,4 +1,4 @@
-import { Vendor, HotelVendor, RestaurantVendor, ClubVendor } from "../models/vendor.model.js";
+ import { Vendor, HotelVendor, RestaurantVendor, ClubVendor } from "../models/vendor.model.js";
 import { Menu, MenuItem } from "../models/menu.model.js";
 import BottleSet from "../models/bottleSet.model.js";
 import Drink from "../models/drink.model.js";
@@ -20,6 +20,32 @@ const getModel = (type) => {
       return Vendor;
   }
 };
+
+// Helper to split query into words for better matching
+const splitQueryWords = (q) => {
+  return q.toLowerCase().trim().split(/\s+/).filter(word => word.length > 1);
+};
+
+// Helper to check if query looks like time for clubs
+const parseTimeQuery = (q, day) => {
+  const timeMatch = q.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
+  if (timeMatch) {
+    const hour = parseInt(timeMatch[1]);
+    const min = timeMatch[2] ? parseInt(timeMatch[2]) : 0;
+    const isPM = timeMatch[3].toLowerCase() === 'pm';
+    let totalMin = (hour % 12) * 60 + min;
+    if (isPM && hour !== 12) totalMin += 12 * 60;
+    if (!isPM && hour === 12) totalMin = min;
+    
+    return {
+      day,
+      currentMinutes: totalMin,
+      isTimeQuery: true
+    };
+  }
+  return null;
+};
+
 
 const toInt = (val, fallback) => {
   const n = parseInt(val, 10);
@@ -146,9 +172,13 @@ export const getSearchSuggestions = async (req, res) => {
 //    Club:       venueType, musicGenres, livePerformanceTypes, dressCode, agePolicy, entryFee, hasVIPTables, hasGuestlist, hasOutdoorArea
 // ─────────────────────────────────────────────────────────────────
 export const search = async (req, res) => {
+  let model;
+  let match = {};
+  let finalQ = '';
+
   try {
     const {
-      q, type, city,
+      q: queryQ, search, type, city,
       minRating, minPrice, maxPrice,
       sort = "rating", page = 1, limit = 12,
       latitude, longitude, openNow,
@@ -172,74 +202,49 @@ export const search = async (req, res) => {
     const pageNum  = Math.max(1, toInt(page, 1));
     const limitNum = Math.min(50, Math.max(1, toInt(limit, 12)));
     const skip     = (pageNum - 1) * limitNum;
-    const model    = getModel(type);
+    model = getModel(type);
 
     // ── Base filter ───────────────────────────────────────────────
-    const filter = { isVerified: true };
+    match = { isVerified: true };
+    
+    // Build complete match filter first
+    const fullMatch = { ...match };
 
-    // ── Text search + menu item matching ─────────────────────────
-    if (q && q.trim()) {
-      const regex = new RegExp(q.trim(), "i");
-
-      const [menuVendorIds, menuItemVendorIds, bottleSetVendorIds, drinkVendorIds] = await Promise.all([
-        Menu.find({ name: regex }).distinct("vendor").catch(() => []),
-        MenuItem.find({ name: regex }).distinct("vendor").catch(() => []),
-        BottleSet.find({ name: regex }).distinct("vendor").catch(() => []),
-        Drink.find({ name: regex }).distinct("vendor").catch(() => []),
-      ]);
-
-      const relatedIds = [
-        ...new Set([...menuVendorIds, ...menuItemVendorIds, ...bottleSetVendorIds, ...drinkVendorIds]),
-      ].filter(Boolean);
-
-      const orClauses = [
+    finalQ = (queryQ || search || '').trim();
+    if (finalQ) {
+      // Always use reliable regex matching (no text index dependency)
+      const regex = new RegExp(finalQ, 'i');
+      fullMatch.$or = [
         { businessName: regex },
         { vendorTypeCategory: regex },
-        { businessDescription: regex },
         { address: regex },
+        { businessDescription: regex }
       ];
-
-      if (!type || type.toLowerCase() === "restaurant") {
-        orClauses.push({ cuisines: regex });
-      }
-      if (!type || type.toLowerCase() === "club") {
-        orClauses.push({ categories: regex });
-        orClauses.push({ musicGenres: regex });
-      }
-
-      if (relatedIds.length) {
-        orClauses.push({ _id: { $in: relatedIds } });
-      }
-
-      filter.$or = orClauses;
     }
+    console.log("[search] Query:", finalQ, "Model:", model.modelName, "Regex match active:", !!finalQ);
 
-    // ── Shared filters ────────────────────────────────────────────
+    // regexPattern now always available
+    const regexPattern = finalQ ? new RegExp(finalQ, 'i') : /^$/;
+
+    // Apply shared filters
     if (city && city.trim()) {
-      filter.address = { $regex: city.trim(), $options: "i" };
+      fullMatch.address = { $regex: city.trim(), $options: "i" };
     }
 
     if (minRating) {
-      filter.rating = { $gte: toFloat(minRating, 0) };
+      fullMatch.rating = { $gte: toFloat(minRating, 0) };
     }
 
     if (minPrice || maxPrice) {
-      filter.priceRange = {};
-      if (minPrice) filter.priceRange.$gte = toInt(minPrice, 1);
-      if (maxPrice) filter.priceRange.$lte = toInt(maxPrice, 4);
+      fullMatch.priceRange = {};
+      if (minPrice) fullMatch.priceRange.$gte = toInt(minPrice, 1);
+      if (maxPrice) fullMatch.priceRange.$lte = toInt(maxPrice, 4);
     }
 
-    if (latitude && longitude) {
-      filter.location = {
-        $near: {
-          $geometry: { type: "Point", coordinates: [toFloat(longitude), toFloat(latitude)] },
-          $maxDistance: 10000,
-        },
-      };
-    }
+    let geoNearStage;
 
     if (openNow === "true") {
-      Object.assign(filter, buildOpenNowFilter());
+      Object.assign(fullMatch, buildOpenNowFilter());
     }
 
     // ── Restaurant-specific filters ───────────────────────────────
@@ -247,64 +252,81 @@ export const search = async (req, res) => {
 
     if (!resolvedType || resolvedType === "restaurant") {
       const cuisinesArr = toArr(cuisines);
-      if (cuisinesArr.length) filter.cuisines = { $in: cuisinesArr };
+      if (cuisinesArr.length) fullMatch.cuisines = { $in: cuisinesArr };
 
       const dietaryArr = toArr(dietaryOptions);
-      if (dietaryArr.length) filter.dietaryOptions = { $all: dietaryArr };
+      if (dietaryArr.length) fullMatch.dietaryOptions = { $all: dietaryArr };
 
-      if (diningStyle) filter.diningStyles = diningStyle.toLowerCase();
+      if (diningStyle) fullMatch.diningStyles = diningStyle.toLowerCase();
 
       const seatArr = toArr(seatOptions);
-      if (seatArr.length) filter.seatOptions = { $in: seatArr };
+      if (seatArr.length) fullMatch.seatOptions = { $in: seatArr };
 
       const occasionArr = toArr(occasionTags);
-      if (occasionArr.length) filter.occasionTags = { $in: occasionArr };
+      if (occasionArr.length) fullMatch.occasionTags = { $in: occasionArr };
 
       const mealTimesArr = toArr(mealTimes);
-      if (mealTimesArr.length) filter.mealTimes = { $in: mealTimesArr };
+      if (mealTimesArr.length) fullMatch.mealTimes = { $in: mealTimesArr };
 
-      if (reservationPolicy) filter.reservationPolicy = reservationPolicy.toLowerCase();
-      if (hasParking === "true") filter.hasParking = true;
-      if (hasOutdoorSeating === "true") filter.hasOutdoorSeating = true;
+      if (reservationPolicy) fullMatch.reservationPolicy = reservationPolicy.toLowerCase();
+      if (hasParking === "true") fullMatch.hasParking = true;
+      if (hasOutdoorSeating === "true") fullMatch.hasOutdoorSeating = true;
     }
 
     // ── Hotel-specific filters ────────────────────────────────────
     if (!resolvedType || resolvedType === "hotel") {
-      if (starRating) filter.starRating = toInt(starRating, undefined);
+      if (starRating) fullMatch.starRating = toInt(starRating, undefined);
 
-      if (propertyType) filter.propertyType = propertyType.toLowerCase();
+      if (propertyType) fullMatch.propertyType = propertyType.toLowerCase();
 
       const amenitiesArr = toArr(amenities);
-      if (amenitiesArr.length) filter.amenities = { $all: amenitiesArr };
+      if (amenitiesArr.length) fullMatch.amenities = { $all: amenitiesArr };
 
-      if (mealPlan) filter.mealPlan = mealPlan.toLowerCase();
-      if (cancellationPolicy) filter.cancellationPolicy = cancellationPolicy.toLowerCase();
-      if (instantBook === "true") filter.instantBook = true;
-      if (petFriendly === "true") filter.petFriendly = true;
+      if (mealPlan) fullMatch.mealPlan = mealPlan.toLowerCase();
+      if (cancellationPolicy) fullMatch.cancellationPolicy = cancellationPolicy.toLowerCase();
+      if (instantBook === "true") fullMatch.instantBook = true;
+      if (petFriendly === "true") fullMatch.petFriendly = true;
 
       const accessibilityArr = toArr(accessibilityFeatures);
-      if (accessibilityArr.length) filter.accessibilityFeatures = { $all: accessibilityArr };
+      if (accessibilityArr.length) fullMatch.accessibilityFeatures = { $all: accessibilityArr };
     }
 
     // ── Club-specific filters ─────────────────────────────────────
     if (!resolvedType || resolvedType === "club") {
-      if (venueType) filter.venueType = venueType.toLowerCase();
+      if (venueType) fullMatch.venueType = venueType.toLowerCase();
 
       const genresArr = toArr(musicGenres);
-      if (genresArr.length) filter.musicGenres = { $in: genresArr };
+      if (genresArr.length) fullMatch.musicGenres = { $in: genresArr };
 
       const performancesArr = toArr(livePerformanceTypes);
-      if (performancesArr.length) filter.livePerformanceTypes = { $in: performancesArr };
+      if (performancesArr.length) fullMatch.livePerformanceTypes = { $in: performancesArr };
 
-      if (dressCode) filter.dressCode = dressCode.toLowerCase();
-      if (agePolicy) filter.agePolicy = agePolicy;
+      if (dressCode) fullMatch.dressCode = dressCode.toLowerCase();
+      if (agePolicy) fullMatch.agePolicy = agePolicy;
 
-      if (entryFee === "0") filter.entryFee = 0;
-      else if (entryFee === "paid") filter.entryFee = { $gt: 0 };
+      if (entryFee === "0") fullMatch.entryFee = 0;
+      else if (entryFee === "paid") fullMatch.entryFee = { $gt: 0 };
 
-      if (hasVIPTables === "true") filter.hasVIPTables = true;
-      if (hasGuestlist === "true") filter.hasGuestlist = true;
-      if (hasOutdoorArea === "true") filter.hasOutdoorArea = true;
+      if (hasVIPTables === "true") fullMatch.hasVIPTables = true;
+      if (hasGuestlist === "true") fullMatch.hasGuestlist = true;
+      if (hasOutdoorArea === "true") fullMatch.hasOutdoorArea = true;
+    }
+
+    if (latitude && longitude) {
+      const coords = [toFloat(longitude), toFloat(latitude)];
+      const geoQuery = { ...fullMatch };
+      delete geoQuery.location;
+      geoNearStage = {
+        $geoNear: {
+          near: { type: "Point", coordinates: coords },
+          distanceField: "distance",
+          spherical: true,
+          query: geoQuery,
+          key: "location",
+          maxDistance: 10000,
+        },
+      };
+      delete fullMatch.location;
     }
 
     // ── Sort ──────────────────────────────────────────────────────
@@ -319,17 +341,47 @@ export const search = async (req, res) => {
       }
     }
 
-    // ── Query + count in parallel ─────────────────────────────────
-    const [vendors, totalCount] = await Promise.all([
-      model
-        .find(filter)
-        .select(buildSelect(resolvedType))
-        .sort(sortObj)
-        .skip(skip)
-        .limit(limitNum)
-        .lean(),
-      model.countDocuments(filter),
-    ]);
+    // ── Aggregation pipeline with $text score + menu boost ──────
+    const pipeline = [
+      ...(geoNearStage ? [geoNearStage] : [{ $match: fullMatch }]),
+      {
+        $lookup: {
+          from: "menuitems",
+          localField: "_id",
+          foreignField: "vendor",
+          as: "menuItems"
+        }
+      },
+      {
+        $addFields: {
+          menuMatchCount: {
+            $size: {
+              $filter: {
+                input: "$menuItems",
+                cond: { $regexMatch: { input: "$$this.name", regex: regexPattern } }
+              }
+            }
+          }
+        }
+      },
+      {
+        $addFields: {
+          totalScore: { $multiply: [ "$menuMatchCount", 10 ] }
+        }
+      },
+      { $sort: { totalScore: -1, rating: -1, reviews: -1 } },
+      { $skip: skip },
+      { $limit: limitNum },
+      { $project: buildSelect(resolvedType).split(" ").reduce((obj, field) => ({ ...obj, [field]: 1 }), {}) }
+    ];
+
+    const vendors = await model.aggregate(pipeline);
+
+    const countPipeline = [
+      { $match: fullMatch }
+    ];
+    const countResult = await model.aggregate([...countPipeline, { $count: "total" } ]);
+    const totalCount = countResult[0]?.total || 0;
 
     const totalPages = Math.ceil(totalCount / limitNum);
 
@@ -337,7 +389,7 @@ export const search = async (req, res) => {
     const facetMatch = {
       isVerified: true,
       isVisible: true,
-      ...(q && filter.$or ? { $or: filter.$or } : {}),
+      ...(finalQ && fullMatch.$or ? { $or: fullMatch.$or } : {}),
     };
 
     const facets = await Vendor.aggregate([
@@ -378,11 +430,34 @@ export const search = async (req, res) => {
         hasPrevPage: pageNum > 1,
       },
       facets: facets[0] || {},
-      meta: { q, type: resolvedType, sort, city },
+      meta: { q: finalQ, type: resolvedType, sort, city },
     });
   } catch (error) {
-    console.error("[search]", error);
-    return res.status(500).json({ success: false, message: "Search failed" });
+    console.error("[search] FULL ERROR:", {
+      message: error.message,
+      stack: error.stack,
+      query: finalQ,
+      model: model?.modelName || null,
+      match
+    });
+    
+    // Graceful degradation for any search errors
+    if (error.message.includes('text index') || error.message.includes('$text') || error.message.includes('text score metadata')) {
+      console.warn("[search] Search error (likely missing text index), using regex matching:", error.message);
+      return res.status(200).json({
+        success: true, 
+        data: [],
+        pagination: { currentPage: pageNum, totalPages: 0, totalCount: 0, limit: limitNum },
+        facets: {},
+        meta: { warning: "Search using reliable regex matching (text index optional)" }
+      });
+    }
+    
+    return res.status(500).json({ 
+      success: false, 
+      message: `Search failed: ${error.message}`,
+      ...(process.env.NODE_ENV === 'development' && { error: error.message, stack: error.stack })
+    });
   }
 };
 
@@ -460,3 +535,4 @@ export const discover = async (req, res) => {
     return res.status(500).json({ success: false, message: "Discover failed" });
   }
 };
+

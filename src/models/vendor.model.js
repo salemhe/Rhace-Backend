@@ -40,7 +40,7 @@ const VendorBaseSchema = new Schema(
     role: { type: String, default: "vendor" },
     location: {
       type: { type: String, enum: ["Point"], default: "Point" },
-      coordinates: { type: [Number], index: "2dsphere", default: [0, 0] },
+      coordinates: { type: [Number], default: [0, 0] },
     },
     profileImages: [
       {
@@ -447,7 +447,25 @@ const ClubVendor = Vendor.discriminator(
   }),
 );
 
-VendorBaseSchema.index({ location: "2dsphere" });
+// Virtuals for enhanced search
+VendorBaseSchema.virtual("menuItems", {
+  ref: "MenuItem",
+  localField: "_id",
+  foreignField: "vendor",
+  justOne: false
+});
+
+VendorBaseSchema.virtual("menus", {
+  ref: "Menu",
+  localField: "_id",
+  foreignField: "vendor",
+  justOne: false
+});
+
+VendorBaseSchema.set("toObject", { virtuals: true });
+VendorBaseSchema.set("toJSON", { virtuals: true });
+
+VendorBaseSchema.index({ location: "2dsphere" }, { name: "vendors_location_2dsphere" });
 VendorBaseSchema.index(
   {
     businessName: "text",

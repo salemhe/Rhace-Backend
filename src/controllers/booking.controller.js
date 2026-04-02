@@ -437,6 +437,13 @@ export const createReservation = async (req, res) => {
       payLater,
     } = req.body;
 
+    // FIX: User must be the vendor they are booking for
+    if (req.user.vendorId !== vendor) {
+      return res.status(403).json({
+        message: `You are not authorized to create a booking for vendor ${vendor}`,
+      });
+    }
+
     console.log("Received body:", req.body);
 
     // Validate required base fields
@@ -1441,8 +1448,7 @@ export const verifyQRCode = async (req, res) => {
 export const confirmReservation = async (req, res) => {
   try {
     const { id } = req.params;
-    const { vendorId } = req.body;
-    const effectiveVendorId = vendorId || req.user?._id;
+    // Removed vendorId body param - use req.user._id directly for vendor auth
 
     const booking = await Booking.findById(id)
       .populate({
@@ -1463,11 +1469,11 @@ export const confirmReservation = async (req, res) => {
       vendor: booking.vendor?._id,
     });
 
+    const effectiveResId = booking.resId || booking._id.toString();
+
     let payment = booking.paymentRef;
-    console.log(
-      "💳 Payment lookup #1 (from booking.paymentRef):",
-      payment?._id || "MISSING",
-    );
+
+    console.log('💳 Payment lookup #1 (from booking.paymentRef):', payment?._id || 'MISSING');
 
     if (!payment) {
       if (booking.resId) {
@@ -1490,7 +1496,7 @@ export const confirmReservation = async (req, res) => {
         message:
           "No payment found for this booking. Check payments collection.",
         bookingId: booking._id,
-        bookingResId: booking.resId,
+        bookingResId: effectiveResId,
         debug: [
           `db.payments.find({ $or: [{booking: "${booking.resId || "MISSING"}"}, {booking: ObjectId("${booking._id}")}] })`,
         ],
@@ -1505,23 +1511,22 @@ export const confirmReservation = async (req, res) => {
     if (!isPaymentValid) {
       console.log("🚫 Payment validation failed:", {
         bookingId: id,
-        resId: payment.booking,
-        paymentId: payment?._id,
-        paymentStatus: payment?.status,
-        amountDue: payment?.amount,
-        amountPaid: payment?.amountPaid,
-        isSuccessStatus: payment?.status === "success",
-        isFullyPaid: payment?.amountPaid >= payment?.amount,
-        rawPayment: payment,
+        resId: effectiveResId,
+        paymentId: payment._id,
+        status: payment.status,
+        amountDue: booking.totalAmount || payment.amount,
+        amountPaid: payment.amountPaid,
+        partPaid: payment.partPaid,
+        thresholdMet: payment.amount >= (booking.totalAmount || payment.amountPaid) * 0.90
       });
 
       return res.status(400).json({
         success: false,
-        message: `Payment validation failed for booking ${payment.booking}. Expected status="success". Current: "${payment?.status || "MISSING"}"`,
-        paymentStatus: payment?.status || "MISSING",
-        paymentId: payment?._id,
-        amountDue: payment?.amount || 0,
-        amountPaid: payment?.amountPaid || 0,
+        message: `Payment validation failed for booking ${effectiveResId}. Status="${payment.status}". Paid ${payment.amountPaid}/${booking.totalAmount || payment.amount} (need ≥90%)`,
+        paymentStatus: payment.status,
+        paymentId: payment._id,
+        amountDue: booking.totalAmount || payment.amount,
+        amountPaid: payment.amountPaid,
         bookingPaymentRef: booking.paymentRef?._id,
         effectiveResIdL : payment.booking,
         debug:
@@ -1535,9 +1540,11 @@ export const confirmReservation = async (req, res) => {
       });
     }
 
-    console.log("✅ Payment validation passed:", {
-      paymentId: payment._id,
+    const effectivePaymentId = payment._id.toString();
+    console.log('✅ Payment validation PASSED:', { 
+      paymentId: effectivePaymentId, 
       status: payment.status,
+      paidRatio: Math.round((payment.amountPaid / (booking.totalAmount || payment.amount)) * 100) + '%'
     });
 
     if (booking.confirmedAt) {
@@ -1549,7 +1556,14 @@ export const confirmReservation = async (req, res) => {
       });
     }
 
-    if (booking.vendor.toString() !== effectiveVendorId) {
+    // 🔍 Ownership check with debug logging (FIXED)
+    console.log('🔍 Ownership check:', {
+      bookingVendorId: booking.vendor._id?.toString(),
+      userVendorId: req.user._id.toString(),
+      match: booking.vendor._id?.toString() === req.user._id.toString()
+    });
+
+    if (booking.vendor._id?.toString() !== req.user._id.toString()) {
       const userRole = req.user?.role;
       if (userRole !== "superadmin" && userRole !== "admin" && userRole !== "vendor") {
         return res
