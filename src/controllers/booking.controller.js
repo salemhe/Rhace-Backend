@@ -1573,18 +1573,18 @@ export const confirmReservation = async (req, res) => {
     }
 
     booking.confirmedAt = new Date();
-    booking.confirmedBy = vendorId || req.user?._id;
+    booking.confirmedBy = booking.vendor._id || req.user?._id;
     booking.confirmationMethod = "manual";
     booking.reservationStatus = "confirmed";
     await booking.save();
 
     await recordAuditLog(
-      effectiveVendorId,
+      booking.vendor._id,
       "RESERVATION_CONFIRMED",
       "Booking",
       booking._id,
       {
-        confirmedBy: effectiveVendorId,
+        confirmedBy: booking.vendor._id,
         confirmationMethod: "manual",
         previousStatus: booking.reservationStatus,
         effectiveResId: booking.resId,
