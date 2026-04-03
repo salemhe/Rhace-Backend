@@ -1,12 +1,9 @@
 import User from "../models/user.model.js";
 import {
   generateAccessToken,
-  generateRefreshToken,
-  generateToken,
-  verifyRefreshToken,
 } from "../utils/jwt.js";
 import crypto from "crypto";
-import * as otpService from "../services/otp.service.js"; // New import
+import * as otpService from "../services/otp.service.js";
 import { sendPasswordResetEmail } from "../services/mail.service.js";
 import { OAuth2Client } from "google-auth-library";
 import {
@@ -74,15 +71,6 @@ export const loginVendor = async (req, res) => {
       user.isOnboarded,
       isVendor ? user.vendorType : null,
     );
-    const refreshToken = generateRefreshToken(user._id, user.role);
-
-    res.cookie("refreshToken", refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
-      path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
 
     return res.status(200).json({
       message: "Login successful.",
@@ -332,72 +320,6 @@ export const register = async (req, res) => {
   }
 };
 
-export const registerGoogle = async (req, res) => {
-  const { code } = req.body;
-  const client = new OAuth2Client(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET,
-    "postmessage",
-  );
-  try {
-    const { tokens } = await client.getToken(code);
-
-    const ticket = await client.verifyIdToken({
-      idToken: tokens.id_token,
-      audience: process.env.GOOGLE_CLIENT_ID,
-    });
-
-    const payload = ticket.getPayload();
-    const {
-      email,
-      sub: googleId,
-      given_name: firstName,
-      family_name: lastName,
-      picture: profilePic,
-    } = payload;
-    let user = await User.findOne({ email });
-
-    if (user) {
-      if (!user.googleId) {
-        user.googleId = googleId;
-        user.profilePic = profilePic;
-        user.isVerified = true;
-        await user.save();
-      }
-    } else {
-      user = await User.create({
-        firstName,
-        lastName,
-        email,
-        googleId,
-        profilePic,
-        role: "user",
-        isVerified: true,
-      });
-    }
-
-    const accessToken = generateAccessToken(user._id, user.role);
-    const refreshToken = generateRefreshToken(user._id, user.role);
-
-    res.cookie("refreshToken", refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
-      path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
-
-    return res.status(200).json({
-      success: true,
-      message: "Registered successfully.",
-      user: user,
-      accessToken,
-    });
-  } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
-  }
-};
-
 export const login = async (req, res) => {
   const { email, password } = req.body;
 
@@ -425,15 +347,6 @@ export const login = async (req, res) => {
     }
 
     const accessToken = generateAccessToken(user._id, user.role);
-    const refreshToken = generateRefreshToken(user._id, user.role);
-
-    res.cookie("refreshToken", refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
-      path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
 
     return res.status(200).json({
       message: "Login successful.",
@@ -495,14 +408,7 @@ export const loginGoogle = async (req, res) => {
       await user.save();
     }
     const accessToken = generateAccessToken(user._id, user.role);
-    const refreshToken = generateRefreshToken(user._id, user.role);
-    res.cookie("refreshToken", refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
-      path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+
     return res.status(200).json({
       message: "Login successful.",
       user,
@@ -719,67 +625,6 @@ export const resetPassword = async (req, res) => {
   }
 };
 
-export const refreshAccessToken = async (req, res) => {
-  try {
-    const refreshToken = req.cookies.refreshToken;
-    if (!refreshToken) {
-      console.error("[AUTH] No refresh token cookie found");
-      return res.status(401).json({ message: "No refresh token provided" });
-    }
-
-    let decoded;
-    try {
-      decoded = verifyRefreshToken(refreshToken);
-      console.log("[AUTH] Refresh token verified for user ID:", decoded.id, "with role:", decoded.role);
-    } catch (jwtError) {
-      console.error(
-        "[AUTH] Refresh token verification failed:",
-        jwtError.message,
-      );
-      return res.status(406).json({ message: "Invalid refresh token" });
-    }
-
-    // Try User first, then Vendor (vendors login via loginVendor)
-    let user;
-    if (decoded.role !== "user") {
-      user = await Vendor.findById(decoded.id).select(
-        "_id role isOnboarded vendorType",
-      );
-    } else {
-      user = await User.findById(decoded.id).select(
-        "_id role isOnboarded vendorType",
-      );
-    }
-
-    if (!user) {
-      console.error("[AUTH] User/Vendor not found for ID:", decoded.id);
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    const newAccessToken = generateAccessToken(
-      user._id,
-      decoded.role,
-      user.isOnboarded,
-      user.vendorType,
-    );
-
-    return res.status(200).json({ accessToken: newAccessToken });
-  } catch (error) {
-    console.error("[AUTH] RefreshAccessToken error:", error);
-    return res.status(406).json({ message: "Refresh failed" });
-  }
-};
-
-export const logout = async (req, res) => {
-  res.clearCookie("refreshToken", {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
-    path: "/",
-  });
-  res.json({ message: "Logged out successfully" });
-};
-
 export const loginAdmin = async (req, res) => {
   const { email, password } = req.body;
 
@@ -806,7 +651,7 @@ export const loginAdmin = async (req, res) => {
       });
     }
 
-    const token = generateToken(
+    const token = generateAccessToken(
       user._id,
       user.role,
       user.isOnboarded,

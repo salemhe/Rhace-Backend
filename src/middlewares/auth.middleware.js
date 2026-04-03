@@ -15,10 +15,9 @@ export const protect = async (req, res, next) => {
         token = req.headers.authorization.split(" ")[1];
       }
 
-      if (!token) return res.status(401).json({ message: 'Unauthorized' });
+      if (!token) return res.status(403).json({ message: 'Unauthorized'});
 
       const decoded = verifyAccessToken(token);
-      console.log("User/Vendor Details", decoded)
 
       if (decoded.role === "vendor") {
         req.user = await Vendor.findById(decoded.id).select(
@@ -32,7 +31,7 @@ export const protect = async (req, res, next) => {
       if (!req.user) {
         return res
           .status(401)
-          .json({ message: "Not authorized, user not found" });
+          .json({ message: "Not authorized, user not found", error: "jwt expired" });
       }
 
       console.log(`Authenticated user: ${req.user._id} with role: ${req.user.role} & ${decoded.role}`);

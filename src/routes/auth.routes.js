@@ -10,7 +10,6 @@ import {
   registerAdmin,
   refreshAccessToken,
   logout,
-  registerGoogle,
   loginGoogle,
   loginVendor,
   verifyVendorOTP,
@@ -35,7 +34,7 @@ router.post("/users/resend-otp", resendOTP);
 router.post("/users/forgot-password", forgotPassword);
 router.post("/users/reset-password", resetPassword);
 router.post("/users/login/google", loginGoogle)
-router.post("/users/register/google", registerGoogle);
+router.post("/users/register/google", loginGoogle);
 
 // Vendors Auth
 router.post("/vendors/login", loginVendor);

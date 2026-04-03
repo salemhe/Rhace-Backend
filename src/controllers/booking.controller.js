@@ -106,7 +106,7 @@ export const getBookingSummary = async (req, res) => {
         {
           $match: {
             ...vendorFilter,
-            paymentStatus: { $in: ["pending", "pay_later", "not_paid", "partly_paid"] },
+            paymentStatus: { $in: ["pending", "not_paid", "partly_paid"] },
             createdAt: { $gte: start, $lte: end },
           },
         },
@@ -1126,7 +1126,7 @@ export async function createReservationFromPayment(payment) {
     location: metadata.location,
     totalAmount: payment.amount,
     paymentStatus: payment.payLater
-      ? "not_paid"
+      ? "pay_later"
       : payment.partPaid
         ? "partly_paid"
         : "paid",

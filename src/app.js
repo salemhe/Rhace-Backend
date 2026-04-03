@@ -22,7 +22,6 @@ payoutRoutes,
 searchRoutes,
 paystackRoutes,
 availabilityRoutes } from "./routes/index.js"
-import errorMiddleWare from "./middlewares/error.middleware.js";
 
 
 const app = express();
@@ -77,8 +76,6 @@ app.use("/api/v1/payments/payouts", payoutRoutes);
 app.use("/api/v1/search", searchRoutes)
 
 app.use("/api/v1/availability", availabilityRoutes);
-
-app.use(errorMiddleWare)
 
 app.get("/", (_req, res) => {
   res.send("Welcome to Rhace Backend API");
