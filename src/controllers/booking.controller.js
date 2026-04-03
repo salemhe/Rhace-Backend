@@ -125,8 +125,7 @@ export const getBookingSummary = async (req, res) => {
     const todaysReservations = await Booking.find({
       ...vendorFilter,
       $or: [
-        { date: { $gte: todayStart, $lte: todayEnd } },
-        { checkInDate: { $gte: todayStart, $lte: todayEnd } },
+        { createdAt: { $gte: todayStart, $lte: todayEnd } },
       ],
     })
       .populate("customerId", "name email")
@@ -1058,12 +1057,12 @@ export const getReservationStats = async (req, res) => {
     const [todayPending, lastWeekPending] = await Promise.all([
       Booking.countDocuments({
         ...vendorFilter,
-        paymentStatus: "pending",
+        reservationStatus: "upcoming",
         createdAt: { $gte: todayStart, $lte: todayEnd },
       }),
       Booking.countDocuments({
         ...vendorFilter,
-        paymentStatus: "pending",
+        reservationStatus: "upcoming",
         createdAt: { $gte: lastWeekStart, $lte: lastWeekEnd },
       }),
     ]);
