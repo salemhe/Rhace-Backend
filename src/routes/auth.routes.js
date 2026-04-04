@@ -8,8 +8,6 @@ import {
   verifyOTP, // New import
   resendOTP, // New import
   registerAdmin,
-  refreshAccessToken,
-  logout,
   loginGoogle,
   loginVendor,
   verifyVendorOTP,
@@ -21,10 +19,6 @@ import {
 import { protect } from "../middlewares/auth.middleware.js";
 
 const router = express.Router();
-
-// Refresh token & Logout
-router.post("/refresh", refreshAccessToken);
-router.post("/logout", logout);
 
 // Users Auth
 router.post("/users/login", login);
