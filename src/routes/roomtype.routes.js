@@ -6,7 +6,7 @@ import {
   updateRoomType,
   deleteRoomType,
   uploadRoomTypeImagesController,
-  deleteRoomTypeImage, // Import the new controller function
+  // deleteRoomTypeImage, // Import the new controller function
 } from "../controllers/roomtype.controller.js";
 import { protect } from "../middlewares/auth.middleware.js";
 import { authorize } from "../middlewares/permission.middleware.js";

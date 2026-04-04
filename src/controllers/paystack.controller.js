@@ -2,11 +2,9 @@ import crypto from "crypto";
 import { Booking } from "../models/booking.model.js";
 import Payment from "../models/payment.model.js";
 import PaymentTransaction from "../models/paymenttransaction.model.js";
-import Reservation from "../models/reservation.model.js";
 import { createReservationFromPayment } from "./booking.controller.js";
 import { sendBookingConfirmationEmail } from "../services/mail.service.js";
 import { getVendorSocket } from "../websockets/socketManager.js";
-import { emitPaymentUpdate } from "./payment.controller.js";
 import { Vendor } from "../models/vendor.model.js";
 
 export const handlePaystack = async (req, res) => {
@@ -202,7 +200,7 @@ async function handleFailedPayment(data) {
     console.log("❌ Payment failed:", paymentId, data.gateway_response);
 
     // ✅ Emit realtime update
-    emitPaymentUpdate(payment.metadata?.bookingId, "failed");
+    // emitPaymentUpdate(payment.metadata?.bookingId, "failed");
 
     console.log("✅ Failed webhook processed:", payment._id);
   } catch (error) {

@@ -2,7 +2,7 @@ import Branch from "../models/branch.model.js";
 import pkg from "json-2-csv";
 const { AsyncParser } = pkg;
 import * as XLSX from "xlsx";
-import { generateToken } from "../utils/jwt.js";
+import { generateAccessToken as generateToken } from "../utils/jwt.js";
 
 // Branch login
 export const loginBranch = async (req, res) => {

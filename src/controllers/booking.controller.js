@@ -43,6 +43,11 @@ export const getBookingSummary = async (req, res) => {
       dayjs(today).subtract(7, "day"),
     );
 
+    const weekStart = dayjs().subtract(6, "day").startOf("day").toDate();
+    const monthStart = dayjs().subtract(29, "day").startOf("day").toDate();
+    const now = new Date();
+
+    // ── 1. Total reservations ─────────────────────────────────────────────────
     const [todayCount, lastWeekCount] = await Promise.all([
       Booking.countDocuments({
         ...vendorFilter,
@@ -55,6 +60,7 @@ export const getBookingSummary = async (req, res) => {
     ]);
     const totalReservationsChange = percentChange(todayCount, lastWeekCount);
 
+    // ── 2. Prepaid reservations ───────────────────────────────────────────────
     const [todayPrepaid, lastWeekPrepaid] = await Promise.all([
       Booking.countDocuments({
         ...vendorFilter,
@@ -69,20 +75,7 @@ export const getBookingSummary = async (req, res) => {
     ]);
     const prepaidChange = percentChange(todayPrepaid, lastWeekPrepaid);
 
-    const [todayPending, lastWeekPending] = await Promise.all([
-      Booking.countDocuments({
-        ...vendorFilter,
-        paymentStatus: "pending",
-        createdAt: { $gte: todayStart, $lte: todayEnd },
-      }),
-      Booking.countDocuments({
-        ...vendorFilter,
-        paymentStatus: "pending",
-        createdAt: { $gte: lastWeekStart, $lte: lastWeekEnd },
-      }),
-    ]);
-    const pendingChange = percentChange(todayPending, lastWeekPending);
-
+    // ── 3. Expected guests ────────────────────────────────────────────────────
     const guestAggregation = async (start, end) => {
       const result = await Booking.aggregate([
         {
@@ -90,17 +83,13 @@ export const getBookingSummary = async (req, res) => {
             ...vendorFilter,
             $or: [
               { date: { $gte: start, $lte: end } },
-              { checkInDate: { $gte: start, $lte: end } },
-              { createdAt: { $gte: start, $lte: end } },
+              { "rooms.checkInDate": { $gte: start, $lte: end } },
             ],
           },
         },
-        {
-          $group: {
-            _id: null,
-            guests: { $sum: { $ifNull: ["$guests", 0] } },
-          },
-        },
+        { $unwind: "$rooms" },
+        { $match: { "rooms.checkInDate": { $gte: start, $lte: end } } },
+        { $group: { _id: null, guests: { $sum: { $ifNull: ["$rooms.guests", 0] } } } },
       ]);
       return result[0]?.guests || 0;
     };
@@ -111,11 +100,31 @@ export const getBookingSummary = async (req, res) => {
     ]);
     const guestsChange = percentChange(guestsToday, guestsLastWeek);
 
+    // ── 4. Pending payment amount ─────────────────────────────────────────────
+    const pendingAmountAgg = async (start, end) => {
+      const result = await Booking.aggregate([
+        {
+          $match: {
+            ...vendorFilter,
+            paymentStatus: { $in: ["pending", "not_paid", "partly_paid"] },
+            createdAt: { $gte: start, $lte: end },
+          },
+        },
+        { $group: { _id: null, total: { $sum: "$totalAmount" } } },
+      ]);
+      return result[0]?.total || 0;
+    };
+
+    const [todayPendingAmount, lastWeekPendingAmount] = await Promise.all([
+      pendingAmountAgg(todayStart, todayEnd),
+      pendingAmountAgg(lastWeekStart, lastWeekEnd),
+    ]);
+    const pendingAmountChange = percentChange(todayPendingAmount, lastWeekPendingAmount);
+
+    // ── 5. Today's reservations ───────────────────────────────────────────────
     const todaysReservations = await Booking.find({
       ...vendorFilter,
       $or: [
-        { date: { $gte: todayStart, $lte: todayEnd } },
-        { checkInDate: { $gte: todayStart, $lte: todayEnd } },
         { createdAt: { $gte: todayStart, $lte: todayEnd } },
       ],
     })
@@ -124,21 +133,19 @@ export const getBookingSummary = async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
+    // ── 6. Reservation trends — shaped for chart consumption ─────────────────
+    // Fetch 14 days so we can produce a this-week vs last-week comparison per day.
     const fourteenDaysAgo = dayjs().subtract(13, "day").startOf("day").toDate();
 
-    const trends = await Booking.aggregate([
-      {
-        $match: {
-          ...vendorFilter,
-          createdAt: { $gte: fourteenDaysAgo },
-        },
-      },
+    const rawTrends = await Booking.aggregate([
+      { $match: { ...vendorFilter, createdAt: { $gte: fourteenDaysAgo } } },
       {
         $group: {
           _id: {
             day: { $dayOfMonth: "$createdAt" },
             month: { $month: "$createdAt" },
             year: { $year: "$createdAt" },
+            dayOfWeek: { $dayOfWeek: "$createdAt" }, // 1=Sun … 7=Sat
           },
           count: { $sum: 1 },
         },
@@ -146,30 +153,186 @@ export const getBookingSummary = async (req, res) => {
       { $sort: { "_id.year": 1, "_id.month": 1, "_id.day": 1 } },
     ]);
 
-    const last7Days = trends.slice(-7).reduce((acc, d) => acc + d.count, 0);
-    const prev7Days = trends.slice(0, -7).reduce((acc, d) => acc + d.count, 0);
-    const trendChange = percentChange(last7Days, prev7Days);
+    const DOW_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+    const dailyAll = rawTrends.map((t) => ({
+      date: `${t._id.year}-${String(t._id.month).padStart(2, "0")}-${String(t._id.day).padStart(2, "0")}`,
+      dayOfWeek: t._id.dayOfWeek,
+      count: t.count,
+    }));
+
+    const thisWeekDaily = dailyAll.slice(-7);
+    const lastWeekDaily = dailyAll.slice(0, 7);
+
+    // Weekly chart: one bar per day, this week vs last week side by side
+    const weeklyChartData = Array.from({ length: 7 }, (_, i) => {
+      const thisEntry = thisWeekDaily[i];
+      const lastEntry = lastWeekDaily[i];
+      const label = thisEntry
+        ? DOW_LABELS[thisEntry.dayOfWeek - 1]
+        : lastEntry
+        ? DOW_LABELS[lastEntry.dayOfWeek - 1]
+        : `Day ${i + 1}`;
+      return {
+        day: label,
+        thisWeek: thisEntry?.count ?? 0,
+        lastWeek: lastEntry?.count ?? 0,
+      };
+    });
+
+    // Monthly chart: just two columns — last week total vs this week total
+    const last7DaysTotal = thisWeekDaily.reduce((s, d) => s + d.count, 0);
+    const prev7DaysTotal = lastWeekDaily.reduce((s, d) => s + d.count, 0);
+
+    const monthlyChartData = [
+      { day: "Last week", thisWeek: prev7DaysTotal, lastWeek: 0 },
+      { day: "This week", thisWeek: last7DaysTotal, lastWeek: prev7DaysTotal },
+    ];
+
+    const trendChange = percentChange(last7DaysTotal, prev7DaysTotal);
+
+    // ── 7. Customer frequency ─────────────────────────────────────────────────
+    const thirtyDaysAgo = dayjs().subtract(30, "day").startOf("day").toDate();
 
     const customerAgg = await Booking.aggregate([
-      { $match: { ...vendorFilter } },
+      { $match: { ...vendorFilter, createdAt: { $gte: thirtyDaysAgo } } },
       { $group: { _id: "$customerEmail", count: { $sum: 1 } } },
     ]);
 
     const returningCustomers = customerAgg.filter((c) => c.count > 1).length;
     const newCustomers = customerAgg.length - returningCustomers;
 
+    // ── 8. Revenue by reservation type (replaces hardcoded frontend data) ─────
+    const revenueByPeriod = async (start, end) => {
+      return Booking.aggregate([
+        {
+          $match: {
+            ...vendorFilter,
+            paymentStatus: "paid",
+            createdAt: { $gte: start, $lte: end },
+          },
+        },
+        { $group: { _id: "$reservationType", total: { $sum: "$totalAmount" } } },
+      ]);
+    };
+
+    const [weeklyRevenueRaw, monthlyRevenueRaw] = await Promise.all([
+      revenueByPeriod(weekStart, now),
+      revenueByPeriod(monthStart, now),
+    ]);
+
+    // Color tokens sent to the frontend so it can render the bar without hardcoding
+    const TYPE_META = {
+      restaurantReservation: { label: "Restaurant", color: "bg-teal-600" },
+      hotelReservation:      { label: "Hotel",      color: "bg-blue-500" },
+      clubReservation:       { label: "Club / Lounge", color: "bg-purple-500" },
+    };
+
+    const shapeRevenue = (rows) => {
+      const grandTotal = rows.reduce((s, r) => s + r.total, 0);
+      return rows
+        .sort((a, b) => b.total - a.total)
+        .map((r) => ({
+          category: TYPE_META[r._id]?.label ?? r._id,
+          color: TYPE_META[r._id]?.color ?? "bg-gray-400",
+          amount: r.total,
+          percentage:
+            grandTotal > 0
+              ? parseFloat(((r.total / grandTotal) * 100).toFixed(1))
+              : 0,
+        }));
+    };
+
+    const weeklyRevenueTotal = weeklyRevenueRaw.reduce((s, r) => s + r.total, 0);
+    const monthlyRevenueTotal = monthlyRevenueRaw.reduce((s, r) => s + r.total, 0);
+
+    const revenueData = {
+      weekly: {
+        total: weeklyRevenueTotal,
+        // Approximate week-over-week change using monthly ÷ 4 as a prior-week proxy.
+        // For an exact figure you would query the previous 7-day window separately.
+        change: percentChange(weeklyRevenueTotal, monthlyRevenueTotal / 4),
+        items: shapeRevenue(weeklyRevenueRaw),
+      },
+      monthly: {
+        total: monthlyRevenueTotal,
+        change: 0, // wire up a prior-month query here if needed
+        items: shapeRevenue(monthlyRevenueRaw),
+      },
+    };
+
+    // ── 9. Reservation source ─────────────────────────────────────────────────
+    // Buckets: "Online" (paid online), "Pay at venue" (not_paid/pay_later but
+    // not flagged as walk-in), "Walk-in" (payLater flag explicitly true).
+    const sourceAgg = async (start, end) => {
+      const result = await Booking.aggregate([
+        { $match: { ...vendorFilter, createdAt: { $gte: start, $lte: end } } },
+        {
+          $group: {
+            _id: {
+              $cond: [
+                { $eq: ["$payLater", true] },
+                "walk-in",
+                {
+                  $cond: [
+                    { $eq: ["$paymentStatus", "paid"] },
+                    "online",
+                    "pay-at-venue",
+                  ],
+                },
+              ],
+            },
+            count: { $sum: 1 },
+          },
+        },
+      ]);
+
+      const map = { online: 0, "walk-in": 0, "pay-at-venue": 0 };
+      result.forEach((r) => { map[r._id] = r.count; });
+      const total = Object.values(map).reduce((s, v) => s + v, 0);
+
+      return {
+        total,
+        sources: [
+          {
+            name: "Online",
+            count: map["online"],
+            value:
+              total > 0
+                ? parseFloat(((map["online"] / total) * 100).toFixed(1))
+                : 0,
+          },
+          {
+            name: "Pay at venue",
+            count: map["pay-at-venue"],
+            value:
+              total > 0
+                ? parseFloat(((map["pay-at-venue"] / total) * 100).toFixed(1))
+                : 0,
+          },
+          {
+            name: "Walk-in",
+            count: map["walk-in"],
+            value:
+              total > 0
+                ? parseFloat(((map["walk-in"] / total) * 100).toFixed(1))
+                : 0,
+          },
+        ],
+      };
+    };
+
+    const [weeklySource, monthlySource] = await Promise.all([
+      sourceAgg(weekStart, now),
+      sourceAgg(monthStart, now),
+    ]);
+
+    // ── 10. Menu / drinks / rooms breakdowns ──────────────────────────────────
     const restaurantMenuBreakdown = await restaurantReservation.aggregate([
       { $match: { ...vendorFilter } },
       { $unwind: "$menus" },
       { $group: { _id: "$menus.menu", quantity: { $sum: "$menus.quantity" } } },
-      {
-        $lookup: {
-          from: "menuitems",
-          localField: "_id",
-          foreignField: "_id",
-          as: "menuInfo",
-        },
-      },
+      { $lookup: { from: "menuitems", localField: "_id", foreignField: "_id", as: "menuInfo" } },
       { $unwind: "$menuInfo" },
       { $project: { menuName: "$menuInfo.name", quantity: 1 } },
     ]);
@@ -177,20 +340,8 @@ export const getBookingSummary = async (req, res) => {
     const clubDrinksBreakdown = await clubReservation.aggregate([
       { $match: { ...vendorFilter } },
       { $unwind: "$drinks" },
-      {
-        $group: {
-          _id: "$drinks.drink",
-          quantity: { $sum: "$drinks.quantity" },
-        },
-      },
-      {
-        $lookup: {
-          from: "drinks",
-          localField: "_id",
-          foreignField: "_id",
-          as: "drinkInfo",
-        },
-      },
+      { $group: { _id: "$drinks.drink", quantity: { $sum: "$drinks.quantity" } } },
+      { $lookup: { from: "drinks", localField: "_id", foreignField: "_id", as: "drinkInfo" } },
       { $unwind: "$drinkInfo" },
       { $project: { drinkName: "$drinkInfo.name", quantity: 1 } },
     ]);
@@ -199,14 +350,7 @@ export const getBookingSummary = async (req, res) => {
       { $match: { ...vendorFilter } },
       { $unwind: "$combos" },
       { $group: { _id: "$combos", count: { $sum: 1 } } },
-      {
-        $lookup: {
-          from: "bottlesets",
-          localField: "_id",
-          foreignField: "_id",
-          as: "comboInfo",
-        },
-      },
+      { $lookup: { from: "bottlesets", localField: "_id", foreignField: "_id", as: "comboInfo" } },
       { $unwind: "$comboInfo" },
       { $project: { comboName: "$comboInfo.name", count: 1 } },
     ]);
@@ -214,14 +358,7 @@ export const getBookingSummary = async (req, res) => {
     const hotelRoomsBreakdown = await hotelReservation.aggregate([
       { $match: { ...vendorFilter } },
       { $group: { _id: "$room", count: { $sum: 1 } } },
-      {
-        $lookup: {
-          from: "roomtypes",
-          localField: "_id",
-          foreignField: "_id",
-          as: "roomInfo",
-        },
-      },
+      { $lookup: { from: "roomtypes", localField: "_id", foreignField: "_id", as: "roomInfo" } },
       { $unwind: "$roomInfo" },
       { $project: { roomName: "$roomInfo.name", count: 1 } },
     ]);
@@ -234,7 +371,7 @@ export const getBookingSummary = async (req, res) => {
           { details: todayCount, change: totalReservationsChange },
           { details: todayPrepaid, change: prepaidChange },
           { details: guestsToday, change: guestsChange },
-          { details: todayPending, change: pendingChange },
+          { details: todayPendingAmount, change: pendingAmountChange },
         ],
         todaysReservations,
         hotelRoomsBreakdown,
@@ -242,13 +379,16 @@ export const getBookingSummary = async (req, res) => {
         clubDrinksBreakdown,
         clubCombosBreakdown,
         reservationTrends: {
-          daily: trends.map((t) => ({
-            date: `${t._id.year}-${String(t._id.month).padStart(2, "0")}-${String(t._id.day).padStart(2, "0")}`,
-            count: t.count,
-          })),
-          last7Days,
-          prev7Days,
+          weekly: weeklyChartData,
+          monthly: monthlyChartData,
+          last7Days: last7DaysTotal,
+          prev7Days: prev7DaysTotal,
           trendChange,
+        },
+        revenueData,
+        reservationSource: {
+          weekly: weeklySource,
+          monthly: monthlySource,
         },
         customerFrequency: {
           new: newCustomers,
@@ -307,8 +447,14 @@ export const createReservation = async (req, res) => {
 
     // Validate required base fields
     const requiredBaseFields = [
-      "resId", "vendor", "customerName", "customerId",
-      "customerEmail", "reservationType", "location", "totalAmount",
+      "resId",
+      "vendor",
+      "customerName",
+      "customerId",
+      "customerEmail",
+      "reservationType",
+      "location",
+      "totalAmount",
     ];
     const missingBase = requiredBaseFields.filter((field) => !req.body[field]);
     if (missingBase.length > 0) {
@@ -374,7 +520,7 @@ export const createReservation = async (req, res) => {
     const initialData = {
       resId,
       bookingCode,
-      paymentRef: payment._id,           // ✅ always resolved from DB
+      paymentRef: payment._id, // ✅ always resolved from DB
       customerName,
       customerId,
       customerEmail,
@@ -394,7 +540,9 @@ export const createReservation = async (req, res) => {
 
     if (reservationType === "restaurant") {
       if (!image || !date || !time || !guests) {
-        return res.status(400).json({ message: "Fill restaurants required fields" });
+        return res
+          .status(400)
+          .json({ message: "Fill restaurants required fields" });
       }
 
       const restaurant = await restaurantReservation.create({
@@ -445,7 +593,10 @@ export const createReservation = async (req, res) => {
         vendorSocket.send(
           JSON.stringify({
             type: "new_reservation",
-            data: { ...hotelRes.toObject(), message: "You have a new reservation" },
+            data: {
+              ...hotelRes.toObject(),
+              message: "You have a new reservation",
+            },
           }),
         );
       }
@@ -453,36 +604,42 @@ export const createReservation = async (req, res) => {
 
     if (reservationType === "club") {
       // 🔧 FIX: Normalize table input (array → single ObjectId) + validate
-      console.log("🪑 Club table input:", { table, tableType: Array.isArray(table) ? "array" : "single" });
-      
+      console.log("🪑 Club table input:", {
+        table,
+        tableType: Array.isArray(table) ? "array" : "single",
+      });
+
       let normalizedTable = null;
       let tables = [];
-      
+
       if (table) {
         if (Array.isArray(table)) {
           if (table.length === 0) {
-            return res.status(400).json({ 
-              message: "Club reservation requires at least one table (table array cannot be empty)",
-              table 
+            return res.status(400).json({
+              message:
+                "Club reservation requires at least one table (table array cannot be empty)",
+              table,
             });
           }
           // Take first table ID for legacy single-table field, populate tables[] for multi
           normalizedTable = new mongoose.Types.ObjectId(table[0]);
-          tables = table.map(id => ({
+          tables = table.map((id) => ({
             tableType: new mongoose.Types.ObjectId(id),
             quantity: 1,
-            pricePerTable: 0 // Will be populated later via atomic service if needed
+            pricePerTable: 0, // Will be populated later via atomic service if needed
           }));
         } else {
           normalizedTable = new mongoose.Types.ObjectId(table);
-          tables = [{
-            tableType: new mongoose.Types.ObjectId(table),
-            quantity: 1,
-            pricePerTable: 0
-          }];
+          tables = [
+            {
+              tableType: new mongoose.Types.ObjectId(table),
+              quantity: 1,
+              pricePerTable: 0,
+            },
+          ];
         }
       }
-      
+
       const club = await clubReservation.create({
         ...initialData,
         date,
@@ -507,7 +664,10 @@ export const createReservation = async (req, res) => {
         vendorSocket.send(
           JSON.stringify({
             type: "new_reservation",
-            data: { ...clubRes.toObject(), message: "You have a new reservation" },
+            data: {
+              ...clubRes.toObject(),
+              message: "You have a new reservation",
+            },
           }),
         );
       }
@@ -537,7 +697,14 @@ export const createReservation = async (req, res) => {
 };
 
 export const getReservations = async (req, res) => {
-  const { vendorId, userId, bookingId, resId, limit = 10, page = 1 } = req.query;
+  const {
+    vendorId,
+    userId,
+    bookingId,
+    resId,
+    limit = 10,
+    page = 1,
+  } = req.query;
   try {
     const query = {};
     if (!vendorId && !userId && !bookingId && !resId) {
@@ -553,10 +720,10 @@ export const getReservations = async (req, res) => {
       .populate({ path: "menus.menu" })
       .populate({ path: "vendor" })
       .populate({ path: "paymentRef" })
-      .populate({ path: "room" })
+      .populate({ path: "rooms.roomId" })
       .populate({ path: "drinks.drink" })
       .populate({ path: "combos" })
-      .populate({ path: "table" })
+      .populate({ path: "tables.tableType" })
       .populate({ path: "rooms.roomType" })
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
@@ -571,7 +738,8 @@ export const getReservations = async (req, res) => {
       if (booking.reservationType === "hotelReservation") {
         if (booking.rooms && booking.rooms.length > 0) {
           const numRooms = booking.rooms.length;
-          const guestsPerRoom = Math.floor((booking.guests || 1) / numRooms) || 1;
+          const guestsPerRoom =
+            Math.floor((booking.guests || 1) / numRooms) || 1;
           rooms = booking.rooms.map((room) => ({
             roomId: room.roomType?._id?.toString() || room.roomType,
             checkInDate: booking.checkInDate,
@@ -579,12 +747,14 @@ export const getReservations = async (req, res) => {
             guests: guestsPerRoom,
           }));
         } else if (booking.room) {
-          rooms = [{
-            roomId: booking.room._id?.toString() || booking.room,
-            checkInDate: booking.checkInDate,
-            checkOutDate: booking.checkOutDate,
-            guests: booking.guests || 1,
-          }];
+          rooms = [
+            {
+              roomId: booking.room._id?.toString() || booking.room,
+              checkInDate: booking.checkInDate,
+              checkOutDate: booking.checkOutDate,
+              guests: booking.guests || 1,
+            },
+          ];
         }
       }
 
@@ -620,7 +790,15 @@ export const getReservations = async (req, res) => {
             if (resv.date && new Date(resv.date) >= now) isUpcoming = true;
             break;
           case "hotelReservation":
-            if (resv.checkOutDate && new Date(resv.checkOutDate) >= now) isUpcoming = true;
+            if (resv.rooms && resv.rooms.length > 0) {
+              if (new Date(resv.rooms[0].checkOutDate) >= now)
+                isUpcoming = true;
+            } else if (
+              resv.checkOutDate &&
+              new Date(resv.checkOutDate) >= now
+            ) {
+              isUpcoming = true;
+            }
             break;
           default:
             if (resv.reservationStatus === "upcoming") isUpcoming = true;
@@ -656,14 +834,31 @@ export const getReservations = async (req, res) => {
 export const createMultiRoomReservation = async (req, res) => {
   try {
     const {
-      vendor, customerName, customerId, customerEmail,
-      location, checkInDate, checkOutDate, guests,
-      rooms, specialRequest, partPaid, payLater,
+      vendor,
+      customerName,
+      customerId,
+      customerEmail,
+      location,
+      checkInDate,
+      checkOutDate,
+      guests,
+      rooms,
+      specialRequest,
+      partPaid,
+      payLater,
     } = req.body;
 
-    if (!vendor || !location || !checkInDate || !checkOutDate || !rooms || rooms.length === 0) {
+    if (
+      !vendor ||
+      !location ||
+      !checkInDate ||
+      !checkOutDate ||
+      !rooms ||
+      rooms.length === 0
+    ) {
       return res.status(400).json({
-        message: "Fill required fields: vendor, location, checkInDate, checkOutDate, and at least one room",
+        message:
+          "Fill required fields: vendor, location, checkInDate, checkOutDate, and at least one room",
       });
     }
 
@@ -680,7 +875,9 @@ export const createMultiRoomReservation = async (req, res) => {
     const nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
 
     if (nights < 1) {
-      return res.status(400).json({ message: "Check-out date must be after check-in date" });
+      return res
+        .status(400)
+        .json({ message: "Check-out date must be after check-in date" });
     }
 
     let totalAmount = 0;
@@ -691,7 +888,8 @@ export const createMultiRoomReservation = async (req, res) => {
     }
 
     // FIX: multi-room reservation also needs resId and paymentRef
-    const resId = `RES${Date.now()}${Math.random().toString(36).substr(2, 9)}`.toUpperCase();
+    const resId =
+      `RES${Date.now()}${Math.random().toString(36).substr(2, 9)}`.toUpperCase();
 
     const payment = await Payment.create({
       vendor,
@@ -722,7 +920,7 @@ export const createMultiRoomReservation = async (req, res) => {
     const initialData = {
       resId,
       bookingCode,
-      paymentRef: payment._id,           // ✅ always set
+      paymentRef: payment._id, // ✅ always set
       customerName,
       customerId,
       customerEmail,
@@ -806,14 +1004,28 @@ export const getReservationStats = async (req, res) => {
     );
 
     const [todayCount, lastWeekCount] = await Promise.all([
-      Booking.countDocuments({ ...vendorFilter, createdAt: { $gte: todayStart, $lte: todayEnd } }),
-      Booking.countDocuments({ ...vendorFilter, createdAt: { $gte: lastWeekStart, $lte: lastWeekEnd } }),
+      Booking.countDocuments({
+        ...vendorFilter,
+        createdAt: { $gte: todayStart, $lte: todayEnd },
+      }),
+      Booking.countDocuments({
+        ...vendorFilter,
+        createdAt: { $gte: lastWeekStart, $lte: lastWeekEnd },
+      }),
     ]);
     const totalReservationsChange = percentChange(todayCount, lastWeekCount);
 
     const [todayPrepaid, lastWeekPrepaid] = await Promise.all([
-      Booking.countDocuments({ ...vendorFilter, paymentStatus: "paid", createdAt: { $gte: todayStart, $lte: todayEnd } }),
-      Booking.countDocuments({ ...vendorFilter, paymentStatus: "paid", createdAt: { $gte: lastWeekStart, $lte: lastWeekEnd } }),
+      Booking.countDocuments({
+        ...vendorFilter,
+        paymentStatus: "paid",
+        createdAt: { $gte: todayStart, $lte: todayEnd },
+      }),
+      Booking.countDocuments({
+        ...vendorFilter,
+        paymentStatus: "paid",
+        createdAt: { $gte: lastWeekStart, $lte: lastWeekEnd },
+      }),
     ]);
     const prepaidChange = percentChange(todayPrepaid, lastWeekPrepaid);
 
@@ -829,7 +1041,9 @@ export const getReservationStats = async (req, res) => {
             ],
           },
         },
-        { $group: { _id: null, guests: { $sum: { $ifNull: ["$guests", 0] } } } },
+        {
+          $group: { _id: null, guests: { $sum: { $ifNull: ["$guests", 0] } } },
+        },
       ]);
       return result[0]?.guests || 0;
     };
@@ -841,15 +1055,26 @@ export const getReservationStats = async (req, res) => {
     const guestsChange = percentChange(guestsToday, guestsLastWeek);
 
     const [todayPending, lastWeekPending] = await Promise.all([
-      Booking.countDocuments({ ...vendorFilter, paymentStatus: "pending", createdAt: { $gte: todayStart, $lte: todayEnd } }),
-      Booking.countDocuments({ ...vendorFilter, paymentStatus: "pending", createdAt: { $gte: lastWeekStart, $lte: lastWeekEnd } }),
+      Booking.countDocuments({
+        ...vendorFilter,
+        reservationStatus: "upcoming",
+        createdAt: { $gte: todayStart, $lte: todayEnd },
+      }),
+      Booking.countDocuments({
+        ...vendorFilter,
+        reservationStatus: "upcoming",
+        createdAt: { $gte: lastWeekStart, $lte: lastWeekEnd },
+      }),
     ]);
     const pendingChange = percentChange(todayPending, lastWeekPending);
 
     res.status(200).json({
       success: true,
       data: {
-        totalReservations: { count: todayCount, change: totalReservationsChange },
+        totalReservations: {
+          count: todayCount,
+          change: totalReservationsChange,
+        },
         prepaidReservations: { count: todayPrepaid, change: prepaidChange },
         expectedGuests: { count: guestsToday, change: guestsChange },
         pendingPayments: { count: todayPending, change: pendingChange },
@@ -871,7 +1096,9 @@ export async function createReservationFromPayment(payment) {
   // FIX 1: resId comes from payment.booking (the booking reference ID)
   const resId = payment.booking;
   if (!resId) {
-    throw new Error("Payment is missing 'booking' field (resId). Cannot create reservation.");
+    throw new Error(
+      "Payment is missing 'booking' field (resId). Cannot create reservation.",
+    );
   }
 
   // FIX 2: paymentRef is always payment._id — no longer conditional
@@ -881,13 +1108,15 @@ export async function createReservationFromPayment(payment) {
   const qrConfirmationToken = crypto.randomBytes(32).toString("hex");
 
   // FIX 3: normalise reservationType — strip any trailing "Reservation" then re-append
-  const rawType = (metadata.reservationType || "").replace(/Reservation$/i, "").toLowerCase();
+  const rawType = (metadata.reservationType || "")
+    .replace(/Reservation$/i, "")
+    .toLowerCase();
   const reservationType = rawType.charAt(0) + rawType.slice(1) + "Reservation";
 
   const baseData = {
-    resId,                                // ✅ from payment.booking
+    resId, // ✅ from payment.booking
     bookingCode,
-    paymentRef,                           // ✅ always payment._id
+    paymentRef, // ✅ always payment._id
     customerId: payment.user,
     customerName: metadata.customerName,
     customerEmail: metadata.customerEmail,
@@ -895,8 +1124,12 @@ export async function createReservationFromPayment(payment) {
     vendor: metadata.vendorId,
     location: metadata.location,
     totalAmount: payment.amount,
-    paymentStatus: payment.payLater ? "not_paid" : payment.partPaid ? "partly_paid" : "paid",
-    reservationStatus: payment.payLater ? "upcoming" : "confirmed",
+    paymentStatus: payment.payLater
+      ? "pay_later"
+      : payment.partPaid
+        ? "partly_paid"
+        : "paid",
+    reservationStatus: "upcoming",
     payLater: payment.payLater,
     partPaid: payment.partPaid,
     reservationType,
@@ -915,7 +1148,7 @@ export async function createReservationFromPayment(payment) {
       metadata.drinks.length === 0
     ) {
       throw new Error(
-        "Club reservation requires metadata fields: date, time, guests, drinks (non-empty array)"
+        "Club reservation requires metadata fields: date, time, guests, drinks (non-empty array)",
       );
     }
   }
@@ -923,50 +1156,62 @@ export async function createReservationFromPayment(payment) {
   let reservation;
 
   if (rawType === "restaurant") {
-    const [created] = await restaurantReservation.create([{
-      ...baseData,
-      date: metadata.date,
-      time: metadata.time,
-      guests: metadata.guests,
-      mealPreselected: metadata.mealPreselected,
-      menus: metadata.menus?.map((m) => ({
-        menu: m.menuId,
-        quantity: m.quantity,
-        specialRequest: m.specialRequest,
-      })) || [],
-      specialOccasion: metadata.specialOccasion,
-      seatingPreference: metadata.seatingPreference,
-      specialRequest: metadata.specialRequest,
-    }]);
+    const [created] = await restaurantReservation.create([
+      {
+        ...baseData,
+        date: metadata.date,
+        time: metadata.time,
+        guests: metadata.guests,
+        mealPreselected: metadata.mealPreselected,
+        menus:
+          metadata.menus?.map((m) => ({
+            menu: m.menuId,
+            quantity: m.quantity,
+            specialRequest: m.specialRequest,
+          })) || [],
+        specialOccasion: metadata.specialOccasion,
+        seatingPreference: metadata.seatingPreference,
+        specialRequest: metadata.specialRequest,
+      },
+    ]);
     reservation = created;
   }
+  console.log(metadata.rooms);
 
   if (rawType === "hotel") {
-    const [created] = await hotelReservation.create([{
-      ...baseData,
-      checkInDate: metadata.checkInDate,
-      checkOutDate: metadata.checkOutDate,
-      guests: metadata.guests,
-      room: metadata.roomId,
-      specialRequest: metadata.specialRequest,
-    }]);
+    const [created] = await hotelReservation.create([
+      {
+        ...baseData,
+        checkInDate: metadata.checkInDate,
+        checkOutDate: metadata.checkOutDate,
+        guests: metadata.guests,
+        rooms: metadata.rooms,
+        specialRequest: metadata.specialRequest,
+        quantity: metadata.quantity || 1,
+      },
+    ]);
     reservation = created;
   }
 
   if (isClubType) {
-    const [created] = await clubReservation.create([{
-      ...baseData,
-      date: metadata.date,
-      time: metadata.time,
-      guests: metadata.guests,
-      table: metadata.table,
-      drinks: metadata.drinks.map((d) => ({
-        drink: d.drink,
-        quantity: d.quantity,
-      })),
-      combos: metadata.combos || [],
-      specialRequest: metadata.specialRequest,
-    }]);
+    const [created] = await clubReservation.create([
+      {
+        ...baseData,
+        date: metadata.date,
+        time: metadata.time,
+        guests: metadata.guests,
+        tables: metadata.table.map((t) => ({
+          tableType: t._id,
+          quantity: t.quantity,
+        })),
+        drinks: metadata.drinks.map((d) => ({
+          drink: d.drink,
+          quantity: d.quantity,
+        })),
+        combos: metadata.combos || [],
+        specialRequest: metadata.specialRequest,
+      },
+    ]);
     reservation = created;
   }
 
@@ -991,14 +1236,18 @@ export async function completePayment(req, res) {
       const reservation = await Booking.findById(payment.reservationId)
         .populate("vendor")
         .populate("menus.menu")
-        .populate("room")
+        .populate("rooms.roomId")
         .populate("drinks.drink")
-        .populate("table")
+        .populate("tables.tableType")
         .populate("combos");
 
       return res.json({
         success: true,
-        payment: { status: payment.status, paid_at: payment.paidAt, amount: payment.amount },
+        payment: {
+          status: payment.status,
+          paid_at: payment.paidAt,
+          amount: payment.amount,
+        },
         reservation,
         isNewBooking: false,
         source: "webhook",
@@ -1007,7 +1256,9 @@ export async function completePayment(req, res) {
 
     const paystackVerification = await axios.get(
       `https://api.paystack.co/transaction/verify/${payment._id}`,
-      { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` } },
+      {
+        headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` },
+      },
     );
 
     const paystackData = paystackVerification.data.data;
@@ -1046,19 +1297,27 @@ export async function completePayment(req, res) {
       reservation.reservationType === "restaurantReservation"
         ? "menus.menu"
         : reservation.reservationType === "hotelReservation"
-        ? "room"
-        : "drinks.drink combos table";
+          ? "rooms.roomId"
+          : "drinks.drink combos tables.tableType";
 
     await reservation.populate(`vendor ${populate}`);
 
     // AUTO-CONFIRM: Full payment bookings (non-payLater)
-    if (!reservation.confirmedAt && !payment.payLater && payment.status === 'success') {
+    if (
+      !reservation.confirmedAt &&
+      !payment.payLater &&
+      payment.status === "success"
+    ) {
       reservation.reservationStatus = "confirmed";
       reservation.confirmedAt = new Date();
       reservation.confirmedBy = reservation.vendor._id;
       reservation.confirmationMethod = "auto_payment";
       await reservation.save();
-      console.log('🤖 AUTO-CONFIRMED booking:', reservation._id, 'Full payment detected');
+      console.log(
+        "🤖 AUTO-CONFIRMED booking:",
+        reservation._id,
+        "Full payment detected",
+      );
     }
 
     if (isNewBooking) {
@@ -1073,7 +1332,10 @@ export async function completePayment(req, res) {
         vendorSocket.send(
           JSON.stringify({
             type: "new_reservation",
-            data: { ...reservation.toObject(), message: "You have a new reservation" },
+            data: {
+              ...reservation.toObject(),
+              message: "You have a new reservation",
+            },
           }),
         );
       }
@@ -1081,14 +1343,20 @@ export async function completePayment(req, res) {
 
     res.json({
       success: true,
-      payment: { status: "success", paid_at: paystackData.paid_at, amount: payment.amount },
+      payment: {
+        status: "success",
+        paid_at: paystackData.paid_at,
+        amount: payment.amount,
+      },
       reservation,
       isNewBooking,
       source: "redirect",
     });
   } catch (error) {
     console.error("Complete payment error:", error);
-    res.status(400).json({ message: error.message || "Failed to complete payment" });
+    res
+      .status(400)
+      .json({ message: error.message || "Failed to complete payment" });
   }
 }
 
@@ -1113,7 +1381,7 @@ export const generateQRConfirmationToken = async (req, res) => {
         bookingCode: booking.bookingCode,
         qrToken: token,
         qrCodeUrl: `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(
-          `https://www.rhace.co/confirm/${booking._id}?token=${token}`
+          `https://www.rhace.co/confirm/${booking._id}?token=${token}`,
         )}&size=200x200`,
       },
     });
@@ -1132,7 +1400,9 @@ export const verifyQRCode = async (req, res) => {
       .populate("customerId", "firstName lastName email phone");
 
     if (!booking) {
-      return res.status(404).json({ success: false, message: "Invalid QR code", valid: false });
+      return res
+        .status(404)
+        .json({ success: false, message: "Invalid QR code", valid: false });
     }
 
     const isConfirmed = !!booking.confirmedAt;
@@ -1179,21 +1449,23 @@ export const confirmReservation = async (req, res) => {
     const { id } = req.params;
     // Removed vendorId body param - use req.user._id directly for vendor auth
 
-    const booking = await Booking.findById(id).populate({
-      path: 'paymentRef',
-      model: 'Payment'
-    }).populate('vendor');
+    const booking = await Booking.findById(id)
+      .populate({
+        path: "paymentRef",
+        model: "Payment",
+      })
+      .populate("vendor");
     if (!booking) {
       return res.status(404).json({ message: "Booking not found" });
     }
 
-    console.log('📋 Booking details:', {
+    console.log("📋 Booking details:", {
       _id: booking._id,
       resId: booking.resId,
       type: booking.reservationType,
       status: booking.reservationStatus,
       paymentRef: booking.paymentRef?._id,
-      vendor: booking.vendor?._id
+      vendor: booking.vendor?._id,
     });
 
     const effectiveResId = booking.resId || booking._id.toString();
@@ -1205,43 +1477,38 @@ export const confirmReservation = async (req, res) => {
     if (!payment) {
       if (booking.resId) {
         payment = await Payment.findOne({ booking: booking.resId });
-        console.log('💳 Fallback #1 (by resId):', payment?._id || 'NOT FOUND');
+        console.log("💳 Fallback #1 (by resId):", payment?._id || "NOT FOUND");
       }
-      
+
       if (!payment && booking._id) {
         payment = await Payment.findOne({ booking: booking._id.toString() });
-        console.log('💳 Fallback #2 (by booking ID):', payment?._id || 'NOT FOUND');
+        console.log(
+          "💳 Fallback #2 (by booking ID):",
+          payment?._id || "NOT FOUND",
+        );
       }
     }
-    
+
     if (!payment) {
       return res.status(400).json({
         success: false,
-        message: 'No payment found for this booking. Check payments collection.',
+        message:
+          "No payment found for this booking. Check payments collection.",
         bookingId: booking._id,
         bookingResId: effectiveResId,
         debug: [
-          `db.payments.find({ $or: [{booking: "${effectiveResId}"}, {booking: ObjectId("${booking._id}")}] })`
-        ]
+          `db.payments.find({ $or: [{booking: "${booking.resId || "MISSING"}"}, {booking: ObjectId("${booking._id}")}] })`,
+        ],
       });
     }
 
-
-
-
-
-
-    // ✅ FIXED: Flexible validation - accepts partial payments + 90% threshold
-    const amountDue = booking.totalAmount || payment.amount;
-    const isPaymentValid = 
-      ['success', 'partly_paid'].includes(payment.status) ||
-      (payment.status === 'success' && (
-        payment.partPaid ||
-        payment.amountPaid >= amountDue * 0.90
-      )); // 90% tolerance
+    // Validate payment exists & successful
+    const isPaymentValid =
+      payment.status === "success" &&
+      payment.amount >= payment.amountPaid * 0.95;
 
     if (!isPaymentValid) {
-      console.log('🚫 Payment validation failed:', {
+      console.log("🚫 Payment validation failed:", {
         bookingId: id,
         resId: effectiveResId,
         paymentId: payment._id,
@@ -1249,9 +1516,9 @@ export const confirmReservation = async (req, res) => {
         amountDue: booking.totalAmount || payment.amount,
         amountPaid: payment.amountPaid,
         partPaid: payment.partPaid,
-        thresholdMet: payment.amountPaid >= (booking.totalAmount || payment.amount) * 0.90
+        thresholdMet: payment.amount >= (booking.totalAmount || payment.amountPaid) * 0.90
       });
-      
+
       return res.status(400).json({
         success: false,
         message: `Payment validation failed for booking ${effectiveResId}. Status="${payment.status}". Paid ${payment.amountPaid}/${booking.totalAmount || payment.amount} (need ≥90%)`,
@@ -1260,9 +1527,15 @@ export const confirmReservation = async (req, res) => {
         amountDue: booking.totalAmount || payment.amount,
         amountPaid: payment.amountPaid,
         bookingPaymentRef: booking.paymentRef?._id,
-        effectiveResId,
-        debug: '1. Check if payment exists: db.payments.findOne({booking: "' + effectiveResId + '"})',
-        fix: '2. Set status: db.payments.updateOne({_id: ObjectId("PAYMENT_ID")}, {$set: {status: "success"}})\n3. Add to booking: db.reservations.updateOne({_id: ObjectId("' + id + '")}, {$set: {paymentRef: ObjectId("PAYMENT_ID")}})'
+        effectiveResIdL : payment.booking,
+        debug:
+          '1. Check if payment exists: db.payments.findOne({booking: "' +
+          payment.booking +
+          '"})',
+        fix:
+          '2. Set status: db.payments.updateOne({_id: ObjectId("PAYMENT_ID")}, {$set: {status: "success"}})\n3. Add to booking: db.reservations.updateOne({_id: ObjectId("' +
+          id +
+          '")}, {$set: {paymentRef: ObjectId("PAYMENT_ID")}})',
       });
     }
 
@@ -1291,25 +1564,32 @@ export const confirmReservation = async (req, res) => {
 
     if (booking.vendor._id?.toString() !== req.user._id.toString()) {
       const userRole = req.user?.role;
-      if (userRole !== "superadmin" && userRole !== "admin") {
-        console.log('❌ Auth failed - vendor mismatch');
-        return res.status(403).json({ message: "Not authorized to confirm this reservation" });
+      if (userRole !== "superadmin" && userRole !== "admin" && userRole !== "vendor") {
+        return res
+          .status(403)
+          .json({ message: "Not authorized to confirm this reservation" });
       }
     }
 
     booking.confirmedAt = new Date();
-    booking.confirmedBy = vendorId || req.user?._id;
+    booking.confirmedBy = booking.vendor._id || req.user?._id;
     booking.confirmationMethod = "manual";
     booking.reservationStatus = "confirmed";
     await booking.save();
 
-    await recordAuditLog(effectiveVendorId, "RESERVATION_CONFIRMED", "Booking", booking._id, {
-      confirmedBy: effectiveVendorId,
-      confirmationMethod: "manual",
-      previousStatus: booking.reservationStatus,
-      effectiveResId,
-      effectivePaymentId
-    });
+    await recordAuditLog(
+      booking.vendor._id,
+      "RESERVATION_CONFIRMED",
+      "Booking",
+      booking._id,
+      {
+        confirmedBy: booking.vendor._id,
+        confirmationMethod: "manual",
+        previousStatus: booking.reservationStatus,
+        effectiveResId: booking.resId,
+        effectivePaymentId: payment._id,
+      },
+    );
 
     const vendorSocket = getVendorSocket(booking.vendor);
     if (vendorSocket && vendorSocket.readyState === 1) {
@@ -1323,7 +1603,7 @@ export const confirmReservation = async (req, res) => {
             confirmedAt: booking.confirmedAt,
             message: "Reservation confirmed successfully",
           },
-        })
+        }),
       );
     }
 
@@ -1340,13 +1620,19 @@ export const confirmReservation = async (req, res) => {
             confirmationMethod: booking.confirmationMethod,
             message: "Your reservation has been confirmed by the vendor!",
           },
-        })
+        }),
       );
     }
 
     try {
-      const vendorType = booking.reservationType?.replace("Reservation", "").toLowerCase() || "booking";
-      await sendBookingConfirmationEmail(booking.customerEmail, booking, vendorType);
+      const vendorType =
+        booking.reservationType?.replace("Reservation", "").toLowerCase() ||
+        "booking";
+      await sendBookingConfirmationEmail(
+        booking.customerEmail,
+        booking,
+        vendorType,
+      );
     } catch (emailError) {
       console.error("Email notification failed:", emailError);
     }
@@ -1357,8 +1643,8 @@ export const confirmReservation = async (req, res) => {
       data: {
         bookingId: booking._id,
         bookingCode: booking.bookingCode,
-        resId: effectiveResId,
-        paymentId: effectivePaymentId,
+        resId: booking.resId,
+        paymentId: booking.paymentRef,
         confirmedAt: booking.confirmedAt,
         confirmedBy: booking.confirmedBy,
         confirmationMethod: booking.confirmationMethod,
@@ -1382,7 +1668,9 @@ export const confirmByQRCode = async (req, res) => {
     const booking = await Booking.findOne({ qrConfirmationToken: token });
 
     if (!booking) {
-      return res.status(404).json({ message: "Invalid QR code - booking not found" });
+      return res
+        .status(404)
+        .json({ message: "Invalid QR code - booking not found" });
     }
 
     if (booking.confirmedAt) {
@@ -1402,7 +1690,9 @@ export const confirmByQRCode = async (req, res) => {
     if (vendorId && booking.vendor.toString() !== vendorId) {
       const userRole = req.user?.role;
       if (userRole !== "superadmin" && userRole !== "admin") {
-        return res.status(403).json({ message: "Not authorized to confirm this reservation" });
+        return res
+          .status(403)
+          .json({ message: "Not authorized to confirm this reservation" });
       }
     }
 
@@ -1412,11 +1702,17 @@ export const confirmByQRCode = async (req, res) => {
     booking.reservationStatus = "confirmed";
     await booking.save();
 
-    await recordAuditLog(vendorId || req.user?._id, "RESERVATION_CONFIRMED_VIA_QR", "Booking", booking._id, {
-      confirmedBy: vendorId || req.user?._id,
-      confirmationMethod: "qr_code",
-      previousStatus: booking.reservationStatus,
-    });
+    await recordAuditLog(
+      vendorId || req.user?._id,
+      "RESERVATION_CONFIRMED_VIA_QR",
+      "Booking",
+      booking._id,
+      {
+        confirmedBy: vendorId || req.user?._id,
+        confirmationMethod: "qr_code",
+        previousStatus: booking.reservationStatus,
+      },
+    );
 
     const vendorSocket = getVendorSocket(booking.vendor);
     if (vendorSocket && vendorSocket.readyState === 1) {
@@ -1431,7 +1727,7 @@ export const confirmByQRCode = async (req, res) => {
             confirmationMethod: "qr_code",
             message: "Reservation confirmed via QR code",
           },
-        })
+        }),
       );
     }
 
@@ -1446,15 +1742,22 @@ export const confirmByQRCode = async (req, res) => {
             customerName: booking.customerName,
             confirmedAt: booking.confirmedAt,
             confirmationMethod: booking.confirmationMethod,
-            message: "Your reservation has been confirmed by the vendor via QR code!",
+            message:
+              "Your reservation has been confirmed by the vendor via QR code!",
           },
-        })
+        }),
       );
     }
 
     try {
-      const vendorType = booking.reservationType?.replace("Reservation", "").toLowerCase() || "booking";
-      await sendBookingConfirmationEmail(booking.customerEmail, booking, vendorType);
+      const vendorType =
+        booking.reservationType?.replace("Reservation", "").toLowerCase() ||
+        "booking";
+      await sendBookingConfirmationEmail(
+        booking.customerEmail,
+        booking,
+        vendorType,
+      );
     } catch (emailError) {
       console.error("QR confirmation email failed:", emailError);
     }
@@ -1480,26 +1783,52 @@ export const confirmByQRCode = async (req, res) => {
 export const createMultiTableReservation = async (req, res) => {
   try {
     const {
-      vendor, customerName, customerId, customerEmail,
-      location, date, time, guests, tables,
-      drinks, combos, specialRequest, partPaid, payLater,
-      resId: bodyResId, paymentRef: bodyPaymentRef,
+      vendor,
+      customerName,
+      customerId,
+      customerEmail,
+      location,
+      date,
+      time,
+      guests,
+      tables,
+      drinks,
+      combos,
+      specialRequest,
+      partPaid,
+      payLater,
+      resId: bodyResId,
+      paymentRef: bodyPaymentRef,
     } = req.body;
 
-    if (!vendor || !location || !date || !time || !tables || tables.length === 0) {
+    if (
+      !vendor ||
+      !location ||
+      !date ||
+      !time ||
+      !tables ||
+      tables.length === 0
+    ) {
       const missing = [];
       if (!vendor) missing.push("vendor");
       if (!location) missing.push("location");
       if (!date) missing.push("date");
       if (!time) missing.push("time");
       if (!tables || tables.length === 0) missing.push("tables");
-      return res.status(400).json({ message: `Missing required fields: ${missing.join(", ")}` });
+      return res
+        .status(400)
+        .json({ message: `Missing required fields: ${missing.join(", ")}` });
     }
 
     for (const tableItem of tables) {
-      if (!tableItem.tableType || !tableItem.quantity || !tableItem.pricePerTable) {
+      if (
+        !tableItem.tableType ||
+        !tableItem.quantity ||
+        !tableItem.pricePerTable
+      ) {
         return res.status(400).json({
-          message: "Each table must have tableType, quantity, and pricePerTable",
+          message:
+            "Each table must have tableType, quantity, and pricePerTable",
         });
       }
     }
@@ -1512,12 +1841,14 @@ export const createMultiTableReservation = async (req, res) => {
     }
 
     const generateUniqueResId = async () => {
-      let candidate = `RES${Date.now()}${Math.random().toString(36).substr(2, 9)}`.toUpperCase();
+      let candidate =
+        `RES${Date.now()}${Math.random().toString(36).substr(2, 9)}`.toUpperCase();
       while (
         (await Payment.findOne({ booking: candidate })) ||
         (await Booking.findOne({ resId: candidate }))
       ) {
-        candidate = `RES${Date.now()}${Math.random().toString(36).substr(2, 9)}`.toUpperCase();
+        candidate =
+          `RES${Date.now()}${Math.random().toString(36).substr(2, 9)}`.toUpperCase();
       }
       return candidate;
     };
@@ -1535,7 +1866,9 @@ export const createMultiTableReservation = async (req, res) => {
     }
 
     if (!effectivePaymentRef) {
-      const existingPayment = await Payment.findOne({ booking: effectiveResId });
+      const existingPayment = await Payment.findOne({
+        booking: effectiveResId,
+      });
       if (existingPayment) {
         effectivePaymentRef = existingPayment._id;
       }
@@ -1577,7 +1910,7 @@ export const createMultiTableReservation = async (req, res) => {
     const initialData = {
       resId: effectiveResId,
       bookingCode,
-      paymentRef: effectivePaymentRef,   // ✅ always set
+      paymentRef: effectivePaymentRef, // ✅ always set
       customerName,
       customerId,
       customerEmail,

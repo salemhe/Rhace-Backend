@@ -1,5 +1,4 @@
 import express from "express";
-import { login, register, resendOTP, verifyOTP, forgotPassword, resetPassword, loginGoogle, registerGoogle } from "../controllers/auth.controller.js";
 import {
   getUsers,
   getUserById,
@@ -19,18 +18,6 @@ import { protect } from "../middlewares/auth.middleware.js";
 import upload from "../middlewares/upload.middleware.js";
 
 const router = express.Router();
-// Auth routes
-router.post("/auth/register", register);
-router.post("/auth/register/google", registerGoogle);
-router.post("/auth/login", login);
-router.post("/auth/login/google", loginGoogle)
-router.post("/auth/verify-otp", verifyOTP);
-router.post("/auth/resend-otp", resendOTP);
-router.post("/auth/forgot-password", forgotPassword);
-router.post("/auth/reset-password", (req, res, next) => {
-  console.log("HIT RESET ROUTE");
-  next();
-}, resetPassword);
 
 // User management routes
 router.get("/favorites", protect, getFavorites);

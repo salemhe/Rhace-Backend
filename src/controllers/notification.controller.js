@@ -1,9 +1,9 @@
 import Notification from "../models/notification.model.js";
 import User from "../models/user.model.js";
-import { Vendor } from "../models/vendor.model.js";
+// import { Vendor } from "../models/vendor.model.js";
 import { sendEmail } from "../services/mail.service.js";
-import { sendSMS } from "../services/sms.service.js";
-import { sendWhatsApp } from "../services/whatsapp.service.js";
+// import { sendSMS } from "../services/sms.service.js";
+// import { sendWhatsApp } from "../services/whatsapp.service.js";
 
 // @desc    Get user notifications
 // @route   GET /api/notifications
@@ -112,19 +112,19 @@ export const sendNotification = async (req, res) => {
       }
     }
 
-    if (channels.includes("sms")) {
-      const user = await User.findById(userId);
-      if (user?.phone) {
-        await sendSMS(user.phone, message);
-      }
-    }
+    // if (channels.includes("sms")) {
+    //   const user = await User.findById(userId);
+    //   if (user?.phone) {
+    //     await sendSMS(user.phone, message);
+    //   }
+    // }
 
-    if (channels.includes("whatsapp")) {
-      const user = await User.findById(userId);
-      if (user?.phone) {
-        await sendWhatsApp(user.phone, message);
-      }
-    }
+    // if (channels.includes("whatsapp")) {
+    //   const user = await User.findById(userId);
+    //   if (user?.phone) {
+    //     await sendWhatsApp(user.phone, message);
+    //   }
+    // }
 
     res.status(201).json(notification);
   } catch (error) {

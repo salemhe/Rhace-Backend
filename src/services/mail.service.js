@@ -1,125 +1,25 @@
-// import nodemailer from "nodemailer";
-
-// import sgMail from "@sendgrid/mail";
-
-// // Generic email sending function
-// export const sendEmail = async (to, subject, htmlContent) => {
-//   try {
-//     console.log(
-//       "SendGrid API Key:",
-//       process.env.SENDGRID_API_KEY ? "FOUND" : "NOT FOUND"
-//     );
-//     console.log("SMTP_USER:", process.env.SMTP_USER);
-
-//     sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-//     const msg = {
-//       to,
-//       from: process.env.SMTP_USER,
-//       subject,
-//       html: htmlContent,
-//     };
-//     await sgMail.send(msg);
-//   } catch (error) {
-//     console.error(error);
-
-//     if (error.response) {
-//       console.error(error.response.body);
-//     }
-//   }
-// };
-
-// export const sendPasswordResetEmail = async (to, token, role) => {
-//   const resetUrl = `https://rhace-frontend.vercel.app/auth/${role}/reset-password?token=${token}`;
-
-//   const htmlContent = `
-//     <p>You are receiving this email because you (or someone else) have requested the reset of the password for your account.</p>
-//     <p>Please click on the following link, or paste this into your browser to complete the process:</p>
-//     <a href="${resetUrl}">${resetUrl}</a>
-//     <p>If you did not request this, please ignore this email and your password will remain unchanged.</p>
-//   `;
-//   await sendEmail(to, "Password Reset", htmlContent);
-// };
-
-// export const sendBookingConfirmationEmail = async (to, bookingDetails) => {
-//   const {
-//     bookingCode,
-//     hotelName,
-//     roomType,
-//     checkInDate,
-//     checkOutDate,
-//     totalAmount,
-//     currency,
-//   } = bookingDetails;
-//   const htmlContent = `
-//     <p>Dear ${to},</p>
-//     <p>Your booking has been confirmed!</p>
-//     <p><strong>Booking Code:</strong> ${bookingCode}</p>
-//     <p><strong>Hotel:</strong> ${hotelName}</p>
-//     <p><strong>Room Type:</strong> ${roomType}</p>
-//     <p><strong>Check-in Date:</strong> ${new Date(
-//       checkInDate
-//     ).toDateString()}</p>
-//     <p><strong>Check-out Date:</strong> ${new Date(
-//       checkOutDate
-//     ).toDateString()}</p>
-//     <p><strong>Total Amount:</strong> ${totalAmount} ${currency}</p>
-//     <p>Thank you for your booking!</p>
-//   `;
-//   await sendEmail(to, "Booking Confirmation", htmlContent);
-// };
-
-// export const sendBookingCancellationEmail = async (to, bookingDetails) => {
-//   const { bookingCode, hotelName, checkInDate, checkOutDate } = bookingDetails;
-//   const htmlContent = `
-//     <p>Dear ${to},</p>
-//     <p>Your booking has been cancelled.</p>
-//     <p><strong>Booking Code:</strong> ${bookingCode}</p>
-//     <p><strong>Hotel:</strong> ${hotelName}</p>
-//     <p><strong>Check-in Date:</strong> ${new Date(
-//       checkInDate
-//     ).toDateString()}</p>
-//     <p><strong>Check-out Date:</strong> ${new Date(
-//       checkOutDate
-//     ).toDateString()}</p>
-//     <p>If you have any questions, please contact us.</p>
-//   `;
-//   await sendEmail(to, "Booking Cancellation", htmlContent);
-// };
-
-// export const sendPaymentReceiptEmail = async (to, paymentDetails) => {
-//   const { bookingCode, amount, currency, method, providerRef } = paymentDetails;
-//   const htmlContent = `
-//     <p>Dear ${to},</p>
-//     <p>Thank you for your payment!</p>
-//     <p><strong>Booking Code:</strong> ${bookingCode}</p>
-//     <p><strong>Amount Paid:</strong> ${amount} ${currency}</p>
-//     <p><strong>Payment Method:</strong> ${method}</p>
-//     <p><strong>Transaction ID:</strong> ${providerRef}</p>
-//     <p>Your payment has been successfully processed.</p>
-//   `;
-//   await sendEmail(to, "Payment Receipt", htmlContent);
-// };
-
-
-import sgMail from "@sendgrid/mail";
+import { Resend } from "resend";
+import "dotenv/config";
 
 // Generic email sending function
 export const sendEmail = async (to, subject, htmlContent) => {
   try {
-    console.log(
-      "SendGrid API Key:",
-      process.env.SENDGRID_API_KEY ? "FOUND" : "NOT FOUND"
-    );
-    console.log("SMTP_USER:", process.env.SMTP_USER);
-
-    sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+    const resend = new Resend(process.env.RESEND_API_KEY);
+    const from = process.env.EMAIL_FROM || "Rhace <noreply@rhace.co>";
     const msg = {
-      to,
-      from: process.env.SMTP_USER,
+      to: [to],
+      from,
       subject,
       html: htmlContent,
     };
-    await sgMail.send(msg);
+    const { data, error } = await resend.emails.send(msg);
+    if (error) {
+      console.error("Error sending email:", error);
+      process.exit(1);
+    }
+
+    console.log("Email sent successfully!");
+    console.log("Email ID:", data?.id);
   } catch (error) {
     console.error(error);
 
@@ -131,7 +31,7 @@ export const sendEmail = async (to, subject, htmlContent) => {
 
 // PASSWORD RESET EMAIL
 export const sendPasswordResetEmail = async (to, token, role) => {
-  const resetUrl = `https://www.rhace.co/auth/${role}/reset-password?token=${token}`;
+  const resetUrl = `https://${process.env.FRONTEND_URL}/auth/${role}/reset-password?token=${token}`;
   const htmlContent = `
   <!DOCTYPE html>
   <html lang="en">
@@ -173,7 +73,11 @@ export const sendPasswordResetEmail = async (to, token, role) => {
 };
 
 //  BOOKING CONFIRMATION EMAIL
-export const sendBookingConfirmationEmail = async (to, bookingDetails, type) => {
+export const sendBookingConfirmationEmail = async (
+  to,
+  bookingDetails,
+  type,
+) => {
   const {
     _id,
     bookingCode,
@@ -196,19 +100,19 @@ export const sendBookingConfirmationEmail = async (to, bookingDetails, type) => 
     vendor,
     specialRequest,
     partPaid,
-    payLater, 
+    payLater,
     customerName,
   } = bookingDetails;
 
   // Generate QR code URL
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(
-    `https://www.rhace.co/bookings/${_id}`
+    `${process.env.FRONTEND_URL}/bookings/${_id}`,
   )}&size=150x150`;
 
   // Build details dynamically
   let detailsHtml = `
   <p><strong>Booking Code:</strong> ${bookingCode}</p>`;
-  
+
   if (type === "hotel") {
     detailsHtml += `
       <p><strong>Hotel name:</strong> ${vendor.businessName}</p>
@@ -230,7 +134,7 @@ export const sendBookingConfirmationEmail = async (to, bookingDetails, type) => 
       <p><strong>Guests:</strong> ${guests}</p>
       <p><strong>Meal Preselected:</strong> ${mealPreselected ? "Yes" : "No"}</p>
       <p><strong>Payment Status:</strong> ${payLater ? "Pay at Restaurant" : "Paid"}</p>
-      ${menus?.length ? `<p><strong>Menus:</strong> ${menus.map(m => m.menu?.name || "N/A").join(", ")}</p>` : ""}
+      ${menus?.length ? `<p><strong>Menus:</strong> ${menus.map((m) => m.menu?.name || "N/A").join(", ")}</p>` : ""}
       ${specialOccasion ? `<p><strong>Special Occasion:</strong> ${specialOccasion}</p>` : ""}
       ${seatingPreference ? `<p><strong>Seating Preference:</strong> ${seatingPreference}</p>` : ""}
       ${specialRequest ? `<p><strong>Special Request:</strong> ${specialRequest}</p>` : ""}
@@ -245,8 +149,8 @@ export const sendBookingConfirmationEmail = async (to, bookingDetails, type) => 
       <p><strong>Guests:</strong> ${guests}</p>
       <p><strong>Payment Status:</strong> ${partPaid ? "Part Paid" : "Paid"}</p>
       ${table ? `<p><strong>Table:</strong> ${table.name}</p>` : ""}
-      ${drinks?.length ? `<p><strong>Drinks:</strong> ${drinks.map(d => `${d.drink?.name || "N/A"} (x${d.quantity})`).join(", ")}</p>` : ""}
-      ${combos?.length ? `<p><strong>Combos:</strong> ${combos.map(c => c?.name || "N/A").join(", ")}</p>` : ""}
+      ${drinks?.length ? `<p><strong>Drinks:</strong> ${drinks.map((d) => `${d.drink?.name || "N/A"} (x${d.quantity})`).join(", ")}</p>` : ""}
+      ${combos?.length ? `<p><strong>Combos:</strong> ${combos.map((c) => c?.name || "N/A").join(", ")}</p>` : ""}
       ${specialRequest ? `<p><strong>Special Request:</strong> ${specialRequest}</p>` : ""}
       <p><strong>Total Amount:</strong> ${totalAmount.toLocaleString()} ${currency}</p>
     `;
@@ -301,10 +205,9 @@ export const sendBookingConfirmationEmail = async (to, bookingDetails, type) => 
   await sendEmail(to, "Booking Confirmation", htmlContent);
 };
 
-
 //  BOOKING CANCELLATION EMAIL
-export const sendBookingCancellationEmail = async (to, bookingDetails) => {
-  const { bookingCode, hotelName, checkInDate, checkOutDate } = bookingDetails;
+export const sendBookingCancellationEmail = async (to, bookingDetails, type) => {
+  const { bookingCode, hotelName, checkInDate, checkOutDate, date } = bookingDetails;
   const htmlContent = `
   <!DOCTYPE html>
   <html lang="en">
@@ -337,16 +240,16 @@ export const sendBookingCancellationEmail = async (to, bookingDetails) => {
         <div class="details">
           <p><strong>Booking Code:</strong> ${bookingCode}</p>
           <p><strong>Hotel:</strong> ${hotelName}</p>
-          ${type === "hotel" ? (
-            `
+          ${
+            type === "hotel"
+              ? `
             <p><strong>Check-in:</strong> ${new Date(checkInDate).toDateString()}</p>
             <p><strong>Check-out:</strong> ${new Date(checkOutDate).toDateString()}</p>
             `
-          ) : (
-            `
+              : `
             <p><strong>Date:</strong> ${new Date(date).toDateString()}</p>
             `
-          )}
+          }
         </div>
         <p>If this was an error or you'd like to make a new booking, please visit your Rhace account or contact our support team.</p>
         <p>Thank you for considering <strong>Rhace</strong> — we hope to host you soon.</p>
