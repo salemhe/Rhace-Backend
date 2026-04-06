@@ -90,9 +90,7 @@ export const sendBookingConfirmationEmail = async (
     drinks,
     table,
     combos,
-    room,
-    checkInDate,
-    checkOutDate,
+    rooms,
     totalAmount,
     currency = "Naira",
     specialOccasion,
@@ -114,17 +112,39 @@ export const sendBookingConfirmationEmail = async (
   <p><strong>Booking Code:</strong> ${bookingCode}</p>`;
 
   if (type === "hotel") {
+    const roomDetailsHtml =
+      rooms?.length > 0
+        ? rooms
+            .map((room, index) => {
+              const roomName = room?.roomId?.name || "N/A";
+              const checkIn = room?.checkInDate
+                ? new Date(room.checkInDate).toDateString()
+                : "N/A";
+              const checkOut = room?.checkOutDate
+                ? new Date(room.checkOutDate).toDateString()
+                : "N/A";
+              const guestsCount = room?.guests ?? room?.noOfGuests ?? "N/A";
+
+              return `
+            <div style="margin-bottom: 18px;">
+              <p><strong>Room ${index + 1}:</strong> ${roomName}</p>
+              <p><strong>Check-in:</strong> ${checkIn}</p>
+              <p><strong>Check-out:</strong> ${checkOut}</p>
+              <p><strong>Guests:</strong> ${guestsCount}</p>
+            </div>
+          `;
+            })
+            .join("")
+        : `<p><strong>Rooms:</strong> N/A</p>`;
+
     detailsHtml += `
       <p><strong>Hotel name:</strong> ${vendor.businessName}</p>
       <p><strong>Location:</strong> ${location}</p>
-      <p><strong>Room:</strong> ${room?.name || "N/A"}</p>
-      <p><strong>Check-in:</strong> ${new Date(checkInDate).toDateString()}</p>
-      <p><strong>Check-out:</strong> ${new Date(checkOutDate).toDateString()}</p>
-      <p><strong>Guests:</strong> ${guests}</p>
+      <div class="room-details">${roomDetailsHtml}</div>
       <p><strong>Payment Status:</strong> ${partPaid ? "Part Paid" : "Paid"}</p>
       ${specialRequest ? `<p><strong>Special Request:</strong> ${specialRequest}</p>` : ""}
       <p><strong>Total Amount:</strong> ${totalAmount.toLocaleString()} ${currency}</p>
-    `;
+    <p><strong>Total Amount:</strong> ${totalAmount.toLocaleString()} ${currency}</p>`;
   } else if (type === "restaurant") {
     detailsHtml += `
       <p><strong>Restaurant Name:</strong> ${vendor.businessName}</p>
@@ -206,8 +226,13 @@ export const sendBookingConfirmationEmail = async (
 };
 
 //  BOOKING CANCELLATION EMAIL
-export const sendBookingCancellationEmail = async (to, bookingDetails, type) => {
-  const { bookingCode, hotelName, checkInDate, checkOutDate, date } = bookingDetails;
+export const sendBookingCancellationEmail = async (
+  to,
+  bookingDetails,
+  type,
+) => {
+  const { bookingCode, hotelName, checkInDate, checkOutDate, date } =
+    bookingDetails;
   const htmlContent = `
   <!DOCTYPE html>
   <html lang="en">
