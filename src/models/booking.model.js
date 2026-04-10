@@ -64,6 +64,7 @@ const bookingSchema = new mongoose.Schema(
         "failed",
         "not_paid",
         "pay_later",
+        "cancelled",
       ],
       default: "pending",
       required: true,

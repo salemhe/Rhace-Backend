@@ -2016,3 +2016,27 @@ export const getConfirmationStatus = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+export const cancelBooking = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const booking = await Booking.findById(id).populate("vendor");
+    if (!booking) {
+      return res.status(404).json({ message: "Booking not found" });
+    }
+
+    booking.reservationStatus = "cancelled";
+    // booking.paymentStatus = "cancelled";
+    await booking.save();
+
+    res.status(200).json({
+      message: "Booking cancelled successfully",
+      success: true
+    })
+
+  } catch (error) {
+    console.error("Error Canceling Booking:", error);
+    res.status(500).json({ message: error.message });
+  }
+}
