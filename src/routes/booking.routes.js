@@ -13,6 +13,7 @@ import {
   confirmReservation,
   confirmByQRCode,
   getConfirmationStatus,
+  cancelBooking,
 } from "../controllers/booking.controller.js";
 import { protect } from "../middlewares/auth.middleware.js";
 import { authorize } from "../middlewares/permission.middleware.js";
@@ -33,6 +34,8 @@ router.get("/", protect, getReservations)
 router.get("/stats", protect, getReservationStats)
 
 router.get("/summary", protect, getBookingSummary)
+
+router.put("/:id/cancel", protect, authorize(["user", "admin"]), cancelBooking)
 
 // ============================================
 // RESERVATION CONFIRMATION SYSTEM
