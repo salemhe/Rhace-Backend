@@ -37,15 +37,17 @@ export const getBookingSummary = async (req, res) => {
     const vendorId = req.user._id || null;
     const vendorFilter = vendorId ? { vendor: vendorId } : {};
 
-    const today = new Date();
-    const { start: todayStart, end: todayEnd } = getDateRange(today);
-    const { start: lastWeekStart, end: lastWeekEnd } = getDateRange(
-      dayjs(today).subtract(7, "day"),
-    );
+    // ── Strict today boundaries (midnight to 11:59:59.999pm) ─────────────────
+    const todayStart = dayjs().startOf("day").toDate();  // 12:00:00.000 AM
+    const todayEnd   = dayjs().endOf("day").toDate();    // 11:59:59.999 PM
 
-    const weekStart = dayjs().subtract(6, "day").startOf("day").toDate();
+    // Last week = same calendar day 7 days ago, same strict boundaries
+    const lastWeekStart = dayjs().subtract(7, "day").startOf("day").toDate();
+    const lastWeekEnd   = dayjs().subtract(7, "day").endOf("day").toDate();
+
+    const weekStart  = dayjs().subtract(6, "day").startOf("day").toDate();
     const monthStart = dayjs().subtract(29, "day").startOf("day").toDate();
-    const now = new Date();
+    const now        = dayjs().endOf("day").toDate(); // cap at end of today, not future
 
     // ── 1. Total reservations ─────────────────────────────────────────────────
     const [todayCount, lastWeekCount] = await Promise.all([
@@ -75,23 +77,72 @@ export const getBookingSummary = async (req, res) => {
     ]);
     const prepaidChange = percentChange(todayPrepaid, lastWeekPrepaid);
 
-    // ── 3. Expected guests ────────────────────────────────────────────────────
-    const guestAggregation = async (start, end) => {
+    // ── 3. Total payments collected today (money amount) ──────────────────────
+    const paymentAmountAgg = async (start, end) => {
       const result = await Booking.aggregate([
         {
           $match: {
             ...vendorFilter,
-            $or: [
-              { date: { $gte: start, $lte: end } },
-              { "rooms.checkInDate": { $gte: start, $lte: end } },
-            ],
+            paymentStatus: "paid",
+            createdAt: { $gte: start, $lte: end },
+          },
+        },
+        { $group: { _id: null, total: { $sum: "$totalAmount" } } },
+      ]);
+      return result[0]?.total || 0;
+    };
+
+    const [todayPaymentTotal, lastWeekPaymentTotal] = await Promise.all([
+      paymentAmountAgg(todayStart, todayEnd),
+      paymentAmountAgg(lastWeekStart, lastWeekEnd),
+    ]);
+    const paymentTotalChange = percentChange(todayPaymentTotal, lastWeekPaymentTotal);
+
+    // ── 4. Expected guests today ──────────────────────────────────────────────
+    // Vendors use either top-level `date` OR `rooms[].checkInDate`.
+    // Exclude confirmed bookings (status === "confirmed").
+    const guestAggregation = async (start, end) => {
+      // Branch A: bookings with a top-level `date` field (restaurant/club style)
+      const branchA = await Booking.aggregate([
+        {
+          $match: {
+            ...vendorFilter,
+            status: { $ne: "confirmed" },
+            date: { $gte: start, $lte: end },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            guests: { $sum: { $ifNull: ["$guests", 0] } },
+          },
+        },
+      ]);
+
+      // Branch B: bookings with rooms[].checkInDate (hotel style)
+      const branchB = await Booking.aggregate([
+        {
+          $match: {
+            ...vendorFilter,
+            status: { $ne: "confirmed" },
+            date: { $exists: false }, // avoid double-counting
           },
         },
         { $unwind: "$rooms" },
-        { $match: { "rooms.checkInDate": { $gte: start, $lte: end } } },
-        { $group: { _id: null, guests: { $sum: { $ifNull: ["$rooms.guests", 0] } } } },
+        {
+          $match: {
+            "rooms.checkInDate": { $gte: start, $lte: end },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            guests: { $sum: { $ifNull: ["$rooms.guests", 0] } },
+          },
+        },
       ]);
-      return result[0]?.guests || 0;
+
+      return (branchA[0]?.guests || 0) + (branchB[0]?.guests || 0);
     };
 
     const [guestsToday, guestsLastWeek] = await Promise.all([
@@ -100,7 +151,7 @@ export const getBookingSummary = async (req, res) => {
     ]);
     const guestsChange = percentChange(guestsToday, guestsLastWeek);
 
-    // ── 4. Pending payment amount ─────────────────────────────────────────────
+    // ── 5. Pending payment amount (real money total) ──────────────────────────
     const pendingAmountAgg = async (start, end) => {
       const result = await Booking.aggregate([
         {
@@ -121,31 +172,33 @@ export const getBookingSummary = async (req, res) => {
     ]);
     const pendingAmountChange = percentChange(todayPendingAmount, lastWeekPendingAmount);
 
-    // ── 5. Today's reservations ───────────────────────────────────────────────
+    // ── 6. Today's reservations ───────────────────────────────────────────────
     const todaysReservations = await Booking.find({
       ...vendorFilter,
-      $or: [
-        { createdAt: { $gte: todayStart, $lte: todayEnd } },
-      ],
+      createdAt: { $gte: todayStart, $lte: todayEnd },
     })
       .populate("customerId", "name email")
       .populate("vendor", "name")
       .sort({ createdAt: -1 })
       .lean();
 
-    // ── 6. Reservation trends — shaped for chart consumption ─────────────────
-    // Fetch 14 days so we can produce a this-week vs last-week comparison per day.
+    // ── 7. Reservation trends — FIXED ────────────────────────────────────────
     const fourteenDaysAgo = dayjs().subtract(13, "day").startOf("day").toDate();
+    const trendsEnd = dayjs().endOf("day").toDate(); // strictly cap at end of today
 
     const rawTrends = await Booking.aggregate([
-      { $match: { ...vendorFilter, createdAt: { $gte: fourteenDaysAgo } } },
+      {
+        $match: {
+          ...vendorFilter,
+          createdAt: { $gte: fourteenDaysAgo, $lte: trendsEnd },
+        },
+      },
       {
         $group: {
           _id: {
-            day: { $dayOfMonth: "$createdAt" },
+            day:   { $dayOfMonth: "$createdAt" },
             month: { $month: "$createdAt" },
-            year: { $year: "$createdAt" },
-            dayOfWeek: { $dayOfWeek: "$createdAt" }, // 1=Sun … 7=Sat
+            year:  { $year: "$createdAt" },
           },
           count: { $sum: 1 },
         },
@@ -155,34 +208,35 @@ export const getBookingSummary = async (req, res) => {
 
     const DOW_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-    const dailyAll = rawTrends.map((t) => ({
-      date: `${t._id.year}-${String(t._id.month).padStart(2, "0")}-${String(t._id.day).padStart(2, "0")}`,
-      dayOfWeek: t._id.dayOfWeek,
-      count: t.count,
-    }));
+    // Build lookup map: "YYYY-MM-DD" → count
+    const countByDate = {};
+    rawTrends.forEach((t) => {
+      const key = `${t._id.year}-${String(t._id.month).padStart(2, "0")}-${String(t._id.day).padStart(2, "0")}`;
+      countByDate[key] = t.count;
+    });
 
-    const thisWeekDaily = dailyAll.slice(-7);
-    const lastWeekDaily = dailyAll.slice(0, 7);
-
-    // Weekly chart: one bar per day, this week vs last week side by side
-    const weeklyChartData = Array.from({ length: 7 }, (_, i) => {
-      const thisEntry = thisWeekDaily[i];
-      const lastEntry = lastWeekDaily[i];
-      const label = thisEntry
-        ? DOW_LABELS[thisEntry.dayOfWeek - 1]
-        : lastEntry
-        ? DOW_LABELS[lastEntry.dayOfWeek - 1]
-        : `Day ${i + 1}`;
+    // Generate all 14 days explicitly, filling 0 for days with no bookings
+    const allDays = Array.from({ length: 14 }, (_, i) => {
+      const date = dayjs().subtract(13 - i, "day").startOf("day");
+      const key  = date.format("YYYY-MM-DD");
       return {
-        day: label,
-        thisWeek: thisEntry?.count ?? 0,
-        lastWeek: lastEntry?.count ?? 0,
+        date,
+        dayOfWeek: date.day(), // 0=Sun … 6=Sat
+        count: countByDate[key] ?? 0,
       };
     });
 
-    // Monthly chart: just two columns — last week total vs this week total
-    const last7DaysTotal = thisWeekDaily.reduce((s, d) => s + d.count, 0);
-    const prev7DaysTotal = lastWeekDaily.reduce((s, d) => s + d.count, 0);
+    const lastWeekDays = allDays.slice(0, 7); // older week
+    const thisWeekDays = allDays.slice(7);    // current week
+
+    const weeklyChartData = Array.from({ length: 7 }, (_, i) => ({
+      day:      DOW_LABELS[thisWeekDays[i].dayOfWeek],
+      thisWeek: thisWeekDays[i].count,
+      lastWeek: lastWeekDays[i].count,
+    }));
+
+    const last7DaysTotal  = thisWeekDays.reduce((s, d) => s + d.count, 0);
+    const prev7DaysTotal  = lastWeekDays.reduce((s, d) => s + d.count, 0);
 
     const monthlyChartData = [
       { day: "Last week", thisWeek: prev7DaysTotal, lastWeek: 0 },
@@ -191,7 +245,7 @@ export const getBookingSummary = async (req, res) => {
 
     const trendChange = percentChange(last7DaysTotal, prev7DaysTotal);
 
-    // ── 7. Customer frequency ─────────────────────────────────────────────────
+    // ── 8. Customer frequency ─────────────────────────────────────────────────
     const thirtyDaysAgo = dayjs().subtract(30, "day").startOf("day").toDate();
 
     const customerAgg = await Booking.aggregate([
@@ -200,9 +254,9 @@ export const getBookingSummary = async (req, res) => {
     ]);
 
     const returningCustomers = customerAgg.filter((c) => c.count > 1).length;
-    const newCustomers = customerAgg.length - returningCustomers;
+    const newCustomers       = customerAgg.length - returningCustomers;
 
-    // ── 8. Revenue by reservation type (replaces hardcoded frontend data) ─────
+    // ── 9. Revenue by reservation type ───────────────────────────────────────
     const revenueByPeriod = async (start, end) => {
       return Booking.aggregate([
         {
@@ -221,10 +275,9 @@ export const getBookingSummary = async (req, res) => {
       revenueByPeriod(monthStart, now),
     ]);
 
-    // Color tokens sent to the frontend so it can render the bar without hardcoding
     const TYPE_META = {
-      restaurantReservation: { label: "Restaurant", color: "bg-teal-600" },
-      hotelReservation:      { label: "Hotel",      color: "bg-blue-500" },
+      restaurantReservation: { label: "Restaurant",    color: "bg-teal-600"   },
+      hotelReservation:      { label: "Hotel",         color: "bg-blue-500"   },
       clubReservation:       { label: "Club / Lounge", color: "bg-purple-500" },
     };
 
@@ -233,37 +286,32 @@ export const getBookingSummary = async (req, res) => {
       return rows
         .sort((a, b) => b.total - a.total)
         .map((r) => ({
-          category: TYPE_META[r._id]?.label ?? r._id,
-          color: TYPE_META[r._id]?.color ?? "bg-gray-400",
-          amount: r.total,
-          percentage:
-            grandTotal > 0
-              ? parseFloat(((r.total / grandTotal) * 100).toFixed(1))
-              : 0,
+          category:   TYPE_META[r._id]?.label ?? r._id,
+          color:      TYPE_META[r._id]?.color ?? "bg-gray-400",
+          amount:     r.total,
+          percentage: grandTotal > 0
+            ? parseFloat(((r.total / grandTotal) * 100).toFixed(1))
+            : 0,
         }));
     };
 
-    const weeklyRevenueTotal = weeklyRevenueRaw.reduce((s, r) => s + r.total, 0);
+    const weeklyRevenueTotal  = weeklyRevenueRaw.reduce((s, r) => s + r.total, 0);
     const monthlyRevenueTotal = monthlyRevenueRaw.reduce((s, r) => s + r.total, 0);
 
     const revenueData = {
       weekly: {
-        total: weeklyRevenueTotal,
-        // Approximate week-over-week change using monthly ÷ 4 as a prior-week proxy.
-        // For an exact figure you would query the previous 7-day window separately.
+        total:  weeklyRevenueTotal,
         change: percentChange(weeklyRevenueTotal, monthlyRevenueTotal / 4),
-        items: shapeRevenue(weeklyRevenueRaw),
+        items:  shapeRevenue(weeklyRevenueRaw),
       },
       monthly: {
-        total: monthlyRevenueTotal,
-        change: 0, // wire up a prior-month query here if needed
-        items: shapeRevenue(monthlyRevenueRaw),
+        total:  monthlyRevenueTotal,
+        change: 0,
+        items:  shapeRevenue(monthlyRevenueRaw),
       },
     };
 
-    // ── 9. Reservation source ─────────────────────────────────────────────────
-    // Buckets: "Online" (paid online), "Pay at venue" (not_paid/pay_later but
-    // not flagged as walk-in), "Walk-in" (payLater flag explicitly true).
+    // ── 10. Reservation source ────────────────────────────────────────────────
     const sourceAgg = async (start, end) => {
       const result = await Booking.aggregate([
         { $match: { ...vendorFilter, createdAt: { $gte: start, $lte: end } } },
@@ -295,28 +343,19 @@ export const getBookingSummary = async (req, res) => {
         total,
         sources: [
           {
-            name: "Online",
+            name:  "Online",
             count: map["online"],
-            value:
-              total > 0
-                ? parseFloat(((map["online"] / total) * 100).toFixed(1))
-                : 0,
+            value: total > 0 ? parseFloat(((map["online"] / total) * 100).toFixed(1)) : 0,
           },
           {
-            name: "Pay at venue",
+            name:  "Pay at venue",
             count: map["pay-at-venue"],
-            value:
-              total > 0
-                ? parseFloat(((map["pay-at-venue"] / total) * 100).toFixed(1))
-                : 0,
+            value: total > 0 ? parseFloat(((map["pay-at-venue"] / total) * 100).toFixed(1)) : 0,
           },
           {
-            name: "Walk-in",
+            name:  "Walk-in",
             count: map["walk-in"],
-            value:
-              total > 0
-                ? parseFloat(((map["walk-in"] / total) * 100).toFixed(1))
-                : 0,
+            value: total > 0 ? parseFloat(((map["walk-in"] / total) * 100).toFixed(1)) : 0,
           },
         ],
       };
@@ -327,7 +366,7 @@ export const getBookingSummary = async (req, res) => {
       sourceAgg(monthStart, now),
     ]);
 
-    // ── 10. Menu / drinks / rooms breakdowns ──────────────────────────────────
+    // ── 11. Menu / drinks / rooms breakdowns ──────────────────────────────────
     const restaurantMenuBreakdown = await restaurantReservation.aggregate([
       { $match: { ...vendorFilter } },
       { $unwind: "$menus" },
@@ -368,10 +407,10 @@ export const getBookingSummary = async (req, res) => {
       vendorScope: vendorId || "all",
       data: {
         todayStats: [
-          { details: todayCount, change: totalReservationsChange },
-          { details: todayPrepaid, change: prepaidChange },
-          { details: guestsToday, change: guestsChange },
-          { details: todayPendingAmount, change: pendingAmountChange },
+          { details: todayCount,         change: totalReservationsChange }, // total bookings today
+          { details: todayPaymentTotal,  change: paymentTotalChange },      // money collected today
+          { details: guestsToday,        change: guestsChange },            // expected guests today
+          { details: todayPendingAmount, change: pendingAmountChange },     // pending money today
         ],
         todaysReservations,
         hotelRoomsBreakdown,
@@ -379,19 +418,19 @@ export const getBookingSummary = async (req, res) => {
         clubDrinksBreakdown,
         clubCombosBreakdown,
         reservationTrends: {
-          weekly: weeklyChartData,
-          monthly: monthlyChartData,
+          weekly:    weeklyChartData,
+          monthly:   monthlyChartData,
           last7Days: last7DaysTotal,
           prev7Days: prev7DaysTotal,
           trendChange,
         },
         revenueData,
         reservationSource: {
-          weekly: weeklySource,
+          weekly:  weeklySource,
           monthly: monthlySource,
         },
         customerFrequency: {
-          new: newCustomers,
+          new:       newCustomers,
           returning: returningCustomers,
         },
       },
@@ -704,6 +743,8 @@ export const getReservations = async (req, res) => {
     resId,
     limit = 10,
     page = 1,
+    search,
+    status,
   } = req.query;
   try {
     const query = {};
@@ -715,6 +756,15 @@ export const getReservations = async (req, res) => {
     if (vendorId) query.vendor = vendorId;
     if (userId) query.customerId = userId;
     if (resId) query.resId = resId;
+    if (status) query.reservationStatus = status;
+    if (search) {
+      query.$or = [
+        { customerName: { $regex: search, $options: "i" } },
+        { customerEmail: { $regex: search, $options: "i" } },
+        { location: { $regex: search, $options: "i" } },
+        { resId: { $regex: search, $options: "i" } },
+      ];
+    }
 
     const reservations = await Booking.find(query)
       .populate({ path: "menus.menu" })
