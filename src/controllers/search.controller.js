@@ -1,73 +1,47 @@
- import { Vendor, HotelVendor, RestaurantVendor, ClubVendor } from "../models/vendor.model.js";
-import { Menu, MenuItem } from "../models/menu.model.js";
-import BottleSet from "../models/bottleSet.model.js";
-import Drink from "../models/drink.model.js";
-import { filterVendorData } from "../utils/vendor.js";
+/**
+ * search.controller.js
+ *
+ * Key changes:
+ *  1. Uses MongoDB $text search (weighted index) for main vendor query
+ *  2. Suggestions support cuisine/genre/amenity filters
+ *  3. Minimal filter application — only active params touch the query
+ *  4. Fixed $lookup collection names and foreign keys (from previous fix)
+ *  5. Sub-collection scoring preserved
+ */
 
+import mongoose from "mongoose";
+import PopularSearch from "../models/popularSearch.model.js";
+import { Vendor, HotelVendor, RestaurantVendor, ClubVendor } from "../models/vendor.model.js";
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 const getModel = (type) => {
   if (!type) return Vendor;
   switch (type.toLowerCase()) {
-    case "hotel":
-    case "hotels":
-      return HotelVendor;
-    case "restaurant":
-    case "restaurants":
-      return RestaurantVendor;
-    case "club":
-    case "clubs":
-      return ClubVendor;
-    default:
-      return Vendor;
+    case "hotel":      case "hotels":      return HotelVendor;
+    case "restaurant": case "restaurants": return RestaurantVendor;
+    case "club":       case "clubs":       return ClubVendor;
+    default: return Vendor;
   }
 };
 
-// Helper to split query into words for better matching
-const splitQueryWords = (q) => {
-  return q.toLowerCase().trim().split(/\s+/).filter(word => word.length > 1);
-};
+const toInt   = (val, fallback) => { const n = parseInt(val, 10); return isNaN(n) ? fallback : n; };
+const toFloat = (val, fallback) => { const n = parseFloat(val);   return isNaN(n) ? fallback : n; };
 
-// Helper to check if query looks like time for clubs
-const parseTimeQuery = (q, day) => {
-  const timeMatch = q.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
-  if (timeMatch) {
-    const hour = parseInt(timeMatch[1]);
-    const min = timeMatch[2] ? parseInt(timeMatch[2]) : 0;
-    const isPM = timeMatch[3].toLowerCase() === 'pm';
-    let totalMin = (hour % 12) * 60 + min;
-    if (isPM && hour !== 12) totalMin += 12 * 60;
-    if (!isPM && hour === 12) totalMin = min;
-    
-    return {
-      day,
-      currentMinutes: totalMin,
-      isTimeQuery: true
-    };
-  }
-  return null;
-};
-
-
-const toInt = (val, fallback) => {
-  const n = parseInt(val, 10);
-  return isNaN(n) ? fallback : n;
-};
-
-const toFloat = (val, fallback) => {
-  const n = parseFloat(val);
-  return isNaN(n) ? fallback : n;
-};
-
-// Comma-separated param → trimmed lowercase array
+/** Split a comma-separated string → trimmed lowercase array, empty filtered */
 const toArr = (val) =>
   val ? val.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean) : [];
 
-// "Open Now" helper — checks openingHours array on the vendor
-const buildOpenNowFilter = () => {
-  const now = new Date();
-  const days = ["sunday","monday","tuesday","wednesday","thursday","friday","saturday"];
-  const day = days[now.getDay()];
-  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+/** Only assign a filter key when the value is non-empty — avoids $in:[] wiping results */
+const setIf    = (obj, key, arr, op = "$in")  => { if (arr.length)    obj[key] = { [op]: arr }; };
+const setIfVal = (obj, key, val)               => { if (val != null)   obj[key] = val; };
+const setIfStr = (obj, key, val)               => { if (val?.trim())   obj[key] = val.trim().toLowerCase(); };
+const setIfBool= (obj, key, val)               => { if (val === "true") obj[key] = true; };
 
+const buildOpenNowFilter = () => {
+  const now  = new Date();
+  const days = ["sunday","monday","tuesday","wednesday","thursday","friday","saturday"];
+  const day  = days[now.getDay()];
+  const cur  = now.getHours() * 60 + now.getMinutes();
   return {
     openingHours: {
       $elemMatch: {
@@ -75,28 +49,8 @@ const buildOpenNowFilter = () => {
         isClosed: { $ne: true },
         $expr: {
           $and: [
-            {
-              $lte: [
-                {
-                  $add: [
-                    { $multiply: [{ $toInt: { $substr: ["$open", 0, 2] } }, 60] },
-                    { $toInt: { $substr: ["$open", 3, 2] } },
-                  ],
-                },
-                currentMinutes,
-              ],
-            },
-            {
-              $gte: [
-                {
-                  $add: [
-                    { $multiply: [{ $toInt: { $substr: ["$close", 0, 2] } }, 60] },
-                    { $toInt: { $substr: ["$close", 3, 2] } },
-                  ],
-                },
-                currentMinutes,
-              ],
-            },
+            { $lte: [{ $add: [{ $multiply: [{ $toInt: { $substr: ["$open",  0, 2] } }, 60] }, { $toInt: { $substr: ["$open",  3, 2] } }] }, cur] },
+            { $gte: [{ $add: [{ $multiply: [{ $toInt: { $substr: ["$close", 0, 2] } }, 60] }, { $toInt: { $substr: ["$close", 3, 2] } }] }, cur] },
           ],
         },
       },
@@ -104,57 +58,185 @@ const buildOpenNowFilter = () => {
   };
 };
 
-// ─────────────────────────────────────────────────────────────────
-// SELECT fields per vendor type — only fetch what the card needs
-// ─────────────────────────────────────────────────────────────────
-const BASE_SELECT =
-  "businessName vendorType vendorTypeCategory address profileImages rating reviews priceRange isVerified acceptsOnlineBooking businessDescription specialCategory branch";
-
+const BASE_SELECT = "businessName vendorType vendorTypeCategory address profileImages rating reviews priceRange isVerified acceptsOnlineBooking businessDescription specialCategory branch";
 const TYPE_SELECT = {
-  restaurant:
-    "cuisines diningStyles dietaryOptions seatOptions occasionTags mealTimes reservationPolicy hasParking hasOutdoorSeating openingTime closingTime openingHours",
-  hotel:
-    "totalBooked offer policies starRating propertyType amenities mealPlan cancellationPolicy instantBook petFriendly payAtProperty accessibilityFeatures checkInTime checkOutTime openingHours",
-  club:
-    "venueType musicGenres livePerformanceTypes dressCode agePolicy entryFee bottleServiceMin hasVIPTables hasGuestlist hasOutdoorArea hasSmokingArea hasParking happyHour openingTime closingTime openingHours slots categories offer",
+  restaurant: "cuisines diningStyles dietaryOptions seatOptions occasionTags mealTimes reservationPolicy hasParking hasOutdoorSeating openingTime closingTime openingHours",
+  hotel:      "totalBooked offer policies starRating propertyType amenities mealPlan cancellationPolicy instantBook petFriendly payAtProperty accessibilityFeatures checkInTime checkOutTime openingHours",
+  club:       "venueType musicGenres livePerformanceTypes dressCode agePolicy entryFee bottleServiceMin hasVIPTables hasGuestlist hasOutdoorArea hasSmokingArea hasParking happyHour openingTime closingTime openingHours slots categories offer",
 };
-
 const buildSelect = (type) =>
   type && TYPE_SELECT[type.toLowerCase()]
     ? `${BASE_SELECT} ${TYPE_SELECT[type.toLowerCase()]}`
     : BASE_SELECT;
 
-// ─────────────────────────────────────────────────────────────────
-// 1. SUGGESTIONS
-//    GET /api/search/suggestions?q=eko&type=hotel
-// ─────────────────────────────────────────────────────────────────
+/**
+ * Build the shared filter object from all query params.
+ * Only keys with actual values are added — minimal footprint.
+ */
+const buildFilter = (params, base = {}) => {
+  const {
+    type, city, minRating, minPrice, maxPrice, openNow,
+    // Restaurant
+    cuisines, dietaryOptions, diningStyle, seatOptions,
+    occasionTags, mealTimes, reservationPolicy, hasParking, hasOutdoorSeating,
+    // Hotel
+    starRating, propertyType, amenities, mealPlan, cancellationPolicy,
+    instantBook, petFriendly, accessibilityFeatures,
+    // Club
+    venueType, musicGenres, livePerformanceTypes, dressCode, agePolicy,
+    entryFee, hasVIPTables, hasGuestlist, hasOutdoorArea,
+  } = params;
+
+  const f = { ...base };
+  const resolvedType = type?.toLowerCase();
+
+  if (city?.trim()) f.address = { $regex: city.trim(), $options: "i" };
+
+  if (minRating) {
+    f.rating = { $gte: toFloat(minRating, 0) };
+  }
+  if (minPrice || maxPrice) {
+    f.priceRange = {};
+    if (minPrice) f.priceRange.$gte = toInt(minPrice, 1);
+    if (maxPrice) f.priceRange.$lte = toInt(maxPrice, 4);
+  }
+  if (openNow === "true") Object.assign(f, buildOpenNowFilter());
+
+  // ── Restaurant ─────────────────────────────────────────────────────────────
+  if (!resolvedType || resolvedType === "restaurant") {
+    setIf(f, "cuisines",          toArr(cuisines));
+    setIf(f, "dietaryOptions",    toArr(dietaryOptions), "$all"); // must match ALL selected dietary tags
+    setIf(f, "seatOptions",       toArr(seatOptions));
+    setIf(f, "occasionTags",      toArr(occasionTags));
+    setIf(f, "mealTimes",         toArr(mealTimes));
+    setIfStr(f,  "diningStyles",       diningStyle);
+    setIfStr(f,  "reservationPolicy",  reservationPolicy);
+    setIfBool(f, "hasParking",         hasParking);
+    setIfBool(f, "hasOutdoorSeating",  hasOutdoorSeating);
+  }
+
+  // ── Hotel ──────────────────────────────────────────────────────────────────
+  if (!resolvedType || resolvedType === "hotel") {
+    if (starRating) f.starRating = toInt(starRating, undefined);
+    setIfStr(f,  "propertyType",         propertyType);
+    setIf(f,     "amenities",            toArr(amenities), "$all"); // must have ALL selected amenities
+    setIfStr(f,  "mealPlan",             mealPlan);
+    setIfStr(f,  "cancellationPolicy",   cancellationPolicy);
+    setIfBool(f, "instantBook",          instantBook);
+    setIfBool(f, "petFriendly",          petFriendly);
+    setIf(f,     "accessibilityFeatures", toArr(accessibilityFeatures), "$all");
+  }
+
+  // ── Club ───────────────────────────────────────────────────────────────────
+  if (!resolvedType || resolvedType === "club") {
+    setIfStr(f, "venueType",  venueType);
+    setIf(f, "musicGenres",          toArr(musicGenres));
+    setIf(f, "livePerformanceTypes", toArr(livePerformanceTypes));
+    setIfStr(f, "dressCode",  dressCode);
+    setIfVal(f, "agePolicy",  agePolicy || null);
+    if (entryFee === "0")      f.entryFee = 0;
+    else if (entryFee === "paid") f.entryFee = { $gt: 0 };
+    setIfBool(f, "hasVIPTables",   hasVIPTables);
+    setIfBool(f, "hasGuestlist",   hasGuestlist);
+    setIfBool(f, "hasOutdoorArea", hasOutdoorArea);
+  }
+
+  return f;
+};
+
+
+// ─── 1. SUGGESTIONS ────────────────────────────────────────────────────────────
 export const getSearchSuggestions = async (req, res) => {
   try {
-    const { q, type } = req.query;
+    const { q, type, cuisines, musicGenres, amenities } = req.query;
+    if (!q || q.trim().length < 2) return res.status(200).json({ success: true, suggestions: [] });
 
-    if (!q || q.trim().length < 2) {
-      return res.status(200).json({ success: true, suggestions: [] });
-    }
+    const typeLower  = type?.toLowerCase();
+    const typeFilter = typeLower && ["hotel","restaurant","club"].includes(typeLower) ? { vendorType: typeLower } : {};
 
+    // Prefer $text search (uses weighted index: businessName×10, category×5 …)
+    // Fall back to $regex for address (not in text index)
+    const textFilter = {
+      isVerified  : true,
+      isOnboarded : true,
+      ...typeFilter,
+      $text: { $search: q.trim() },
+    };
+
+    // Apply any active attribute filters to suggestions as well
+    const attrFilter = buildFilter(
+      { type, cuisines, musicGenres, amenities },
+      { isVerified: true, isOnboarded: true, ...typeFilter }
+    );
+
+    // Also capture address partial matches that $text won't hit
+    const addressFilter = {
+      isVerified  : true,
+      isOnboarded : true,
+      ...typeFilter,
+      ...attrFilter,
+      address: { $regex: q.trim(), $options: "i" },
+    };
+
+    // ── Sub-collection matches ────────────────────────────────────────────────
     const regex = new RegExp(q.trim(), "i");
 
-    const filter = {
-      isVerified: true,
+    const [menuItemIds, drinkIds, roomIds, tableIds] = await Promise.all([
+      (!typeLower || typeLower === "restaurant")
+        ? mongoose.model("MenuItem")
+            .find({ $or: [{ name: regex }, { description: regex }, { category: regex }] }, "vendor")
+            .lean().then((r) => r.map((d) => d.vendor))
+        : [],
+
+      (!typeLower || typeLower === "club")
+        ? mongoose.model("Drink")
+            .find({ $or: [{ name: regex }, { category: regex }] }, "clubId")
+            .lean().then((r) => r.map((d) => d.clubId))
+        : [],
+
+      (!typeLower || typeLower === "hotel")
+        ? mongoose.model("RoomType")
+            .find({ $or: [{ name: regex }, { description: regex }, { roomCategory: regex }] }, "hotelId")
+            .lean().then((r) => r.map((d) => d.hotelId))
+        : [],
+
+      (!typeLower || typeLower === "club")
+        ? mongoose.model("Table")
+            .find({ $or: [{ name: regex }, { description: regex }, { category: regex }] }, "clubId")
+            .lean().then((r) => r.map((d) => d.clubId))
+        : [],
+    ]);
+
+    const subIds = [...menuItemIds, ...drinkIds, ...roomIds, ...tableIds];
+
+    // ── Combined query (text match OR address OR sub-collection vendor) ───────
+    const combinedFilter = {
+      isVerified  : true,
+      isOnboarded : true,
+      ...typeFilter,
+      // Spread any attribute filters (cuisines, musicGenres etc.)
+      ...Object.fromEntries(
+        Object.entries(attrFilter).filter(([k]) =>
+          !["isVerified","isOnboarded","vendorType"].includes(k)
+        )
+      ),
       $or: [
-        { businessName: regex },
-        { vendorTypeCategory: regex },
-        { address: regex },
+        { $text: { $search: q.trim() } },
+        { address: { $regex: q.trim(), $options: "i" } },
+        ...(subIds.length ? [{ _id: { $in: subIds } }] : []),
       ],
     };
 
-    if (type && ["hotel", "restaurant", "club"].includes(type.toLowerCase())) {
-      filter.vendorType = type.toLowerCase();
-    }
-
-    const suggestions = await Vendor.find(filter)
-      .select("businessName vendorType vendorTypeCategory address profileImages rating")
+    const suggestions = await Vendor.find(combinedFilter)
+      .select("businessName vendorType vendorTypeCategory address profileImages rating score cuisines musicGenres amenities")
+      // $text gives us a textScore we can sort by
+      .sort({ score: { $meta: "textScore" }, rating: -1 })
       .limit(8)
       .lean();
+
+    // ── Popular search tracking ───────────────────────────────────────────────
+    const searchKey = { word: q.trim().toLowerCase(), type: typeLower || "general" };
+    await PopularSearch.findOneAndUpdate(searchKey, { $inc: { totalSearches: 1 } }, { upsert: true });
 
     return res.status(200).json({ success: true, suggestions });
   } catch (error) {
@@ -163,323 +245,257 @@ export const getSearchSuggestions = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────
-// 2. MAIN SEARCH
-//    GET /api/search?q=...&type=...&city=...
-//    Shared filters: minRating, minPrice, maxPrice, sort, page, limit, latitude, longitude, openNow
-//    Restaurant: cuisines, dietaryOptions, diningStyle, seatOptions, occasionTags, mealTimes, reservationPolicy, hasParking, hasOutdoorSeating
-//    Hotel:      starRating, propertyType, amenities, mealPlan, cancellationPolicy, instantBook, petFriendly, accessibilityFeatures
-//    Club:       venueType, musicGenres, livePerformanceTypes, dressCode, agePolicy, entryFee, hasVIPTables, hasGuestlist, hasOutdoorArea
-// ─────────────────────────────────────────────────────────────────
+
+// ─── 2. MAIN SEARCH ────────────────────────────────────────────────────────────
 export const search = async (req, res) => {
-  let model;
-  let match = {};
-  let finalQ = '';
-
+  let pageNum = 1;
   try {
-    const {
-      q: queryQ, search, type, city,
-      minRating, minPrice, maxPrice,
-      sort = "rating", page = 1, limit = 12,
-      latitude, longitude, openNow,
+    const { q: queryQ, search: searchQ, type, sort = "rating", page = 1, limit = 12, latitude, longitude } = req.query;
 
-      // Restaurant
-      cuisines, dietaryOptions, diningStyle,
-      seatOptions, occasionTags, mealTimes,
-      reservationPolicy, hasParking, hasOutdoorSeating,
-
-      // Hotel
-      starRating, propertyType, amenities, mealPlan,
-      cancellationPolicy, instantBook, petFriendly,
-      accessibilityFeatures,
-
-      // Club
-      venueType, musicGenres, livePerformanceTypes,
-      dressCode, agePolicy, entryFee,
-      hasVIPTables, hasGuestlist, hasOutdoorArea,
-    } = req.query;
-
-    const pageNum  = Math.max(1, toInt(page, 1));
-    const limitNum = Math.min(50, Math.max(1, toInt(limit, 12)));
-    const skip     = (pageNum - 1) * limitNum;
-    model = getModel(type);
-
-    // ── Base filter ───────────────────────────────────────────────
-    match = { isVerified: true };
-    
-    // Build complete match filter first
-    const fullMatch = { ...match };
-
-    finalQ = (queryQ || search || '').trim();
-    if (finalQ) {
-      // Always use reliable regex matching (no text index dependency)
-      const regex = new RegExp(finalQ, 'i');
-      fullMatch.$or = [
-        { businessName: regex },
-        { vendorTypeCategory: regex },
-        { address: regex },
-        { businessDescription: regex }
-      ];
-    }
-    console.log("[search] Query:", finalQ, "Model:", model.modelName, "Regex match active:", !!finalQ);
-
-    // regexPattern now always available
-    const regexPattern = finalQ ? new RegExp(finalQ, 'i') : /^$/;
-
-    // Apply shared filters
-    if (city && city.trim()) {
-      fullMatch.address = { $regex: city.trim(), $options: "i" };
-    }
-
-    if (minRating) {
-      fullMatch.rating = { $gte: toFloat(minRating, 0) };
-    }
-
-    if (minPrice || maxPrice) {
-      fullMatch.priceRange = {};
-      if (minPrice) fullMatch.priceRange.$gte = toInt(minPrice, 1);
-      if (maxPrice) fullMatch.priceRange.$lte = toInt(maxPrice, 4);
-    }
-
-    let geoNearStage;
-
-    if (openNow === "true") {
-      Object.assign(fullMatch, buildOpenNowFilter());
-    }
-
-    // ── Restaurant-specific filters ───────────────────────────────
+    pageNum         = Math.max(1, toInt(page, 1));
+    const limitNum  = Math.min(50, Math.max(1, toInt(limit, 12)));
+    const skip      = (pageNum - 1) * limitNum;
+    const model     = getModel(type);
     const resolvedType = type?.toLowerCase();
+    const finalQ    = (queryQ || searchQ || "").trim();
 
-    if (!resolvedType || resolvedType === "restaurant") {
-      const cuisinesArr = toArr(cuisines);
-      if (cuisinesArr.length) fullMatch.cuisines = { $in: cuisinesArr };
+    // ── Build filter ──────────────────────────────────────────────────────────
+    const baseMatch = { isVerified: true };
+    const fullMatch = buildFilter(req.query, baseMatch);
 
-      const dietaryArr = toArr(dietaryOptions);
-      if (dietaryArr.length) fullMatch.dietaryOptions = { $all: dietaryArr };
-
-      if (diningStyle) fullMatch.diningStyles = diningStyle.toLowerCase();
-
-      const seatArr = toArr(seatOptions);
-      if (seatArr.length) fullMatch.seatOptions = { $in: seatArr };
-
-      const occasionArr = toArr(occasionTags);
-      if (occasionArr.length) fullMatch.occasionTags = { $in: occasionArr };
-
-      const mealTimesArr = toArr(mealTimes);
-      if (mealTimesArr.length) fullMatch.mealTimes = { $in: mealTimesArr };
-
-      if (reservationPolicy) fullMatch.reservationPolicy = reservationPolicy.toLowerCase();
-      if (hasParking === "true") fullMatch.hasParking = true;
-      if (hasOutdoorSeating === "true") fullMatch.hasOutdoorSeating = true;
+    // Text search: use $text when query provided (hits weighted index),
+    // otherwise fall back to regex for broad partial matches
+    if (finalQ) {
+      // $text is AND-based across words — good for "nigerian restaurant lekki"
+      fullMatch.$text = { $search: finalQ };
     }
 
-    // ── Hotel-specific filters ────────────────────────────────────
-    if (!resolvedType || resolvedType === "hotel") {
-      if (starRating) fullMatch.starRating = toInt(starRating, undefined);
-
-      if (propertyType) fullMatch.propertyType = propertyType.toLowerCase();
-
-      const amenitiesArr = toArr(amenities);
-      if (amenitiesArr.length) fullMatch.amenities = { $all: amenitiesArr };
-
-      if (mealPlan) fullMatch.mealPlan = mealPlan.toLowerCase();
-      if (cancellationPolicy) fullMatch.cancellationPolicy = cancellationPolicy.toLowerCase();
-      if (instantBook === "true") fullMatch.instantBook = true;
-      if (petFriendly === "true") fullMatch.petFriendly = true;
-
-      const accessibilityArr = toArr(accessibilityFeatures);
-      if (accessibilityArr.length) fullMatch.accessibilityFeatures = { $all: accessibilityArr };
-    }
-
-    // ── Club-specific filters ─────────────────────────────────────
-    if (!resolvedType || resolvedType === "club") {
-      if (venueType) fullMatch.venueType = venueType.toLowerCase();
-
-      const genresArr = toArr(musicGenres);
-      if (genresArr.length) fullMatch.musicGenres = { $in: genresArr };
-
-      const performancesArr = toArr(livePerformanceTypes);
-      if (performancesArr.length) fullMatch.livePerformanceTypes = { $in: performancesArr };
-
-      if (dressCode) fullMatch.dressCode = dressCode.toLowerCase();
-      if (agePolicy) fullMatch.agePolicy = agePolicy;
-
-      if (entryFee === "0") fullMatch.entryFee = 0;
-      else if (entryFee === "paid") fullMatch.entryFee = { $gt: 0 };
-
-      if (hasVIPTables === "true") fullMatch.hasVIPTables = true;
-      if (hasGuestlist === "true") fullMatch.hasGuestlist = true;
-      if (hasOutdoorArea === "true") fullMatch.hasOutdoorArea = true;
-    }
-
+    // ── Geo stage ─────────────────────────────────────────────────────────────
+    let geoNearStage = null;
     if (latitude && longitude) {
-      const coords = [toFloat(longitude), toFloat(latitude)];
       const geoQuery = { ...fullMatch };
       delete geoQuery.location;
+      // $text and $geoNear cannot coexist in the same pipeline stage.
+      // When geo is active, switch text search to $or regex so it still works.
+      if (geoQuery.$text) {
+        delete geoQuery.$text;
+        const regex = new RegExp(finalQ, "i");
+        geoQuery.$or = [
+          { businessName        : regex },
+          { vendorTypeCategory  : regex },
+          { address             : regex },
+          { businessDescription : regex },
+        ];
+      }
       geoNearStage = {
         $geoNear: {
-          near: { type: "Point", coordinates: coords },
-          distanceField: "distance",
-          spherical: true,
-          query: geoQuery,
-          key: "location",
-          maxDistance: 10000,
+          near          : { type: "Point", coordinates: [toFloat(longitude), toFloat(latitude)] },
+          distanceField : "distance",
+          spherical     : true,
+          query         : geoQuery,
+          key           : "location",
+          maxDistance   : 15000,
         },
       };
-      delete fullMatch.location;
     }
 
-    // ── Sort ──────────────────────────────────────────────────────
-    let sortObj = {};
-    if (!latitude || !longitude) {
+    // ── Sort ──────────────────────────────────────────────────────────────────
+    let sortStage;
+    if (geoNearStage) {
+      // Proximity-first when coords supplied
+      sortStage = { distance: 1, totalScore: -1, rating: -1 };
+    } else if (finalQ) {
+      // Text-relevance first when searching
+      sortStage = { textScore: { $meta: "textScore" }, totalScore: -1, rating: -1 };
+    } else {
       switch (sort) {
-        case "rating":     sortObj = { rating: -1, reviews: -1 }; break;
-        case "price_asc":  sortObj = { priceRange: 1 };           break;
-        case "price_desc": sortObj = { priceRange: -1 };          break;
-        case "newest":     sortObj = { createdAt: -1 };           break;
-        default:           sortObj = { rating: -1, reviews: -1 };
+        case "price_asc":  sortStage = { priceRange: 1 };   break;
+        case "price_desc": sortStage = { priceRange: -1 };  break;
+        case "newest":     sortStage = { createdAt: -1 };   break;
+        default:           sortStage = { rating: -1, reviews: -1 };
       }
     }
 
-    // ── Aggregation pipeline with $text score + menu boost ──────
+    const subRegex = finalQ ? new RegExp(finalQ, "i") : null;
+
+    // ── Pipeline ──────────────────────────────────────────────────────────────
     const pipeline = [
       ...(geoNearStage ? [geoNearStage] : [{ $match: fullMatch }]),
+
+      // Inject textScore as a field so we can $sort by it later
+      ...(finalQ && !geoNearStage
+        ? [{ $addFields: { textScore: { $meta: "textScore" } } }]
+        : []
+      ),
+
+      // ── Sub-collection joins ───────────────────────────────────────────────
       {
         $lookup: {
-          from: "menuitems",
-          localField: "_id",
-          foreignField: "vendor",
-          as: "menuItems"
-        }
+          from         : "menuitems",  // MenuItem model → "menuitems"
+          localField   : "_id",
+          foreignField : "vendor",     // MenuItem.vendor
+          as           : "_menuItems",
+        },
       },
       {
-        $addFields: {
-          menuMatchCount: {
-            $size: {
-              $filter: {
-                input: "$menuItems",
-                cond: { $regexMatch: { input: "$$this.name", regex: regexPattern } }
-              }
+        $lookup: {
+          from         : "roomtypes",  // RoomType model → "roomtypes"
+          localField   : "_id",
+          foreignField : "hotelId",    // RoomType.hotelId
+          as           : "_rooms",
+        },
+      },
+      {
+        $lookup: {
+          from         : "drinks",     // Drink model → "drinks"
+          localField   : "_id",
+          foreignField : "clubId",     // Drink.clubId
+          as           : "_drinks",
+        },
+      },
+      {
+        $lookup: {
+          from         : "tables",     // Table model → "tables"
+          localField   : "_id",
+          foreignField : "clubId",     // Table.clubId
+          as           : "_tables",
+        },
+      },
+
+      // ── Sub-collection match scoring ───────────────────────────────────────
+      {
+        $addFields: subRegex
+          ? {
+              _menuScore: {
+                $size: {
+                  $filter: {
+                    input: "$_menuItems",
+                    cond : { $regexMatch: { input: { $ifNull: ["$$this.name", ""] }, regex: subRegex } },
+                  },
+                },
+              },
+              _roomScore: {
+                $size: {
+                  $filter: {
+                    input: "$_rooms",
+                    cond : { $regexMatch: { input: { $ifNull: ["$$this.name", ""] }, regex: subRegex } },
+                  },
+                },
+              },
+              _drinkScore: {
+                $size: {
+                  $filter: {
+                    input: "$_drinks",
+                    cond : { $regexMatch: { input: { $ifNull: ["$$this.name", ""] }, regex: subRegex } },
+                  },
+                },
+              },
+              _tableScore: {
+                $size: {
+                  $filter: {
+                    input: "$_tables",
+                    cond : { $regexMatch: { input: { $ifNull: ["$$this.name", ""] }, regex: subRegex } },
+                  },
+                },
+              },
             }
-          }
-        }
+          : { _menuScore: 0, _roomScore: 0, _drinkScore: 0, _tableScore: 0 },
       },
       {
         $addFields: {
-          totalScore: { $multiply: [ "$menuMatchCount", 10 ] }
-        }
+          totalScore: {
+            $add: [
+              { $multiply: ["$_menuScore",  8] },
+              { $multiply: ["$_roomScore",  8] },
+              { $multiply: ["$_drinkScore", 8] },
+              { $multiply: ["$_tableScore", 8] },
+            ],
+          },
+        },
       },
-      { $sort: { totalScore: -1, rating: -1, reviews: -1 } },
+
+      { $sort: sortStage },
       { $skip: skip },
       { $limit: limitNum },
-      { $project: buildSelect(resolvedType).split(" ").reduce((obj, field) => ({ ...obj, [field]: 1 }), {}) }
+
+      // Project only the fields needed — drop internal _* fields
+      {
+        $project: {
+          ...buildSelect(resolvedType).split(" ").reduce((o, f) => ({ ...o, [f]: 1 }), {}),
+          ...(finalQ && !geoNearStage ? { textScore: 1 } : {}),
+          distance   : geoNearStage ? 1 : 0,
+          totalScore : 1,
+        },
+      },
     ];
 
-    const vendors = await model.aggregate(pipeline);
+    // ── Execute ───────────────────────────────────────────────────────────────
+    const countMatch = { ...fullMatch };
+    // $text can't be used in countMatch for a separate aggregate — reuse fullMatch safely
+    const [vendors, countResult] = await Promise.all([
+      model.aggregate(pipeline),
+      model.aggregate([{ $match: countMatch }, { $count: "total" }]),
+    ]);
 
-    const countPipeline = [
-      { $match: fullMatch }
-    ];
-    const countResult = await model.aggregate([...countPipeline, { $count: "total" } ]);
     const totalCount = countResult[0]?.total || 0;
-
     const totalPages = Math.ceil(totalCount / limitNum);
 
-    // ── Facets ────────────────────────────────────────────────────
-    const facetMatch = {
-      isVerified: true,
-      isVisible: true,
-      ...(finalQ && fullMatch.$or ? { $or: fullMatch.$or } : {}),
-    };
-
+    // ── Facets (for filter sidebar) ───────────────────────────────────────────
+    // Facets intentionally use a minimal match (no active filters) so counts
+    // reflect what's available, not what's already filtered.
     const facets = await Vendor.aggregate([
-      { $match: facetMatch },
+      { $match: { isVerified: true, isVisible: true } },
       {
         $facet: {
-          byType: [
-            { $group: { _id: "$vendorType", count: { $sum: 1 } } },
-            { $sort: { count: -1 } },
-          ],
-          byPriceRange: [
-            { $group: { _id: "$priceRange", count: { $sum: 1 } } },
-            { $sort: { _id: 1 } },
-          ],
-          ratingBuckets: [
-            {
-              $bucket: {
-                groupBy: "$rating",
-                boundaries: [0, 3, 4, 4.5, 5.1],
-                default: "unrated",
-                output: { count: { $sum: 1 } },
-              },
-            },
-          ],
+          byType        : [{ $group: { _id: "$vendorType", count: { $sum: 1 } } }, { $sort: { count: -1 } }],
+          byCuisine     : [{ $unwind: "$cuisines" }, { $group: { _id: "$cuisines", count: { $sum: 1 } } }, { $sort: { count: -1 } }],
+          byMusicGenre  : [{ $unwind: "$musicGenres" }, { $group: { _id: "$musicGenres", count: { $sum: 1 } } }, { $sort: { count: -1 } }],
+          byAmenity     : [{ $unwind: "$amenities" }, { $group: { _id: "$amenities", count: { $sum: 1 } } }, { $sort: { count: -1 } }],
+          byPriceRange  : [{ $group: { _id: "$priceRange", count: { $sum: 1 } } }, { $sort: { _id: 1 } }],
+          ratingBuckets : [{ $bucket: { groupBy: "$rating", boundaries: [0,3,4,4.5,5.1], default: "unrated", output: { count: { $sum: 1 } } } }],
         },
       },
     ]);
 
     return res.status(200).json({
-      success: true,
-      data: vendors,
-      pagination: {
-        currentPage: pageNum,
+      success    : true,
+      data       : vendors,
+      pagination : {
+        currentPage : pageNum,
         totalPages,
         totalCount,
-        limit: limitNum,
-        hasNextPage: pageNum < totalPages,
-        hasPrevPage: pageNum > 1,
+        limit       : limitNum,
+        hasNextPage : pageNum < totalPages,
+        hasPrevPage : pageNum > 1,
       },
-      facets: facets[0] || {},
-      meta: { q: finalQ, type: resolvedType, sort, city },
+      facets : facets[0] || {},
+      meta   : { q: finalQ, type: resolvedType, sort },
     });
   } catch (error) {
-    console.error("[search] FULL ERROR:", {
-      message: error.message,
-      stack: error.stack,
-      query: finalQ,
-      model: model?.modelName || null,
-      match
-    });
-    
-    // Graceful degradation for any search errors
-    if (error.message.includes('text index') || error.message.includes('$text') || error.message.includes('text score metadata')) {
-      console.warn("[search] Search error (likely missing text index), using regex matching:", error.message);
-      return res.status(200).json({
-        success: true, 
-        data: [],
-        pagination: { currentPage: pageNum, totalPages: 0, totalCount: 0, limit: limitNum },
-        facets: {},
-        meta: { warning: "Search using reliable regex matching (text index optional)" }
-      });
-    }
-    
-    return res.status(500).json({ 
-      success: false, 
-      message: `Search failed: ${error.message}`,
-      ...(process.env.NODE_ENV === 'development' && { error: error.message, stack: error.stack })
-    });
+    console.error("[search]", error.message);
+    return res.status(500).json({ success: false, message: `Search failed: ${error.message}` });
   }
 };
 
-// ─────────────────────────────────────────────────────────────────
-// 3. TRENDING
-//    GET /api/search/trending?type=restaurant
-// ─────────────────────────────────────────────────────────────────
+
+// ─── 3. TRENDING ──────────────────────────────────────────────────────────────
 export const getTrending = async (req, res) => {
   try {
     const { type, limit = 6 } = req.query;
-
+    const hour = new Date().getHours();
     const filter = { isVerified: true };
-    if (type && ["hotel", "restaurant", "club"].includes(type.toLowerCase())) {
+    if (!type) {
+      if      (hour >= 21 || hour < 4)  filter.vendorType = "club";
+      else if (hour >= 11 && hour < 16) filter.vendorType = "restaurant";
+      else if (hour < 11)               filter.vendorType = "hotel";
+    } else if (["hotel","restaurant","club"].includes(type.toLowerCase())) {
       filter.vendorType = type.toLowerCase();
     }
-
     const trending = await Vendor.find(filter)
-      .select("businessName vendorType address profileImages rating reviews priceRange")
+      .select("businessName vendorType address profileImages rating reviews priceRange vendorTypeCategory")
       .sort({ rating: -1, reviews: -1 })
       .limit(toInt(limit, 6))
       .lean();
-
     return res.status(200).json({ success: true, trending });
   } catch (error) {
     console.error("[getTrending]", error);
@@ -487,52 +503,74 @@ export const getTrending = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────
-// 4. DISCOVER (home page sections)
-//    GET /api/search/discover?latitude=6.5&longitude=3.3
-// ─────────────────────────────────────────────────────────────────
+
+// ─── 4. DISCOVER ──────────────────────────────────────────────────────────────
 export const discover = async (req, res) => {
   try {
-    const { latitude, longitude } = req.query;
+    const { latitude, longitude, type } = req.query;
+    const baseFilter  = { isOnboarded: true, isVerified: true };
+    const selectBase  = "businessName vendorType address profileImages rating reviews priceRange vendorTypeCategory isVerified";
+    const hasCoords   = latitude && longitude;
+    const nearbyFilter = hasCoords
+      ? { ...baseFilter, location: { $near: { $geometry: { type: "Point", coordinates: [toFloat(longitude), toFloat(latitude)] }, $maxDistance: 8000 } } }
+      : { ...baseFilter };
 
-    const baseFilter = { isVerified: true, isVisible: true };
-    const selectFields =
-      "businessName vendorType address profileImages rating reviews priceRange vendorTypeCategory isVerified";
+    if (type) {
+      const t = type.toLowerCase();
+      if (["hotel","restaurant","club"].includes(t)) {
+        nearbyFilter.vendorType = t;
+        baseFilter.vendorType   = t;
+      }
+    }
 
-    const nearbyFilter =
-      latitude && longitude
-        ? {
-            ...baseFilter,
-            location: {
-              $near: {
-                $geometry: { type: "Point", coordinates: [toFloat(longitude), toFloat(latitude)] },
-                $maxDistance: 5000,
-              },
-            },
-          }
-        : baseFilter;
-
-    const [nearby, topRated, hotels, restaurants, clubs] = await Promise.all([
-      Vendor.find(nearbyFilter).select(selectFields).limit(6).lean(),
-      Vendor.find(baseFilter).select(selectFields).sort({ rating: -1, reviews: -1 }).limit(6).lean(),
-      HotelVendor.find(baseFilter).select(`${selectFields} starRating amenities mealPlan`).sort({ rating: -1 }).limit(6).lean(),
-      RestaurantVendor.find(baseFilter).select(`${selectFields} cuisines diningStyles dietaryOptions`).sort({ rating: -1 }).limit(6).lean(),
-      ClubVendor.find(baseFilter).select(`${selectFields} musicGenres venueType entryFee dressCode`).sort({ rating: -1 }).limit(6).lean(),
+    const [nearby, topRated, restaurants, hotels, clubs] = await Promise.all([
+      Vendor.find(nearbyFilter).select(selectBase).limit(8).lean(),
+      Vendor.find(baseFilter).select(selectBase).sort({ rating: -1, reviews: -1 }).limit(8).lean(),
+      RestaurantVendor.find({ ...baseFilter, vendorType: "restaurant" }).select(`${selectBase} cuisines diningStyles dietaryOptions`).sort({ rating: -1, reviews: -1 }).limit(8).lean(),
+      HotelVendor.find({ ...baseFilter, vendorType: "hotel" }).select(`${selectBase} starRating amenities mealPlan offer`).sort({ rating: -1 }).limit(8).lean(),
+      ClubVendor.find({ ...baseFilter, vendorType: "club" }).select(`${selectBase} musicGenres venueType entryFee dressCode`).sort({ rating: -1 }).limit(8).lean(),
     ]);
 
-    return res.status(200).json({
-      success: true,
-      data: {
-        nearby: filterVendorData(nearby),
-        topRated: filterVendorData(topRated),
-        hotels: filterVendorData(hotels),
-        restaurants: filterVendorData(restaurants),
-        clubs: filterVendorData(clubs),
-      },
-    });
+    if (type && ["hotel","restaurant","club"].includes(type.toLowerCase())) {
+      const t = type.toLowerCase();
+      return res.status(200).json({
+        success: true,
+        data: {
+          nearby      : nearby.filter(v => v.vendorType === t),
+          topRated    : topRated.filter(v => v.vendorType === t),
+          restaurants : t === "restaurant" ? restaurants : [],
+          hotels      : t === "hotel"      ? hotels      : [],
+          clubs       : t === "club"       ? clubs        : [],
+        },
+      });
+    }
+    return res.status(200).json({ success: true, data: { nearby, topRated, restaurants, hotels, clubs } });
   } catch (error) {
     console.error("[discover]", error);
     return res.status(500).json({ success: false, message: "Discover failed" });
   }
 };
 
+
+// ─── 5. DISCOVER BY TYPE ──────────────────────────────────────────────────────
+export const discoverByType = async (req, res) => {
+  try {
+    const { type } = req.params;
+    const { latitude, longitude } = req.query;
+    const model      = getModel(type);
+    const baseFilter = { isOnboarded: true, isVerified: true };
+    const hasCoords  = latitude && longitude;
+    const nearbyFilter = hasCoords
+      ? { ...baseFilter, location: { $near: { $geometry: { type: "Point", coordinates: [toFloat(longitude), toFloat(latitude)] }, $maxDistance: 8000 } } }
+      : { ...baseFilter };
+    const [nearby, topRated, newest] = await Promise.all([
+      model.find(nearbyFilter).select(buildSelect(type)).limit(6).lean(),
+      model.find(baseFilter).select(buildSelect(type)).sort({ rating: -1, reviews: -1 }).limit(6).lean(),
+      model.find(baseFilter).select(buildSelect(type)).sort({ createdAt: -1 }).limit(6).lean(),
+    ]);
+    return res.status(200).json({ success: true, type, data: { nearby, topRated, newest } });
+  } catch (error) {
+    console.error("[discoverByType]", error);
+    return res.status(500).json({ success: false, message: "Discover by type failed" });
+  }
+};

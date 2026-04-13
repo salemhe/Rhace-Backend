@@ -770,7 +770,7 @@ export const getVendors = async (req, res) => {
     if (sortBy) {
       sort[sortBy] = sortOrder === "desc" ? -1 : 1;
     } else {
-      sort.createdAt = -1;
+      sort.rating = -1;
     }
 
     const vendors = await Vendor.find(query)
