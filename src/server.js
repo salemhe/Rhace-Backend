@@ -3,7 +3,7 @@ import http from "http";
 // import express from "express";
 // import cors from "cors";
 import app from "./app.js";
-import ngrok from "@ngrok/ngrok";
+// import ngrok from "@ngrok/ngrok";
 import connectDB from "./config/db.js";
 // import { startAllSchedulers } from "./jobs/index.js";
 import { setupWebSocket } from "./websockets/socketManager.js";
@@ -26,6 +26,6 @@ server.listen(PORT, () => {
   // startAllSchedulers();
 });
 
-ngrok.connect({ addr: PORT, authtoken_from_env: true })
-	.then(listener => console.log(`Ingress established at: ${listener.url()}`));
+// ngrok.connect({ addr: PORT, authtoken_from_env: true })
+// 	.then(listener => console.log(`Ingress established at: ${listener.url()}`));
 
