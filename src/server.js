@@ -1,5 +1,6 @@
 import dotenv from "dotenv";
 import http from "http";
+import dns from "node:dns/promises"
 // import express from "express";
 // import cors from "cors";
 import app from "./app.js";
@@ -7,6 +8,8 @@ import app from "./app.js";
 import connectDB from "./config/db.js";
 // import { startAllSchedulers } from "./jobs/index.js";
 import { setupWebSocket } from "./websockets/socketManager.js";
+
+dns.setServers(['1.1.1.1', '8.8.8.8']);
 
 // Load environment variables
 dotenv.config();
