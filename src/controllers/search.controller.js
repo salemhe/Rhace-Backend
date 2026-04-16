@@ -337,7 +337,7 @@ export const discover = async (req, res) => {
   try {
     const { latitude, longitude, type } = req.query;
     const baseFilter  = { isOnboarded: true, isVerified: true };
-    const selectBase  = "businessName vendorType address profileImages rating reviews priceRange vendorTypeCategory isVerified";
+    const selectBase  = "businessName businessDescription vendorType address profileImages rating reviews priceRange vendorTypeCategory isVerified";
     const hasCoords   = latitude && longitude;
     const nearbyFilter = hasCoords
       ? { ...baseFilter, location: { $near: { $geometry: { type: "Point", coordinates: [parseFloat(longitude), parseFloat(latitude)] }, $maxDistance: 8000 } } }
