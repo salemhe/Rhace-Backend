@@ -22,111 +22,168 @@ import { MenuItem } from "../models/menu.model.js";
 import RoomType from "../models/roomtype.model.js";
 import BottleSet from "../models/bottleSet.model.js";
 import Drink from "../models/drink.model.js";
-
 // ─── 1. SUGGESTIONS ────────────────────────────────────────────────────────────
+
+const LAGOS_AREAS = [
+  "Lekki Phase 1", "Ikeja", "Victoria Island", "Ikoyi", "Surulere", 
+  "Ajah", "Magodo", "Yaba", "Maryland", "Gbagada", "Festac"
+];
+
 export const getSearchSuggestions = async (req, res) => {
   try {
-    const { search: q, type = "restaurant" } = req.query;
-    if (!q || q.length < 2) return res.status(200).json({ success: true, suggestions: [] });
+    const { search: q, type } = req.query;
+    // Minimum 2 characters to prevent heavy DB load
+    if (!q || q.trim().length < 2) {
+      return res.status(200).json({ success: true, suggestions: [] });
+    }
 
-    const regex = new RegExp(`^${q}`, "i");
-    const vendorType = type;
+    const query = q.trim();
+    const regex = new RegExp(query, "i");
+    const vendorType = type?.toLowerCase();
+    
+    // Base filter for the active tab
+    const baseFilter = { 
+      isVerified: true, 
+      isOnboarded: true,
+      ...(vendorType && ["hotel", "restaurant", "club"].includes(vendorType) ? { vendorType } : {})
+    };
 
-    // Parallel execution for speed
-    const [vendors, products] = await Promise.all([
-      // 1. Search Vendors
-      Vendor.find({ vendorType, businessName: regex, isVerified: true })
-        .select("businessName logo address")
-        .limit(3).lean(),
+    // 1. Parallel Execution: Vendors, Products, and Category tags
+    const [vendors, products, categories] = await Promise.all([
+      // VENDORS
+      Vendor.find({ ...baseFilter, businessName: regex })
+        .select("businessName address profileImages vendorType")
+        .limit(5)
+        .lean(),
 
-      // 2. Search specific products based on the vendorType
-      getProductSuggestions(vendorType, regex)
+      // PRODUCTS (MenuItems / RoomTypes / BottleSets)
+      searchProducts(vendorType, regex),
+
+      // CATEGORIES (Cuisines / Vibe / VenueType)
+      searchCategories(vendorType, regex)
     ]);
 
-   const vendorSuggestions = vendors.map(v => ({
-      type: "vendor",
-      label: v.businessName,
-      subLabel: v.address,
-    }));
+    const locationSuggestions = LAGOS_AREAS.filter(area => regex.test(area)).slice(0, 3);
 
-    // 3. Format Product Suggestions (Search Redirects)
-    const productSuggestions = products.map(p => {
-        const isMultiple = p.vendorCount > 1;
-        return {
-            type: "product",
-            label: p._id, // The grouped name (e.g., "Jollof Rice")
-            subLabel: isMultiple ? `Available at ${p.vendorCount} spots` : `Available at ${p.representativeVendor.businessName}`,
-        };
+    // 2. Map into a Single Flat List
+    const suggestions = [
+
+      ...locationSuggestions.map(loc => ({
+        text: loc,
+        subText: `Explore all spots in ${loc}`,
+        label: "Location",
+        target: `/search?type=${vendorType || 'restaurant'}&q=${encodeURIComponent(loc)}`
+      })),
+
+      // Vendor matches -> labeled as "Place"
+      ...vendors.map(v => ({
+        id: v._id,
+        text: v.businessName,
+        subText: v.address,
+        image: v.profileImages?.[0],
+        label: "Place",
+        target: `/vendor/${v.vendorType}/${v._id}`
+      })),
+
+      // Product matches -> labeled as "Dish", "Room", or "Drink"
+      ...products.map(p => ({
+        id: p._id,
+        text: p.name,
+        subText: `At ${p.vendorName}`,
+        image: p.image,
+        label: p.label,
+        target: `/vendor/${vendorType}/${p.vendorId}?highlight=${p._id}`
+      })),
+
+      // Category matches -> labeled as "Category"
+      ...categories.map(c => ({
+        text: c,
+        subText: `See all ${c} ${vendorType || 'spots'}`,
+        label: "Category",
+        target: `/search?type=${vendorType || 'restaurant'}&filter1=${c.toLowerCase()}`
+      }))
+    ];
+
+    // 3. Popularity Tracking
+    PopularSearch.findOneAndUpdate(
+      { word: query.toLowerCase(), type: vendorType || "general" },
+      { $inc: { totalSearches: 1 } },
+      { upsert: true }
+    ).catch(() => {});
+
+    return res.status(200).json({ 
+      success: true, 
+      suggestions: suggestions.slice(0, 10) 
     });
 
-    return res.status(200).json({
-      success: true,
-      suggestions: [...vendorSuggestions, ...productSuggestions]
-    });
   } catch (error) {
-    console.error("SuggestionErrpr", error)
-    res.status(500).json({ success: false, message: "Suggestion error" });
+    console.error("[getSearchSuggestions]", error);
+    return res.status(500).json({ success: false, message: "Suggestions failed" });
   }
 };
 
-// Helper to switch between MenuItem, RoomType, and BottleSet
-const getProductSuggestions = async (type, regex) => {
-  const model = type === "restaurant" ? MenuItem : (type === "hotel" ? RoomType : BottleSet);
-  const vendor = type === "restaurant" ? "vendor" : (type === "hotel" ? "hotelId" : "clubId");
-  const price = type === "hotel" ? "$price" : "$pricePerNight"
+// --- HELPERS ---
 
-  return await model.aggregate([
-    { $match: { name: regex } },
-    {
-      $lookup: {
-        from: "vendors",
-        localField: vendor,
-        foreignField: "_id",
-        as: "vendorData"
-      }
-    },
-    { $unwind: "$vendorData" },
-    {
-      $group: {
-        _id: "$name",
-        vendorCount: { $sum: 1 },
-        representativeVendor: { $first: "$vendorData" },
-        representativeItemId: { $first: "$_id" }
-      }
-    },
-    { $limit: 5 }
-  ]);
-};
+async function searchProducts(type, regex) {
+  const productConfig = {
+    restaurant: { model: "MenuItem", ref: "vendor", label: "Dish" },
+    hotel: { model: "RoomType", ref: "hotelId", label: "Room" },
+    club: { model: "BottleSet", ref: "clubId", label: "Drink" }
+  };
+
+  const activeType = type || "restaurant";
+  const config = productConfig[activeType];
+  if (!config) return [];
+
+  const items = await mongoose.model(config.model)
+    .find({ name: regex })
+    .populate(config.ref, "businessName")
+    .limit(4)
+    .lean();
+
+  return items.map(i => ({
+    _id: i._id,
+    name: i.name,
+    vendorName: i[config.ref]?.businessName || "Vendor",
+    vendorId: i[config.ref]?._id,
+    image: i.image,
+    label: config.label
+  }));
+}
+
+function searchCategories(type, regex) {
+  const pool = {
+    restaurant: ["Nigerian", "Chinese", "Italian", "Fine Dining", "Fast Food", "Seafood"],
+    hotel: ["Boutique", "Resort", "Apartment", "Luxury"],
+    club: ["Lounge", "Rooftop", "Afrobeats", "Amapiano"]
+  };
+  const target = type ? pool[type] : [...pool.restaurant, ...pool.hotel, ...pool.club];
+  return [...new Set(target)].filter(c => regex.test(c)).slice(0, 3);
+}
 
 // ─── 2. MAIN SEARCH ────────────────────────────────────────────────────────────
-
 export const search = async (req, res) => {
   try {
     const {
       search: q, 
-      type = "restaurant",
+      type, // Can be "restaurant", "hotel", "club", or undefined/"all"
       latitude: lat, longitude: lng,
-      filter1, filter2,
       page = 1, limit = 15
     } = req.query;
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const userCoords = lat && lng ? [parseFloat(lng), parseFloat(lat)] : null;
 
-    const productCollections = { 
-      restaurant: { type: "menuitems", vendor: "vendor", f1: "cuisines", f2: "diningStyles" }, 
-      hotel: { type: "roomtypes", vendor: "hotelId", f1: "propertyType", f2: "starRating" }, 
-      club: { type: "bottlesets", vendor: "clubId", f1: "venueType", f2: "agePolicy" }
-    };
-
-    const subCollection = productCollections[type].type;
-    const subIds = productCollections[type].vendor;
+    // Define the valid types
+    const validTypes = ["restaurant", "hotel", "club"];
+    const isAll = !type || type.toLowerCase() === "all" || !validTypes.includes(type.toLowerCase());
 
     const pipeline = [];
 
-    // --- STAGE 1: GEOSPATIAL (Broad Net) ---
-    // Remove 'q' from geoQuery so we don't kill potential menu matches early
-    const geoQuery = { vendorType: type, isVerified: true };
+    // --- STAGE 1: GEOSPATIAL ---
+    // If 'all', we search across every verified vendor regardless of type
+    const geoQuery = { isVerified: true, isOnboarded: true };
+    if (!isAll) geoQuery.vendorType = type.toLowerCase();
 
     if (userCoords) {
       pipeline.push({
@@ -135,62 +192,74 @@ export const search = async (req, res) => {
           distanceField: "distance",
           key: "location",
           spherical: true,
-          query: geoQuery // Only basic type/verified filters here
+          query: geoQuery
         }
       });
     } else {
       pipeline.push({ $match: geoQuery });
     }
 
-    // --- STAGE 2: LOOKUP (Attach Menu/Room/Bottle items) ---
-    pipeline.push({
-      $lookup: {
-        from: subCollection,
-        localField: "_id",
-        foreignField: subIds,
-        as: "matchedProducts"
+    // --- STAGE 2: MULTI-COLLECTION LOOKUP ---
+    // We look up from all three sub-collections and merge them into one array
+    pipeline.push(
+      {
+        $lookup: {
+          from: "menuitems",
+          localField: "_id",
+          foreignField: "vendor",
+          as: "items_res"
+        }
+      },
+      {
+        $lookup: {
+          from: "roomtypes",
+          localField: "_id",
+          foreignField: "hotelId",
+          as: "items_hotel"
+        }
+      },
+      {
+        $lookup: {
+          from: "bottlesets",
+          localField: "_id",
+          foreignField: "clubId",
+          as: "items_club"
+        }
+      },
+      {
+        // Merge all found items into a single 'matchedProducts' field
+        $addFields: {
+          matchedProducts: { 
+            $concatArrays: ["$items_res", "$items_hotel", "$items_club"] 
+          }
+        }
       }
-    });
+    );
 
-    // --- STAGE 3: MATCHING (The Deep Search) ---
+    // --- STAGE 3: THE "GLOBAL" MATCH ---
     const matchStage = {};
     if (q) {
-      // This is where we check BOTH vendor name and menu item names
+      const regex = { $regex: q, $options: "i" };
       matchStage.$or = [
-        { businessName: { $regex: q, $options: "i" } },
-        { businessDescription: { $regex: q, $options: "i" } },
-        { "matchedProducts.name": { $regex: q, $options: "i" } }, // This now works!
-        { vendorTypeCategory: { $regex: q, $options: "i" } }
+        { businessName: regex },
+        { businessDescription: regex },
+        { address: regex },
+        { cuisines: regex },
+        { vendorTypeCategory: regex },
+        { "matchedProducts.name": regex },
+        { "matchedProducts.category": regex }
       ];
-    }
-
-    // Apply Minimalist Filters
-    if (type === "restaurant") {
-      if (filter1) matchStage.cuisines = { $in: [filter1] };
-      if (filter2) matchStage.diningStyles = { $in: [filter2] };
-    } else if (type === "hotel") {
-      if (filter1) matchStage.propertyType = filter1;
-      if (filter2) matchStage.starRating = parseInt(filter2);
-    } else if (type === "club") {
-      if (filter1) matchStage.venueType = filter1;
-      if (filter2) matchStage.agePolicy = filter2;
     }
 
     pipeline.push({ $match: matchStage });
 
-    // --- STAGE 4: FLATTENED FACET ---
+    // --- STAGE 4: FACETED RESULTS ---
     pipeline.push({
       $facet: {
         metadata: [{ $count: "total" }],
-        f1Options: [
-          { $unwind: `$${productCollections[type].f1}` },
-          { $group: { _id: `$${productCollections[type].f1}`, count: { $sum: 1 } } }
-        ],
-        f2Options: [
-          { $group: { _id: `$${productCollections[type].f2}`, count: { $sum: 1 } } }
-        ],
         data: [
-          { $sort: userCoords ? { distance: 1 } : { rating: -1 } },
+          // Prioritize high-rated nearby spots
+          { $sort: userCoords ? { distance: 1, rating: -1 } : { rating: -1 } },
           { $skip: skip },
           { $limit: parseInt(limit) },
           { 
@@ -200,10 +269,15 @@ export const search = async (req, res) => {
               logo: 1,
               profileImages: 1,
               rating: 1,
+              reviews: 1,
+              address: 1,
               distance: { $divide: ["$distance", 1000] },
               priceRange: 1,
               isVerified: 1,
-              vendorType: 1
+              vendorType: 1,
+              vendorTypeCategory: 1,
+              cuisines: 1,
+              matchHighlight: { $arrayElemAt: ["$matchedProducts.name", 0] }
             } 
           }
         ]
@@ -212,247 +286,119 @@ export const search = async (req, res) => {
 
     const results = await Vendor.aggregate(pipeline);
     const facetResult = results[0];
+    const total = facetResult.metadata[0]?.total || 0;
 
     return res.status(200).json({
       success: true,
       data: facetResult.data || [],
-      filters: {
-        primary: facetResult.f1Options?.map(f => ({ label: f._id, count: f.count })) || [],
-        secondary: facetResult.f2Options?.map(f => ({ label: f._id, count: f.count })) || []
-      },
       pagination: {
-        totalCount: facetResult.metadata[0]?.total || 0,
+        totalCount: total,
         currentPage: parseInt(page),
-        totalPages: Math.ceil((facetResult.metadata[0]?.total || 0) / limit),
-        hasNextPage: Math.ceil((facetResult.metadata[0]?.total || 0) / limit) > parseInt(page),
-        hasPrevPage: Math.ceil((facetResult.metadata[0]?.total || 0) / limit) < parseInt(page)
+        totalPages: Math.ceil(total / limit),
+        hasNextPage: Math.ceil(total / limit) > parseInt(page)
       }
     });
 
   } catch (error) {
-    console.error("[aggregate-search]", error);
-    res.status(500).json({ success: false, message: "Search Aggregator failed" });
+    console.error("[global-search-aggregator]", error);
+    res.status(500).json({ success: false, message: "Search failed" });
   }
 };
-// ─── 4. DISCOVER ──────────────────────────────────────────────────────────────
 
+
+// ─── 3. TRENDING ──────────────────────────────────────────────────────────────
+export const getTrending = async (req, res) => {
+  try {
+    const { type, limit = 6 } = req.query;
+    const hour = new Date().getHours();
+    const filter = { isVerified: true };
+    if (!type) {
+      if      (hour >= 21 || hour < 4)  filter.vendorType = "club";
+      else if (hour >= 11 && hour < 16) filter.vendorType = "restaurant";
+      else if (hour < 11)               filter.vendorType = "hotel";
+    } else if (["hotel","restaurant","club"].includes(type.toLowerCase())) {
+      filter.vendorType = type.toLowerCase();
+    }
+    const trending = await Vendor.find(filter)
+      .select("businessName vendorType address profileImages rating reviews priceRange vendorTypeCategory")
+      .sort({ rating: -1, reviews: -1 })
+      .limit(parseInt(limit, 6))
+      .lean();
+    return res.status(200).json({ success: true, trending });
+  } catch (error) {
+    console.error("[getTrending]", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch trending" });
+  }
+};
+
+
+// ─── 4. DISCOVER ──────────────────────────────────────────────────────────────
 export const discover = async (req, res) => {
   try {
-    const { latitude, longitude, type = "restaurant" } = req.query;
-    const vendorType = ["hotel", "restaurant", "club"].includes(type)
-      ? type
-      : "restaurant";
-    const userId = req.user?._id;
+    const { latitude, longitude, type } = req.query;
+    const baseFilter  = { isOnboarded: true, isVerified: true };
+    const selectBase  = "businessName vendorType address profileImages rating reviews priceRange vendorTypeCategory isVerified";
+    const hasCoords   = latitude && longitude;
+    const nearbyFilter = hasCoords
+      ? { ...baseFilter, location: { $near: { $geometry: { type: "Point", coordinates: [parseFloat(longitude), parseFloat(latitude)] }, $maxDistance: 8000 } } }
+      : { ...baseFilter };
 
-    const userCoords =
-      latitude && longitude
-        ? [parseFloat(longitude), parseFloat(latitude)]
-        : null;
-
-    // 1. Fetch User History
-    const recentSearches = userId
-      ? await SearchHistory.find({ user: userId, vendorType })
-          .sort({ createdAt: -1 })
-          .limit(4)
-          .lean()
-      : [];
-
-    // 2. Build the Aggregation Pipeline
-    const pipeline = [];
-
-    // GEO STAGE: Must be first
-    if (userCoords) {
-      pipeline.push({
-        $geoNear: {
-          near: { type: "Point", coordinates: userCoords },
-          distanceField: "distance",
-          maxDistance: 10000, // 10km
-          query: { vendorType, isVerified: true },
-          spherical: true,
-        },
-      });
-    } else {
-      pipeline.push({ $match: { vendorType, isVerified: true } });
-    }
-
-    // LOOKUP STAGE: Pull specific "Discovery Highlights" based on type
-    if (vendorType === "restaurant") {
-      pipeline.push({
-        $lookup: {
-          from: "menuitems",
-          localField: "_id",
-          foreignField: "vendor",
-          as: "items",
-        },
-      });
-    } else if (vendorType === "hotel") {
-      pipeline.push({
-        $lookup: {
-          from: "roomtypes",
-          localField: "_id",
-          foreignField: "hotelId",
-          as: "items",
-        },
-      });
-    } else {
-      // Clubs: Lookup Tables or BottleSets
-      pipeline.push({
-        $lookup: {
-          from: "drinks",
-          localField: "_id",
-          foreignField: "clubId",
-          as: "items",
-        },
-      });
-    }
-
-    // Limit and Sort
-    pipeline.push({ $sort: { rating: -1 } });
-    pipeline.push({ $limit: 12 });
-
-    const rawVendors = await Vendor.aggregate(pipeline);
-
-    // 3. Section Construction
-    const sections = [];
-
-    // SECTION 5: PRODUCT DISCOVERY
-    const productItems = [];
-    rawVendors.forEach((vendor) => {
-      if (vendor.items && vendor.items.length > 0) {
-        // Grab the first or most popular item
-        const item = vendor.items[0];
-        productItems.push({
-          id: item._id,
-          name: item.name,
-          price: `₦${item.price?.toLocaleString() || item.pricePerNight.toLocaleString()}`,
-          vendorName: vendor.businessName,
-          image: item.image || vendor.profileImages?.[0],
-          // Redirect to the vendor, but keep the product context
-          target: `/search?type=${vendorType}&q=${item.name}`,
-        });
+    if (type) {
+      const t = type.toLowerCase();
+      if (["hotel","restaurant","club"].includes(t)) {
+        nearbyFilter.vendorType = t;
+        baseFilter.vendorType   = t;
       }
-    });
-
-    if (productItems.length > 0) {
-      sections.push({
-        title:
-          vendorType === "restaurant"
-            ? "Must-Try Dishes"
-            : vendorType === "hotel"
-              ? "Featured Rooms"
-              : "Bottle Service & Drinks",
-        layout: "product_scroll",
-        items: productItems.slice(0, 6),
-      });
     }
 
-    // SECTION: History
-    if (recentSearches.length > 0) {
-      sections.push({
-        title: "Continue where you left off",
-        layout: "horizontal_chips",
-        items: recentSearches.map((s) => ({
-          label: s.query || "Viewed Vendor",
-          target: s.clickedVendor
-            ? `/${vendorType}s/${s.clickedVendor}`
-            : `/search?type=${vendorType}&q=${s.query}`,
-        })),
-      });
-    } else if (rawVendors.length > 0) {
-      // Fallback for new users: Show "New on the Platform"
-      sections.push({
-        title: `Explore ${vendorType.charAt(0).toUpperCase() + vendorType.slice(1)}s`,
-        layout: "large_cards",
-        items: rawVendors.slice(0, 3).map((v) => ({
-          id: v._id,
-          name: v.businessName,
-          image: v.profileImages?.[0],
-          badge: v.distance
-            ? `${(v.distance / 1000).toFixed(1)}km near you`
-            : "Top Rated",
-          target: `/${vendorType}s/${v._id}`,
-        })),
+    const [nearby, topRated, restaurants, hotels, clubs] = await Promise.all([
+      Vendor.find(nearbyFilter).select(selectBase).limit(8).lean(),
+      Vendor.find(baseFilter).select(selectBase).sort({ rating: -1, reviews: -1 }).limit(8).lean(),
+      RestaurantVendor.find({ ...baseFilter, vendorType: "restaurant" }).select(`${selectBase} cuisines diningStyles dietaryOptions`).sort({ rating: -1, reviews: -1 }).limit(8).lean(),
+      HotelVendor.find({ ...baseFilter, vendorType: "hotel" }).select(`${selectBase} starRating amenities mealPlan offer`).sort({ rating: -1 }).limit(8).lean(),
+      ClubVendor.find({ ...baseFilter, vendorType: "club" }).select(`${selectBase} musicGenres venueType entryFee dressCode`).sort({ rating: -1 }).limit(8).lean(),
+    ]);
+
+    if (type && ["hotel","restaurant","club"].includes(type.toLowerCase())) {
+      const t = type.toLowerCase();
+      return res.status(200).json({
+        success: true,
+        data: {
+          nearby      : nearby.filter(v => v.vendorType === t),
+          topRated    : topRated.filter(v => v.vendorType === t),
+          restaurants : t === "restaurant" ? restaurants : [],
+          hotels      : t === "hotel"      ? hotels      : [],
+          clubs       : t === "club"       ? clubs        : [],
+        },
       });
     }
-
-    // SECTION: Nearby (Using the 0.4km logic)
-    const nearbyItems = rawVendors
-      .filter((v) => v.distance <= 5000)
-      .map((v) => ({
-        id: v._id,
-        name: v.businessName,
-        image: v.profileImages?.[0],
-        rating: v.rating,
-        badge: v.distance
-          ? `${(v.distance / 1000).toFixed(1)}km near you`
-          : null,
-        description: v.items?.[0]?.name
-          ? `Try the ${v.items[0].name}`
-          : v.businessDescription,
-        target: `/${vendorType}s/${v._id}`,
-      }));
-
-    if (nearbyItems.length > 0) {
-      sections.push({
-        title: "Quickly Reachable",
-        layout: "large_cards",
-        items: nearbyItems,
-      });
-    }
-
-    // SECTION: Type-Specific Discovery Funnel
-    sections.push(getDiscoveryFunnel(vendorType));
-
-    return res.status(200).json({ success: true, vendorType, sections });
+    return res.status(200).json({ success: true, data: { nearby, topRated, restaurants, hotels, clubs } });
   } catch (error) {
     console.error("[discover]", error);
-    return res
-      .status(500)
-      .json({ success: false, message: "Discovery failed" });
+    return res.status(500).json({ success: false, message: "Discover failed" });
   }
 };
 
-const getDiscoveryFunnel = (type) => {
-  const configs = {
-    restaurant: {
-      title: "What are you craving?",
-      items: [
-        {
-          label: "Nigerian",
-          target: "/search?type=restaurant&cuisines=nigerian",
-        },
-        {
-          label: "Fine Dining",
-          target: "/search?type=restaurant&diningStyles=fine-dining",
-        },
-        {
-          label: "Breakfast",
-          target: "/search?type=restaurant&mealTimes=breakfast",
-        },
-      ],
-    },
-    hotel: {
-      title: "Plan your stay",
-      items: [
-        { label: "Luxury (5-Star)", target: "/search?type=hotel&starRating=5" },
-        { label: "With Pool", target: "/search?type=hotel&amenities=pool" },
-        {
-          label: "Boutique",
-          target: "/search?type=hotel&propertyType=boutique",
-        },
-      ],
-    },
-    club: {
-      title: "Nightlife & Vibes",
-      items: [
-        { label: "Amapiano", target: "/search?type=club&musicGenres=amapiano" },
-        {
-          label: "Rooftop Lounges",
-          target: "/search?type=club&venueType=rooftop",
-        },
-        { label: "VIP Tables", target: "/search?type=club&hasVIPTables=true" },
-      ],
-    },
-  };
-  return { ...configs[type], layout: "circular_chips" };
+
+// ─── 5. DISCOVER BY TYPE ──────────────────────────────────────────────────────
+export const discoverByType = async (req, res) => {
+  try {
+    const { type } = req.params;
+    const { latitude, longitude } = req.query;
+    const model      = getModel(type);
+    const baseFilter = { isOnboarded: true, isVerified: true };
+    const hasCoords  = latitude && longitude;
+    const nearbyFilter = hasCoords
+      ? { ...baseFilter, location: { $near: { $geometry: { type: "Point", coordinates: [toFloat(longitude), toFloat(latitude)] }, $maxDistance: 8000 } } }
+      : { ...baseFilter };
+    const [nearby, topRated, newest] = await Promise.all([
+      model.find(nearbyFilter).select(buildSelect(type)).limit(6).lean(),
+      model.find(baseFilter).select(buildSelect(type)).sort({ rating: -1, reviews: -1 }).limit(6).lean(),
+      model.find(baseFilter).select(buildSelect(type)).sort({ createdAt: -1 }).limit(6).lean(),
+    ]);
+    return res.status(200).json({ success: true, type, data: { nearby, topRated, newest } });
+  } catch (error) {
+    console.error("[discoverByType]", error);
+    return res.status(500).json({ success: false, message: "Discover by type failed" });
+  }
 };
