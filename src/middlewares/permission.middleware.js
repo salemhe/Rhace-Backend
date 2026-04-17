@@ -1,42 +1,42 @@
-export const authorize = (roles = [], permissions = []) => {
-  if (typeof roles === "string") {
-    roles = [roles];
-  }
-  if (typeof permissions === "string") {
-    permissions = [permissions];
-  }
+export const protect = (options = { onboarding: false }) => {
+  return async (req, res, next) => {
+    let token;
 
-    return (req, res, next) => {
-    // Assuming req.user is populated by the authentication middleware
-    if (!req.user || !req.user.role) {
-      console.log("Authorization failed: User or role not found", { user: req.user });
-      return res.status(401).json({ message: "Unauthorized: User not authenticated or role not found." });
+    // 1. Token Extraction logic
+    if (req.headers.authorization?.startsWith("Bearer")) {
+      token = req.headers.authorization.split(" ")[1];
     }
 
-    // Check roles
-    if (roles.length && !roles.includes(req.user.role)) {
-      console.log("Authorization failed: Role mismatch", { 
-        userRole: req.user.role, 
-        allowedRoles: roles,
-        userId: req.user._id 
-      });
-      return res.status(403).json({ 
-        message: "Forbidden: You do not have the necessary role.",
-        yourRole: req.user.role,
-        requiredRoles: roles
-      });
-    }
+    if (!token) return res.status(403).json({ message: 'Unauthorized' });
 
-    // Check permissions
-    if (permissions.length) {
-      const userPermissions = req.user.permissions || [];
-      const hasPermission = permissions.some(perm => userPermissions.includes(perm));
-      if (!hasPermission) {
-        return res.status(403).json({ message: "Forbidden: You do not have the necessary permissions." });
+    try {
+      const decoded = verifyAccessToken(token);
+
+      // 2. Fetch User/Vendor
+      if (decoded.role === "vendor") {
+        req.user = await Vendor.findById(decoded.id).select(
+          "_id role vendorType isOnboarded",
+        );
+      } else {
+        req.user = await User.findById(decoded.id).select("_id role");
       }
-    }
 
-    // Authentication and authorization successful
-    next();
+      if (!req.user) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      // 3. The "Onboarding" Logic
+      // If the route is NOT an onboarding route, but the vendor hasn't onboarded, BLOCK.
+      if (decoded.role === "vendor" && !req.user.isOnboarded && !options.onboarding) {
+        return res.status(403).json({
+          message: "Forbidden: Please complete onboarding first.",
+          isOnboarded: false,
+        });
+      }
+
+      next();
+    } catch (error) {
+      res.status(401).json({ message: "Not authorized", error: error.message });
+    }
   };
 };
