@@ -1,24 +1,18 @@
-import { verifyAccessToken } from "../utils/jwt.js";
-import User from "../models/user.model.js";
-import { Vendor } from "../models/vendor.model.js";
+export const protect = (options = { onboarding: false }) => {
+  return async (req, res, next) => {
+    let token;
 
-export const protect = async (req, res, next) => {
-  let token;
+    // 1. Token Extraction logic
+    if (req.headers.authorization?.startsWith("Bearer")) {
+      token = req.headers.authorization.split(" ")[1];
+    }
 
-  if (
-    req.headers.authorization &&
-    req.headers.authorization.startsWith("Bearer")
-  ) {
+    if (!token) return res.status(403).json({ message: 'Unauthorized' });
+
     try {
-      // Get token from header
-      if (req.headers.authorization.startsWith("Bearer")) {
-        token = req.headers.authorization.split(" ")[1];
-      }
-
-      if (!token) return res.status(403).json({ message: 'Unauthorized'});
-
       const decoded = verifyAccessToken(token);
 
+      // 2. Fetch User/Vendor
       if (decoded.role === "vendor") {
         req.user = await Vendor.findById(decoded.id).select(
           "_id role vendorType isOnboarded",
@@ -27,23 +21,15 @@ export const protect = async (req, res, next) => {
         req.user = await User.findById(decoded.id).select("_id role");
       }
 
-      // Ensure user exists
       if (!req.user) {
-        return res
-          .status(401)
-          .json({ message: "Not authorized, user not found", error: "jwt expired" });
+        return res.status(401).json({ message: "User not found" });
       }
 
-      console.log(`Authenticated user: ${req.user._id} with role: ${req.user.role} & ${decoded.role}`);
-
-      // Set the role from the JWT token to ensure correct authorization
-      req.user.role = decoded.role;
-
-      // Check if vendor is onboarded
-      if (decoded.role === "vendor" && !req.user.isOnboarded) {
+      // 3. The "Onboarding" Logic
+      // If the route is NOT an onboarding route, but the vendor hasn't onboarded, BLOCK.
+      if (decoded.role === "vendor" && !req.user.isOnboarded && !options.onboarding) {
         return res.status(403).json({
-          message:
-            "Forbidden: Please complete vendor onboarding before accessing this resource.",
+          message: "Forbidden: Please complete onboarding first.",
           isOnboarded: false,
         });
       }
@@ -52,5 +38,5 @@ export const protect = async (req, res, next) => {
     } catch (error) {
       res.status(401).json({ message: "Not authorized", error: error.message });
     }
-  }
+  };
 };
