@@ -37,7 +37,7 @@ router.post("/vendors/verify-otp", verifyVendorOTP)
 router.post("/vendors/resend-otp", resendVendorOTP)
 router.post("/vendors/forgot-password", forgotVendorPassword)
 router.post("/vendors/reset-password", resetPassword)
-router.post("/vendors/onboard", protect, onboardVendor)
+router.post("/vendors/onboard", protect({ onboarding: true }), onboardVendor)
 
 // Admin Auth
 router.post("/admin/register", registerAdmin);
