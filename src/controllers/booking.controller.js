@@ -1674,18 +1674,18 @@ export const confirmReservation = async (req, res) => {
       );
     }
 
-    try {
-      const vendorType =
-        booking.reservationType?.replace("Reservation", "").toLowerCase() ||
-        "booking";
-      await sendBookingConfirmationEmail(
-        booking.customerEmail,
-        booking,
-        vendorType,
-      );
-    } catch (emailError) {
-      console.error("Email notification failed:", emailError);
-    }
+    // try {
+    //   const vendorType =
+    //     booking.reservationType?.replace("Reservation", "").toLowerCase() ||
+    //     "booking";
+    //   await sendBookingConfirmationEmail(
+    //     booking.customerEmail,
+    //     booking,
+    //     vendorType,
+    //   );
+    // } catch (emailError) {
+    //   console.error("Email notification failed:", emailError);
+    // }
 
     res.status(200).json({
       success: true,
