@@ -6,17 +6,17 @@ const router = express.Router();
 
 router.get("/banks", getBanks);
 router.get('/verify-account', verifyAccount)
-router.get("/", protect, getPayments)
-router.get("/stats", protect, getPaymentStats)
-router.get("/earnings-trend", protect, getTrends)
-router.get("/payment-info", protect, getPaymentInfo)
-router.get("/vendors-earnings", protect, getVendorsEarnings)
-router.get("/paystack/transactions", protect, getPaystackTransactions);
-router.get("/paystack/balance", protect, getPaystackBalance);
-router.get("/admin-earnings", protect, getAdminTotalEarnings)
-router.get("/successful-count", protect, getTotalSuccessfulPayments)
-router.post("/initialize", protect, initializePayment)
-router.post("/verify", protect, verifyPayment)
-router.post("/vendor/confirm", protect, confirmVendorPayment)
+router.get("/", protect(), getPayments)
+router.get("/stats", protect(), getPaymentStats)
+router.get("/earnings-trend", protect(), getTrends)
+router.get("/payment-info", protect(), getPaymentInfo)
+router.get("/vendors-earnings", protect(), getVendorsEarnings)
+router.get("/paystack/transactions", protect(), getPaystackTransactions);
+router.get("/paystack/balance", protect(), getPaystackBalance);
+router.get("/admin-earnings", protect(), getAdminTotalEarnings)
+router.get("/successful-count", protect(), getTotalSuccessfulPayments)
+router.post("/initialize", protect(), initializePayment)
+router.post("/verify", protect(), verifyPayment)
+router.post("/vendor/confirm", protect(), confirmVendorPayment)
 
 export default router;

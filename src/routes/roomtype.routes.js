@@ -17,19 +17,19 @@ const router = express.Router({ mergeParams: true });
 
 router
   .route("/")
-  .post(protect, authorize(["admin", "vendor"]), createRoomType)
+  .post(protect(), authorize(["admin", "vendor"]), createRoomType)
   .get(getRoomTypes);
 
 router
   .route("/:id")
-  .get(protect, authorize(["admin", "vendor", "staff", "user"]), getRoomTypeById)
-  .put(protect, authorize(["admin", "vendor"]), updateRoomType)
-  .delete(protect, authorize(["admin", "vendor"]), deleteRoomType);
+  .get(protect(), authorize(["admin", "vendor", "staff", "user"]), getRoomTypeById)
+  .put(protect(), authorize(["admin", "vendor"]), updateRoomType)
+  .delete(protect(), authorize(["admin", "vendor"]), deleteRoomType);
 
 // New route for uploading room type images
 router.patch(
   "/:id/upload-images",
-  protect,
+  protect(),
   authorize(["admin", "vendor"]),
   uploadRoomTypeImages, // Multer middleware to handle file upload
   uploadRoomTypeImagesController // Controller to handle logic after upload

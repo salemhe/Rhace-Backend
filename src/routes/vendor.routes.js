@@ -22,21 +22,21 @@ router.get("/top-rated", getTopRated);
 router.get("/", getVendors);
 
 
-router.post("/bookings/:id/confirm", protect, confirmReservation);
-router.post("/bookings/confirm-by-qr", protect, confirmByQRCode);
-router.get("/stats", protect, getVendorStats)
-router.put("/:id", protect, updateVendor)
-router.delete("/:id", protect, deleteVendor)
+router.post("/bookings/:id/confirm", protect(), confirmReservation);
+router.post("/bookings/confirm-by-qr", protect(), confirmByQRCode);
+router.get("/stats", protect(), getVendorStats)
+router.put("/:id", protect(), updateVendor)
+router.delete("/:id", protect(), deleteVendor)
 router.get("/:id", getVendor)
 
 // Vendor proxy routes for reservation confirmation
 
 // Payment settings routes
 router.route("/:id/payment-settings")
-  .post(protect, createOrUpdatePaymentSettings)
-  .get(protect, getPaymentSettings)
-  .delete(protect, deletePaymentSettings);
+  .post(protect(), createOrUpdatePaymentSettings)
+  .get(protect(), getPaymentSettings)
+  .delete(protect(), deletePaymentSettings);
 
-router.post("/:id/payment-settings/subaccount", protect, createPaystackSubaccount);
+router.post("/:id/payment-settings/subaccount", protect(), createPaystackSubaccount);
 
 export default router;

@@ -13,7 +13,7 @@ import { uploadBottleSetImages } from "../middlewares/bottleSetImage.middleware.
 
 const router = express.Router();
 
-router.use(protect);
+router.use(protect());
 
 router.route("/")
   .post(authorize(["admin", "vendor"]), uploadBottleSetImages, createBottleSet)

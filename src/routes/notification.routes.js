@@ -13,7 +13,7 @@ import {
 
 const router = express.Router();
 
-router.use(protect);
+router.use(protect());
 
 // User notification routes
 router.get("/", getNotifications);

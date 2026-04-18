@@ -4,7 +4,7 @@ import { getAccountSettings, updateAccountSettings } from "../controllers/accoun
 
 const router = express.Router();
 
-router.use(protect); // All routes require authentication
+router.use(protect()); // All routes require authentication
 
 router.route("/")
   .get(getAccountSettings)

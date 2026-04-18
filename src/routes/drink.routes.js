@@ -21,7 +21,7 @@ import { authorize } from "../middlewares/permission.middleware.js";
 
 const router = express.Router();
 
-router.use(protect);
+router.use(protect());
 
 // Drink Categories
 router.route("/categories")
@@ -46,7 +46,7 @@ router.route("/:id/addons").post(authorize(["admin", "vendor"]), addAddOnToDrink
 
 // Add-ons
 const addOnRouter = express.Router();
-addOnRouter.use(protect);
+addOnRouter.use(protect());
 
 addOnRouter.route("/")
   .post(authorize(["admin", "vendor"]), createAddOn)

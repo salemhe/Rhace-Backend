@@ -11,7 +11,7 @@ import { authorize } from "../middlewares/permission.middleware.js";
 
 const router = express.Router();
 
-router.use(protect); // All guest routes require authentication
+router.use(protect()); // All guest routes require authentication
 
 router.route("/")
   .post(authorize(["admin", "manager", "staff"]), createGuest)

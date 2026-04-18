@@ -5,6 +5,6 @@ import { getVendors } from "../controllers/vendor.controller.js";
 
 const router = express.Router();
 
-router.get("/vendors", protect, authorize(["admin"]), getVendors);
+router.get("/vendors", protect(), authorize(["admin"]), getVendors);
 
 export default router;
