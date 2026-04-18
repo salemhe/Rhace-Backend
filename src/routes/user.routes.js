@@ -20,13 +20,13 @@ import upload from "../middlewares/upload.middleware.js";
 const router = express.Router();
 
 // User management routes
-router.get("/favorites", protect, getFavorites);
-router.post("/favorites", protect, addFavorite);
-router.delete("/favorites", protect, deleteFavorites);
+router.get("/favorites", protect(), getFavorites);
+router.post("/favorites", protect(), addFavorite);
+router.delete("/favorites", protect(), deleteFavorites);
 
 // Profile routes (authenticated user)
-router.put("/profile/password", protect, changePassword);
-router.put("/profile/picture", protect, upload.single("profilePic"), updateProfilePicture);
+router.put("/profile/password", protect(), changePassword);
+router.put("/profile/picture", protect(), upload.single("profilePic"), updateProfilePicture);
 
 router.get("/", getUsers);
 router.get("/stats", getUserStats);

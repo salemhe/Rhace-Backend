@@ -15,7 +15,7 @@ import { authorize } from "../middlewares/permission.middleware.js";
 // mergeParams: true allows us to access params from parent router (e.g., :bookingId)
 const router = express.Router({ mergeParams: true });
 
-router.use(protect);
+router.use(protect());
 
 // Routes for specific booking transactions
 router.route("/")

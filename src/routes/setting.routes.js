@@ -10,7 +10,7 @@ import {
 
 const router = express.Router();
 
-router.use(protect);
+router.use(protect());
 
 // System settings (Superadmin and Admin only)
 router.get("/", authorize(["superadmin", "admin"]), getSettings);

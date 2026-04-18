@@ -21,7 +21,7 @@ import { authorize } from "../middlewares/permission.middleware.js";
 
 const router = express.Router();
 
-router.use(protect); // All club routes require authentication
+router.use(protect()); // All club routes require authentication
 
 router.route("/")
   .post(authorize(["admin", "vendor"]), createClub)

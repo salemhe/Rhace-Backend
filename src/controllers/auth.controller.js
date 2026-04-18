@@ -54,7 +54,7 @@ export const loginVendor = async (req, res) => {
     const user = await Vendor.findOne({ email });
     let isVendor = true;
     if (!user) {
-      return res.status(400).json({ message: "Invalid email or password" });
+      return res.status(400).json({ message: "User doesn't exist" });
     }
     
     const isMatch = await user.comparePassword(password);
@@ -330,7 +330,7 @@ export const login = async (req, res) => {
     const user = await User.findOne({ email });
 
     if (!user) {
-      return res.status(400).json({ message: "Invalid email or password" });
+      return res.status(400).json({ message: "User Doesn't exist" });
     }
 
     if (!user.password) {

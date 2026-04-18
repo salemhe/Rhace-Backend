@@ -16,16 +16,16 @@ import {
 
 const router = express.Router();
 
-router.get("/kpis", protect, getKPIs);
-router.get("/upcoming-reservations", protect, getUpcomingReservations);
-router.get("/todays-reservations", protect, getTodaysReservations);
-router.get("/booking-trends", protect, getBookingTrends);
-router.get("/revenue-trends", protect, getRevenueTrends);
-router.get("/customer-frequency", protect, getCustomerFrequency);
-router.get("/revenue-by-category", protect, getRevenueByCategory);
-router.get("/reservation-sources", protect, getReservationSources);
-router.get("/top-vendors", protect, getTopVendors);
-router.get("/vendors-earnings", protect, getVendorsEarnings);
-router.get("/recent-transactions", protect, getRecentTransactions);
+router.get("/kpis", protect(), getKPIs);
+router.get("/upcoming-reservations", protect(), getUpcomingReservations);
+router.get("/todays-reservations", protect(), getTodaysReservations);
+router.get("/booking-trends", protect(), getBookingTrends);
+router.get("/revenue-trends", protect(), getRevenueTrends);
+router.get("/customer-frequency", protect(), getCustomerFrequency);
+router.get("/revenue-by-category", protect(), getRevenueByCategory);
+router.get("/reservation-sources", protect(), getReservationSources);
+router.get("/top-vendors", protect(), getTopVendors);
+router.get("/vendors-earnings", protect(), getVendorsEarnings);
+router.get("/recent-transactions", protect(), getRecentTransactions);
 
 export default router;

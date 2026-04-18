@@ -13,7 +13,7 @@ import {
 
 const router = express.Router();
 
-router.use(protect);
+router.use(protect());
 
 router.get("/", authorize(["superadmin", "admin", "finance", "vendor" , "ops", "support"]), getReservations);
 router.get("/counters", authorize(["superadmin", "admin", "finance", "ops", "support", "vendor"]), getReservationCounters);

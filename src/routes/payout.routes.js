@@ -11,8 +11,8 @@ import { authorize } from "../middlewares/permission.middleware.js";
 
 const router = express.Router();
 
-// All routes are protected
-router.use(protect);
+// All routes are protect()ed
+router.use(protect());
 
 // Route to initiate a payout (e.g., for finance and admin roles)
 router.post("/", authorize(["finance", "superadmin", "admin"]), initiatePayout);
