@@ -16,7 +16,7 @@ router.get("/paystack/balance", protect(), getPaystackBalance);
 router.get("/admin-earnings", protect(), getAdminTotalEarnings)
 router.get("/successful-count", protect(), getTotalSuccessfulPayments)
 router.post("/initialize", protect(), initializePayment)
-router.post("/verify", protect(), verifyPayment)
+// router.post("/verify", protect(), verifyPayment)
 router.post("/vendor/confirm", protect(), confirmVendorPayment)
 
 export default router;
