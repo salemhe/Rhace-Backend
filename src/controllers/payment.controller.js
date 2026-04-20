@@ -675,7 +675,7 @@ export const getTrends = async (req, res) => {
     return res.json({
       range,
       trends: formattedTrends,
-      totalEarnings: totalEarningsValue,
+      totalEarnings: totalUntilLastWeekValue,
       percentChange: percentChangeTotalToLastWeek,
     });
   } catch (error) {
@@ -691,6 +691,7 @@ export const getPaymentInfo = async (req, res) => {
     const user = await Vendor.findById(userId).select(
       "paymentDetails bankName accountNumber balance",
     );
+    const payment = await Payment.findOne({ vendor: userId }).sort({ createdAt: -1 });
 
     if (!user) {
       return res.status(404).json({ error: "Vendor not found" });
@@ -722,6 +723,7 @@ export const getPaymentInfo = async (req, res) => {
       accountName: paymentDetails?.accountName || null,
       bankLogo: data?.logo || null,
       balance: balance || 0,
+      lastPayment: payment.createdAt,
     });
   } catch (error) {
     console.error("Error fetching payment info:", error);
