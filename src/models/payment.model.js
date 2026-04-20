@@ -176,7 +176,7 @@ const paymentSchema = new mongoose.Schema(
 );
 
 paymentSchema.index({ booking: 1, booked: 1 });
-paymentSchema.index({ paystackReference: 1 });
+// paymentSchema.index({ paystackReference: 1 });
 paymentSchema.index({ status: 1, createdAt: -1 });
 paymentSchema.index({ user: 1, createdAt: -1 });
 paymentSchema.index({ vendor: 1, createdAt: -1 });

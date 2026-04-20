@@ -409,9 +409,10 @@ export const getPaymentStats = async (req, res) => {
           ...vendorFilter,
           createdAt: { $gte: startOfThisYear.toDate() },
           status: { $in: ["Paid", "success", "paid"] },
+          payLater: false,
         },
       },
-      { $group: { _id: null, total: { $sum: "$amount" } } },
+      { $group: { _id: null, total: { $sum: "$amountPaid" } } },
     ]);
 
     const lastYearEarnings = await Payment.aggregate([
@@ -422,10 +423,11 @@ export const getPaymentStats = async (req, res) => {
             $gte: startOfLastYear.toDate(),
             $lte: endOfLastYear.toDate(),
           },
-          status: "Paid",
+          status: { $in: ["Paid", "success", "paid"] },
+          payLater: false,
         },
       },
-      { $group: { _id: null, total: { $sum: "$amount" } } },
+      { $group: { _id: null, total: { $sum: "$amountPaid" } } },
     ]);
 
     // Weekly Earnings
@@ -434,10 +436,11 @@ export const getPaymentStats = async (req, res) => {
         $match: {
           ...vendorFilter,
           createdAt: { $gte: startOfThisWeek.toDate() },
-          status: "Paid",
+          status: { $in: ["Paid", "success", "paid"] },
+          payLater: false,
         },
       },
-      { $group: { _id: null, total: { $sum: "$amount" } } },
+      { $group: { _id: null, total: { $sum: "$amountPaid" } } },
     ]);
 
     const lastWeekEarnings = await Payment.aggregate([
@@ -448,22 +451,25 @@ export const getPaymentStats = async (req, res) => {
             $gte: startOfLastWeek.toDate(),
             $lte: endOfLastWeek.toDate(),
           },
-          status: "Paid",
+          status: { $in: ["Paid", "success", "paid"] },
+          payLater: false,
         },
       },
-      { $group: { _id: null, total: { $sum: "$amount" } } },
+      { $group: { _id: null, total: { $sum: "$amountPaid" } } },
     ]);
 
     // Completed Payments
     const completedThisWeek = await Payment.countDocuments({
       ...vendorFilter,
-      status: "Paid",
+      status: "success",
+      payLater: false,
       createdAt: { $gte: startOfThisWeek.toDate() },
     });
 
     const completedLastWeek = await Payment.countDocuments({
       ...vendorFilter,
-      status: "Paid",
+      status: "success",
+      payLater: false,
       createdAt: {
         $gte: startOfLastWeek.toDate(),
         $lte: endOfLastWeek.toDate(),
@@ -473,13 +479,15 @@ export const getPaymentStats = async (req, res) => {
     // Pending Payments
     const pendingThisWeek = await Payment.countDocuments({
       ...vendorFilter,
-      status: "Pending",
+      status: "pending",
+      payLater: false,
       createdAt: { $gte: startOfThisWeek.toDate() },
     });
 
     const pendingLastWeek = await Payment.countDocuments({
       ...vendorFilter,
-      status: "Pending",
+      status: "pending",
+      payLater: false,
       createdAt: {
         $gte: startOfLastWeek.toDate(),
         $lte: endOfLastWeek.toDate(),
@@ -555,6 +563,7 @@ export const getTrends = async (req, res) => {
           ...vendorFilter,
           status: "success",
           isSplitPayment: true,
+          payLater: false,
           createdAt: { $gte: startDate },
         },
       },
@@ -639,7 +648,7 @@ export const getTrends = async (req, res) => {
     }));
 
     const totalEarnings = await Payment.aggregate([
-      { $match: { ...vendorFilter, status: "success", isSplitPayment: true } },
+      { $match: { ...vendorFilter, status: "success", isSplitPayment: true, payLater: false, } },
       { $group: { _id: null, total: { $sum: "$amountPaid" } } },
     ]);
 
@@ -649,6 +658,7 @@ export const getTrends = async (req, res) => {
           ...vendorFilter,
           status: "success",
           isSplitPayment: true,
+          payLater: false,
           createdAt: { $lte: endOfLastWeek.toDate() },
         },
       },
