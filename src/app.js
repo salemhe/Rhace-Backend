@@ -21,7 +21,8 @@ notificationRoutes,
 payoutRoutes,
 searchRoutes,
 paystackRoutes,
-availabilityRoutes } from "./routes/index.js"
+availabilityRoutes, 
+reservationRoutes} from "./routes/index.js"
 
 
 const app = express();
@@ -50,6 +51,8 @@ app.use("/api/v1/vendors", vendorRoutes);
 app.use("/api/v1/menus", menuRoutes);
 
 app.use("/api/v1/bookings", bookingRoutes);
+
+app.use("/api/v1/reservations", reservationRoutes)
 
 app.use("/api/v1/hotels", hotelRoutes);
 

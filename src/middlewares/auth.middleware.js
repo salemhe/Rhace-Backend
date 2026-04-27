@@ -40,6 +40,7 @@ export const protect = (options = { onboarding: false }) => {
 
       next();
     } catch (error) {
+      console.log(error)
       res.status(401).json({ message: "Not authorized", error: error.message });
     }
   };
