@@ -14,9 +14,6 @@ export const handlePaystack = async (req, res) => {
       .update(req.body)
       .digest("hex");
 
-    console.log("🔐 Calculated hash:", hash);
-    console.log("🔐 Received signature:", req.headers["x-paystack-signature"]);
-
     if (hash !== req.headers["x-paystack-signature"]) {
       console.error("Invalid webhook signature");
       return res.status(401).send("Invalid signature");
@@ -43,7 +40,7 @@ export const handlePaystack = async (req, res) => {
 async function handleSuccessfulPayment(data) {
   const paymentId = data.reference;
 
-  console.log('🔍 Looking for payment with paystackReference:', paymentId);
+  console.log("🔍 Looking for payment with paystackReference:", paymentId);
 
   try {
     const payment = await Payment.findOne({ paystackReference: paymentId });
@@ -51,8 +48,12 @@ async function handleSuccessfulPayment(data) {
     if (!payment) {
       console.error("❌ PAYMENT NOT FOUND BY REFERENCE:", paymentId);
       console.log("Available paystackReferences in recent payments:");
-      const recentPayments = await Payment.find({}).sort({ createdAt: -1 }).limit(5);
-      recentPayments.forEach(p => console.log(`  ${p._id}: ${p.paystackReference}`));
+      const recentPayments = await Payment.find({})
+        .sort({ createdAt: -1 })
+        .limit(5);
+      recentPayments.forEach((p) =>
+        console.log(`  ${p._id}: ${p.paystackReference}`),
+      );
       return;
     }
 
@@ -106,21 +107,23 @@ async function handleSuccessfulPayment(data) {
       },
     );
 
-        // ✅ TASK 1: Update ALL matching reservations paymentStatus = "paid"
-        // Handle both main Booking model AND dashboard Reservation model
-        // Update booking paymentStatus
-        const mainBookingsUpdated = await Booking.updateMany(
-          { resId: payment.booking },
-          { $set: { paymentStatus: "paid" } }
-        );
+    // ✅ TASK 1: Update ALL matching reservations paymentStatus = "paid"
+    // Handle both main Booking model AND dashboard Reservation model
+    // Update booking paymentStatus
+    const mainBookingsUpdated = await Booking.updateMany(
+      { resId: payment.booking },
+      { $set: { paymentStatus: "paid" } },
+    );
 
-        console.log(`✅ Updated ${mainBookingsUpdated.modifiedCount} main bookings to "paid"`);
+    console.log(
+      `✅ Updated ${mainBookingsUpdated.modifiedCount} main bookings to "paid"`,
+    );
 
     // 🆕 Create PaymentTransaction for hotel dashboard (adjust fields to schema)
     if (payment.metadata?.reservationType === "hotel" && reservation?._id) {
       const existingPT = await PaymentTransaction.findOne({
         booking: reservation._id,
-        providerRef: paymentId
+        providerRef: paymentId,
       });
 
       if (!existingPT) {
@@ -133,21 +136,27 @@ async function handleSuccessfulPayment(data) {
           status: "succeeded",
           metadata: {
             paystackData: data,
-            source: "paystack_webhook"
-          }
+            source: "paystack_webhook",
+          },
         });
-        console.log("✅ Created PaymentTransaction for hotel:", reservation._id);
+        console.log(
+          "✅ Created PaymentTransaction for hotel:",
+          reservation._id,
+        );
       } else {
         console.log("ℹ️ PaymentTransaction already exists:", existingPT._id);
       }
     }
 
-    const populate = reservation.reservationType === "restaurantReservation" ?
-     "menus.menu" : reservation.reservationType === "hotelReservation" ?
-     "room" : "drinks.drink combos table";
+    const populate =
+      reservation.reservationType === "restaurantReservation"
+        ? "menus.menu"
+        : reservation.reservationType === "hotelReservation"
+          ? "rooms.roomId"
+          : "drinks.drink combos tables.tableType";
 
-    
     await reservation.populate(`vendor ${populate}`);
+    console.log("Is new reservation?", isNewReservation);
 
     if (isNewReservation) {
       sendBookingConfirmationEmail(
