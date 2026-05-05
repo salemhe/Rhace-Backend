@@ -1319,6 +1319,7 @@ export async function completePayment(req, res) {
 
     let reservation = await Booking.findOne({ resId: payment.booking });
     let isNewBooking = false;
+    console.log("Existing reservation found:", !!reservation, "for resId:", payment.booking);
 
     if (!reservation) {
       reservation = await createReservationFromPayment(payment);
@@ -1329,6 +1330,8 @@ export async function completePayment(req, res) {
       await vendor.save();
       isNewBooking = true;
     }
+    console.log("Reservation after creation/check:", reservation._id);
+    console.log("Is new booking?", isNewBooking);
 
     await Payment.updateOne(
       { _id: trxref },
@@ -1369,6 +1372,7 @@ export async function completePayment(req, res) {
         "Full payment detected",
       );
     }
+    console.log("Final reservation details:", reservation._id, "Is new?", isNewBooking);
 
     if (isNewBooking) {
       sendBookingConfirmationEmail(
@@ -1376,6 +1380,7 @@ export async function completePayment(req, res) {
         reservation,
         payment.metadata.reservationType,
       ).catch((err) => console.error("Email failed:", err));
+      console.log("Sent booking confirmation email to:", reservation.customerEmail);
 
       const vendorSocket = getVendorSocket(reservation.vendor._id);
       if (vendorSocket && vendorSocket.readyState === 1) {
