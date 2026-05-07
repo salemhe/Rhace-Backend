@@ -31,7 +31,7 @@ export const sendEmail = async (to, subject, htmlContent) => {
 
 // PASSWORD RESET EMAIL
 export const sendPasswordResetEmail = async (to, token, role) => {
-  const resetUrl = `https://${process.env.FRONTEND_URL}/auth/${role}/reset-password?token=${token}`;
+  const resetUrl = `${process.env.FRONTEND_URL}/auth/${role}/reset-password?token=${token}`;
   const htmlContent = `
   <!DOCTYPE html>
   <html lang="en">
