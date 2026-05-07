@@ -123,13 +123,13 @@ export const updateBottleSet = async (req, res) => {
       for (const item of updateData.items) {
         const drink = await Drink.findById(item.drinkId);
         if (!drink) {
-          return res.status(400).json({ message: `Drink with id ${item.drinkId} not found` });
+          return res.status(400).json({ message: `Drink with name ${item.name} not found` });
         }
         if (drink.clubId.toString() !== clubId) {
-          return res.status(400).json({ message: `Drink with id ${item.drinkId} does not belong to club ${clubId}` });
+          return res.status(400).json({ message: `Drink with name ${item.name} does not belong to club ${clubId}` });
         }
-        if (drink.status !== 'active') {
-          return res.status(400).json({ message: `Drink with id ${item.drinkId} is not active` });
+        if (drink.status !== 'Active') {
+          return res.status(400).json({ message: `Drink with name ${item.name} is not active` });
         }
       }
     }
