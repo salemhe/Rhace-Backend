@@ -628,6 +628,7 @@ export const updateVendor = async (req, res) => {
       dressCode,
       ageLimit,
       offer,
+      policies,
     } = req.body;
 
     // Find vendor
@@ -692,6 +693,7 @@ export const updateVendor = async (req, res) => {
       switch (vendorType) {
         case "hotel":
           if (offer) vendor.offer = offer;
+          if (policies) vendor.policies = policies;
           break;
 
         case "restaurant":
