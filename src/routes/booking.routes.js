@@ -14,6 +14,7 @@ import {
   confirmByQRCode,
   getConfirmationStatus,
   cancelBooking,
+  markNoShow,
 } from "../controllers/booking.controller.js";
 import { protect } from "../middlewares/auth.middleware.js";
 import { authorize } from "../middlewares/permission.middleware.js";
@@ -55,6 +56,11 @@ router.get("/verify-qr/:token", protect(), verifyQRCode);
 // @route   POST /api/bookings/:id/confirm
 // @access  Private (Vendor, Admin)
 router.post("/:id/confirm", protect(), authorize(["vendor", "admin"]), confirmReservation);
+
+// @desc    Mark booking as no-show
+// @route   POST /api/bookings/:id/mark-no-show
+// @access  Private (Vendor, Admin)
+router.post("/:id/mark-no-show", protect(), authorize(["vendor", "admin"]), markNoShow);
 
 // @desc    QR code confirmation - vendor scans user's QR code
 // @route   POST /api/bookings/confirm-by-qr
