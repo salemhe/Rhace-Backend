@@ -506,7 +506,7 @@ export const getRevenueTrends = async (req, res) => {
     ]);
 
     // Group vendor payments by month
-        vendorTrends = await Payment.aggregate([
+    const vendorTrends = await Payment.aggregate([
       { $match: { vendor: { $in: vendorIds }, status: "success" } },
       {
         $group: {
@@ -554,6 +554,7 @@ export const getRevenueTrends = async (req, res) => {
 
     res.status(200).json(trends);
   } catch (error) {
+    console.log(error)
     res.status(500).json({ message: error.message });
   }
 };
